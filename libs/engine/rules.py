@@ -6,6 +6,45 @@ import pandas as pd
 
 from libs.engine.models import Contract, RuleFailure
 
+RULE_TYPES = (
+    "not_null",
+    "type",
+    "max_length",
+    "range",
+    "allowed_values",
+    "regex",
+    "unique",
+    "transform_input_not_null",
+)
+
+
+def contract_rule_types(contract: Contract) -> list:
+    """Sorted rule types the contract exercises. Guards DQ tests against
+    silently passing for a rule type the contract no longer uses."""
+    used = set()
+    for col in contract.columns:
+        mapped = bool(col.get("source_name"))
+        derived = "transform" in col
+        if not mapped and not derived:
+            continue
+        if derived and not col["nullable"]:
+            used.add("transform_input_not_null")
+        if not col["nullable"]:
+            used.add("not_null")
+        if col["type"] in ("integer", "decimal", "date", "timestamp", "boolean"):
+            used.add("type")
+        if col["type"] in ("integer", "decimal") and "range" in col:
+            used.add("range")
+        if "max_length" in col:
+            used.add("max_length")
+        if "regex" in col:
+            used.add("regex")
+        if "allowed_values" in col:
+            used.add("allowed_values")
+        if col.get("unique"):
+            used.add("unique")
+    return sorted(used)
+
 
 def _is_empty(v) -> bool:
     return (
@@ -48,6 +87,51 @@ def _record(failures: dict, rule_id: str, column: str, mask: pd.Series, df: pd.D
             )
 
 
+def _eval_column(failures: dict, col: dict, series: pd.Series, df: pd.DataFrame, name: str):
+    """Evaluate all declared constraints for one column against a series."""
+    empty = series.map(_is_empty)
+
+    if not col["nullable"]:
+        _record(failures, "not_null", name, empty, df)
+
+    populated = ~empty
+    if populated.any():
+        if col["type"] in ("integer", "decimal", "date", "timestamp", "boolean"):
+            bad = populated & ~series.map(lambda v, c=col: _check_type(v, c["type"], c))
+            _record(failures, "type", name, bad, df)
+
+        if col["type"] in ("integer", "decimal") and "range" in col:
+            lo, hi = col["range"]
+
+            def _in_range(v, lo=lo, hi=hi):
+                if _is_empty(v):
+                    return True
+                try:
+                    return lo <= Decimal(str(v).strip()) <= hi
+                except InvalidOperation:
+                    return True  # caught by type rule
+
+            _record(failures, "range", name, populated & ~series.map(_in_range), df)
+
+        if "max_length" in col:
+            too_long = populated & series.map(lambda v, c=col: len(str(v)) > c["max_length"])
+            _record(failures, "max_length", name, too_long, df)
+
+        if "regex" in col:
+            pattern = re.compile(col["regex"])
+            bad = populated & ~series.map(lambda v, p=pattern: bool(p.match(str(v).strip())))
+            _record(failures, "regex", name, bad, df)
+
+        if "allowed_values" in col:
+            allowed = {str(v) for v in col["allowed_values"]}
+            bad = populated & ~series.map(lambda v, a=allowed: str(v).strip() in a)
+            _record(failures, "allowed_values", name, bad, df)
+
+    if col.get("unique"):
+        dup = populated & series.duplicated(keep=False)
+        _record(failures, "unique", name, dup, df)
+
+
 def evaluate_source_rules(df: pd.DataFrame, contract: Contract) -> list:
     """Run contract-driven DQ rules against the raw source dataframe.
 
@@ -79,48 +163,35 @@ def evaluate_source_rules(df: pd.DataFrame, contract: Contract) -> list:
         src = col.get("source_name")
         if not src or src not in source_cols:
             continue
-        series = df[src]
-        name = col["name"]
-        empty = series.map(_is_empty)
-
-        if not col["nullable"]:
-            _record(failures, "not_null", name, empty, df)
-
-        populated = ~empty
-        if populated.any():
-            if col["type"] in ("integer", "decimal", "date", "timestamp", "boolean"):
-                bad = populated & ~series.map(lambda v, c=col: _check_type(v, c["type"], c))
-                _record(failures, "type", name, bad, df)
-
-            if col["type"] in ("integer", "decimal") and "range" in col:
-                lo, hi = col["range"]
-
-                def _in_range(v, lo=lo, hi=hi):
-                    if _is_empty(v):
-                        return True
-                    try:
-                        return lo <= Decimal(str(v).strip()) <= hi
-                    except InvalidOperation:
-                        return True  # caught by type rule
-
-                _record(failures, "range", name, populated & ~series.map(_in_range), df)
-
-            if "max_length" in col:
-                too_long = populated & series.map(lambda v, c=col: len(str(v)) > c["max_length"])
-                _record(failures, "max_length", name, too_long, df)
-
-            if "regex" in col:
-                pattern = re.compile(col["regex"])
-                bad = populated & ~series.map(lambda v, p=pattern: bool(p.match(str(v).strip())))
-                _record(failures, "regex", name, bad, df)
-
-            if "allowed_values" in col:
-                allowed = {str(v) for v in col["allowed_values"]}
-                bad = populated & ~series.map(lambda v, a=allowed: str(v).strip() in a)
-                _record(failures, "allowed_values", name, bad, df)
-
-        if col.get("unique"):
-            dup = populated & series.duplicated(keep=False)
-            _record(failures, "unique", name, dup, df)
+        _eval_column(failures, col, df[src], df, col["name"])
 
     return list(failures.values())
+
+
+def evaluate_derived_rules(expected_df: pd.DataFrame, contract: Contract) -> list:
+    """DQ rules on transform outputs: constraints declared on derived columns
+    are checked against the post-transform values in the expected dataframe."""
+    failures: dict = {}
+    expected_cols = set(expected_df.columns)
+    for col in contract.columns:
+        name = col["name"]
+        if "transform" not in col or name not in expected_cols:
+            continue
+        _eval_column(failures, col, expected_df[name], expected_df, name)
+    return list(failures.values())
+
+
+def merge_failures(*lists: list) -> list:
+    """Merge RuleFailure lists by rule_id: union of samples (cap 5),
+    max failing_rows — the same row may fail in both source and derived passes."""
+    merged: dict = {}
+    for f in (f for lst in lists for f in lst):
+        prev = merged.get(f.rule_id)
+        if prev is None:
+            merged[f.rule_id] = f
+        else:
+            prev.failing_rows = max(prev.failing_rows, f.failing_rows)
+            for s in f.samples:
+                if s not in prev.samples and len(prev.samples) < 5:
+                    prev.samples.append(s)
+    return list(merged.values())

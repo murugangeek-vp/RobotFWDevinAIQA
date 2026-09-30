@@ -12,8 +12,17 @@ ${SOURCE_FILE}    ${ROOT}${/}data${/}samples${/}customer.csv
 Target Row Count Matches Source
     Validate Target Row Count
 
-All Records Match On Key Comparison
-    Compare Target Records
+No Records Missing In Target
+    [Documentation]    Every contract key from the source exists in target.
+    Validate Record Aspect    missing_in_target
+
+No Extra Records In Target
+    [Documentation]    Target holds no keys absent from the source.
+    Validate Record Aspect    extra_in_target
+
+All Column Values Match Keys
+    [Documentation]    Per-column values equal on matching keys.
+    Validate Record Aspect    diffs
 
 *** Keywords ***
 Load Target For Compare Suite

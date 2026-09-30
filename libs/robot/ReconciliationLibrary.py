@@ -141,13 +141,29 @@ class ReconciliationLibrary:
 
     @keyword("Run Data Quality Rules")
     def run_data_quality_rules(self):
-        self.rule_failures = rules.evaluate_source_rules(self.source_df, self.contract)
+        source = rules.evaluate_source_rules(self.source_df, self.contract)
+        derived = (
+            rules.evaluate_derived_rules(self.expected_df, self.contract)
+            if self.expected_df is not None
+            else []
+        )
+        self.rule_failures = rules.merge_failures(source, derived)
         for f in self.rule_failures:
             logger.warn(f"rule failure {f.rule_id}: {f.failing_rows} rows, " f"samples {f.samples}")
         return len(self.rule_failures)
 
+    @keyword("Get Contract Rule Types")
+    def get_contract_rule_types(self):
+        """Rule types the loaded contract exercises (sorted)."""
+        return rules.contract_rule_types(self.contract)
+
     @keyword("Get Rule Failures")
-    def get_rule_failures(self):
+    def get_rule_failures(self, rule_type: "str | None" = None):
+        """All rule failures, or filtered to one rule type (e.g. not_null)."""
+        if rule_type is not None and rule_type not in rules.RULE_TYPES:
+            raise ValueError(
+                f"unknown rule type {rule_type!r}; expected one of {sorted(rules.RULE_TYPES)}"
+            )
         return [
             {
                 "rule_id": f.rule_id,
@@ -156,6 +172,7 @@ class ReconciliationLibrary:
                 "samples": f.samples,
             }
             for f in self.rule_failures
+            if rule_type is None or f.rule_id.split(":", 1)[0] == rule_type
         ]
 
     # ----- MVP-08: loader (recon_rw) ----------------------------------------
@@ -197,6 +214,15 @@ class ReconciliationLibrary:
         if n is None:
             raise RuntimeError("contract has no metadata.expected_row_count")
         return n
+
+    @keyword("Execute Read Only Sql")
+    def execute_read_only_sql(self, sql: str):
+        """Runs SQL on the read-only connection — write attempts must fail."""
+        cur = self._ensure_target().conn.cursor()
+        try:
+            cur.execute(sql)
+        finally:
+            cur.close()
 
     @keyword("Execute Write Sql")
     def execute_write_sql(self, sql: str):
@@ -267,14 +293,19 @@ class ReconciliationLibrary:
             ],
         }
 
+    @keyword("Get Transform Columns")
+    def get_transform_columns(self):
+        """Contract columns whose values are derived by a transform."""
+        return [c["name"] for c in self.contract.columns if "transform" in c]
+
     @keyword("Get Transform Diffs")
-    def get_transform_diffs(self):
+    def get_transform_diffs(self, column: "str | None" = None):
         """MVP-05: diffs on derived/transformed columns -> transform layer."""
-        transform_cols = [c["name"] for c in self.contract.columns if "transform" in c]
+        transform_cols = set(self.get_transform_columns())
         return [
             {"key": d.key, "column": d.column, "expected": str(d.expected), "actual": str(d.actual)}
             for d in self.recon_result.diffs
-            if d.column in transform_cols
+            if d.column in transform_cols and (column is None or d.column == column)
         ]
 
     # ----- MVP-07: run summary ------------------------------------------------
@@ -301,6 +332,12 @@ class ReconciliationLibrary:
         path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
         logger.info(f"run summary written to {path}")
         return str(path)
+
+    @keyword("Get Run Summary")
+    def get_run_summary(self, out_dir: str = "results"):
+        """Read back the run_summary.json audit artifact."""
+        path = Path(out_dir) / "run_summary.json"
+        return json.loads(path.read_text(encoding="utf-8"))
 
     @keyword("Close Target")
     def close_target(self):

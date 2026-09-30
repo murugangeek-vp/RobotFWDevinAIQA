@@ -102,7 +102,7 @@ def validate_target_schema_by_category(conn, contract: Contract) -> dict:
     Returns {aspect: [error strings]} for each aspect in SCHEMA_ASPECTS.
     If the table is missing, every aspect reports it — nothing is verifiable.
     """
-    errors = {a: [] for a in SCHEMA_ASPECTS}
+    errors: dict[str, list] = {a: [] for a in SCHEMA_ASPECTS}
     live = fetch_db_schema(conn, contract.schema, contract.table)
     if not live:
         msg = f"table {contract.schema}.{contract.table} does not exist"

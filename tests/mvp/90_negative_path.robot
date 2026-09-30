@@ -23,13 +23,13 @@ Detects Row Count Violation
     Should Not Be Empty    ${errors}
     Should Contain    ${errors}[-1]    row count
 
-Detects Exactly Five Data Quality Violations
+Detects Exactly Six Data Quality Violations
     Read Source    ${BAD_DQ_FILE}
     ${count}=    Run Data Quality Rules
-    Should Be Equal As Integers    ${count}    5
+    Should Be Equal As Integers    ${count}    6
     ${detail}=    Get Rule Failures
     ${ids}=    Evaluate    sorted(d["rule_id"] for d in ${detail})
-    Should Be Equal    ${ids}    ${{sorted(['allowed_values:status', 'range:balance', 'transform_input_not_null:email', 'type:customer_id', 'unique:customer_id'])}}
+    Should Be Equal    ${ids}    ${{sorted(['allowed_values:status', 'not_null:email', 'range:balance', 'transform_input_not_null:email', 'type:customer_id', 'unique:customer_id'])}}
 
 Detects Missing Record In Target
     Load Target From Source    ${SOURCE_FILE}
@@ -46,6 +46,13 @@ Detects Transform Layer Defect
     ${diffs}=    Get Transform Diffs
     ${cols}=    Evaluate    sorted(set(d["column"] for d in ${diffs}))
     Should Contain    ${cols}    email
+
+Read Only Role Cannot Mutate Target
+    [Documentation]    recon_ro is enforced read-only at session level —
+    ...    write attempts must be rejected before touching rows.
+    Connect Target Read Only
+    ${err}=    Run Keyword And Expect Error    *    Execute Read Only Sql    DELETE FROM public.customer WHERE false
+    Should Match Regexp    ${err}    read-only|permission denied
 
 *** Keywords ***
 Reload Clean Target
