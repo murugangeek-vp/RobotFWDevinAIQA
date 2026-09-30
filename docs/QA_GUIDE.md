@@ -55,7 +55,8 @@ logic** — change the contract and the validation follows.
 | `recon_rw` | Loader only | INSERT/UPDATE/DELETE/TRUNCATE on the recon tables |
 | `recon_ro` | All verification queries | **SELECT only** — read-only enforced at the DB role level |
 
-Credentials live in environment variables / GitHub secrets — never in the repo.
+Local credentials live in a git-ignored `.env` file; CI supplies them through
+environment variables / GitHub secrets. Never commit real passwords.
 
 ---
 
@@ -74,37 +75,95 @@ drop), see §4.
 
 ---
 
-## 4. How to run it yourself (local, ~2 minutes)
+## 4. How to run it yourself (PowerShell)
 
-Prereqs once: `uv venv .venv && uv pip install --python .venv/Scripts/python -r requirements.txt`,
-PostgreSQL `recon` running (e.g. the `recon-db` Docker container), and a `.env` file with the DB credentials
-(git-ignored; the library loads it automatically, so nothing needs to be set per terminal):
+Run these commands from the repository root, with PostgreSQL `recon` running on
+`localhost:5432` and the `recon_ro` / `recon_rw` roles already created.
+
+### Get the version that loads `.env`
+
+The automatic `.env` loading is in
+[PR #1](https://github.com/murugangeek-vp/RobotFWDevinAIQA/pull/1).
+Until that PR is merged, use its branch. Check for local changes before
+switching; an empty `git status --short` means your tracked files are clean:
 
 ```powershell
-copy .env.example .env   # then edit the two passwords
+git status --short
+git fetch origin
+git switch --track origin/devin/1790763979-dotenv-autoconnect
 ```
 
-Variables already set in the shell/CI take precedence over `.env`.
-Copy the file only once; subsequent runs use it automatically.
+If the branch already exists locally, run
+`git switch devin/1790763979-dotenv-autoconnect` instead of `git switch --track`.
+After the PR is merged, you can run `git switch main` and `git pull origin main`
+to get this change on main.
 
-Then:
+### Set up once
 
-```bash
-# Full suite — clean run, expect all PASS
-.venv/Scripts/robot -d results tests/mvp
+If Python dependencies are not installed yet, create the virtual environment
+once. Skip these commands if `.venv` is already set up:
 
-# Just the end-to-end pipeline (pre-load → load → post-load → summary)
-.venv/Scripts/robot -d results tests/mvp/06_pipeline.robot
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
 
-# Two suites together (or list any other .robot files)
-.venv/Scripts/robot -d results tests/mvp/01_header_metadata.robot tests/mvp/04_record_comparison.robot
+Create the git-ignored credentials file in the repository root and replace both
+password placeholders with the existing PostgreSQL role passwords:
+
+```powershell
+Copy-Item .env.example .env
+notepad .env
+Test-Path .env   # should print True
+```
+
+The file must contain all four keys (with real passwords in place of these
+placeholders):
+
+```text
+RECON_RO_USER=recon_ro
+RECON_RO_PASSWORD=<your RO role password>
+RECON_RW_USER=recon_rw
+RECON_RW_PASSWORD=<your RW role password>
+```
+
+Keep `.env` private. The library reads it on suite setup; no PowerShell
+password assignments or repeated installs are needed. Existing shell or CI
+environment variables take precedence over `.env`.
+
+### Run tests
+
+Use the virtual environment's Robot executable directly; no activation is
+required. Each command works in a new PowerShell terminal from the repo root:
+
+```powershell
+# Full suite
+.\.venv\Scripts\robot.exe -d results .\tests\mvp
+
+# One suite (record comparison)
+.\.venv\Scripts\robot.exe -d results .\tests\mvp\04_record_comparison.robot
+
+# Two or more suites
+.\.venv\Scripts\robot.exe -d results .\tests\mvp\01_header_metadata.robot .\tests\mvp\04_record_comparison.robot
 
 # One named test case
-.venv/Scripts/robot -d results --test "All Records Match On Key Comparison" tests/mvp/04_record_comparison.robot
+.\.venv\Scripts\robot.exe -d results --test "All Records Match On Key Comparison" .\tests\mvp\04_record_comparison.robot
 
-# Test a different source file (e.g. a new extract the team received)
-.venv/Scripts/robot -d results -v SOURCE_FILE:path/to/new_extract.csv tests/mvp
+# Multiple named test cases
+.\.venv\Scripts\robot.exe -d results --test "Header Matches Contract" --test "File Metadata Matches Contract" .\tests\mvp\01_header_metadata.robot
+
+# End-to-end pipeline
+.\.venv\Scripts\robot.exe -d results .\tests\mvp\06_pipeline.robot
+
+# Different source file
+.\.venv\Scripts\robot.exe -d results -v SOURCE_FILE:data/samples/customer.csv .\tests\mvp
 ```
+
+If a run still says `missing env vars RECON_RW_USER / RECON_RW_PASSWORD`, the
+checkout is running the old library: verify the branch above. If it instead
+says `Set RECON_RW_USER / RECON_RW_PASSWORD in the environment or the repo-root
+.env file`, check that `.env` is in this repository's root and contains both RW
+keys. Suite 04 loads data with `recon_rw` before comparing with `recon_ro`.
 
 Swap `-v ENV_FILE:config/environments/test.yaml` to point at another environment.
 
