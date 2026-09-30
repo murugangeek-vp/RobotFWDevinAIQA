@@ -150,7 +150,7 @@ required. Each command works in a new PowerShell terminal from the repo root:
 .\.venv\Scripts\robot.exe -d results .\tests\mvp\01_header_metadata.robot .\tests\mvp\04_record_comparison.robot
 
 # One named test case
-.\.venv\Scripts\robot.exe -d results --test "All Records Match On Key Comparison" .\tests\mvp\04_record_comparison.robot
+.\.venv\Scripts\robot.exe -d results --test "No Records Missing In Target" .\tests\mvp\04_record_comparison.robot
 
 # Multiple named test cases
 .\.venv\Scripts\robot.exe -d results --test "Header Matches Contract" --test "File Metadata Matches Contract" .\tests\mvp\01_header_metadata.robot
@@ -177,14 +177,20 @@ Swap `-v ENV_FILE:config/environments/test.yaml` to point at another environment
 ### Expected outcomes
 
 - **Clean data** → all suites PASS, exit code 0.
-- **Corrupted data** → FAIL with an *exact* diagnosis, e.g.:
+- **Corrupted data** → FAIL with an *exact* diagnosis on the specific rule-type
+  test, e.g. `02_data_quality` reports:
 
   ```
-  5 rule failures: [{rule_id: type:customer_id, failing_rows: 1, samples: ['abc']},
-                    {rule_id: unique:customer_id, failing_rows: 2, samples: ['12','12']},
-                    {rule_id: range:balance, ...}, {allowed_values:status, ...},
-                    {transform_input_not_null:email, ...}]
+  6 rule failures: type:customer_id (1 row, ['abc']),
+                   unique:customer_id (2 rows, ['12','12']),
+                   range:balance, allowed_values:status,
+                   transform_input_not_null:email, not_null:email
   ```
+
+  Each failure names the rule, the column, the affected row count, and sample
+  key values. Constraints on derived columns (e.g. the `email` regex) are
+  checked on the post-transform values too — a malformed input can't hide
+  behind a transform.
 
 `tests/mvp/90_negative_path.robot` is a built-in proof: it deliberately seeds
 defects (missing record, wrong transformation, bad data) and asserts the
@@ -230,13 +236,13 @@ Open in a browser after a run:
 
 | Suite | Answers |
 | --- | --- |
-| `01_header_metadata` | Is this file the shape we agreed on? Right columns, right count? |
-| `02_data_quality` | Is the incoming data itself clean? (types, ranges, enums, duplicates) |
-| `03_schema_validation` | Does the target table still match the contract? |
-| `04_record_comparison` | Did every record arrive, identical, keyed correctly? |
-| `05_transformations` | Did every derivation/mapping compute correctly? |
-| `06_pipeline` | The whole flow end-to-end — this is the release gate |
-| `90_negative_path` | Self-test: proves detection works (safe to run anytime) |
+| `01_header_metadata` | Is this file the shape we agreed on? Non-empty, right columns, right count? |
+| `02_data_quality` | Is the incoming data itself clean? One test per contract rule type: not-null, type, length, range, allowed values, regex, unique, transform inputs |
+| `03_schema_validation` | Does the target table still match the contract? Separate results for columns, types, nullability, primary key |
+| `04_record_comparison` | Did every record arrive? Separate results for row count, missing keys, extra keys, per-column value diffs |
+| `05_transformations` | Did every derivation/mapping compute correctly? One test per transform column |
+| `06_pipeline` | The whole flow end-to-end — release gate + loader completeness, audit summary, reload idempotency |
+| `90_negative_path` | Self-test: proves detection works and that `recon_ro` cannot write (safe to run anytime) |
 
 ---
 
