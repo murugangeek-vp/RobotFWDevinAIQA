@@ -3,7 +3,7 @@
 Tick a box when the item's **acceptance check** passes. GitHub renders `- [x]` as a green tick.
 Every stage ends with a **Stage gate** — do not start the next stage until its gate is ticked.
 
-Progress: Stage 0 ▸ 7/14 · Stage 1 ▸ 7/9 · Stage 2 ▸ 0/11 · Stage 3 ▸ 0/4
+Progress: Stage 0 ▸ 8/14 · Stage 1 ▸ 7/9 · Stage 2 ▸ 0/11 · Stage 3 ▸ 0/4
 
 ---
 
@@ -35,8 +35,9 @@ Progress: Stage 0 ▸ 7/14 · Stage 1 ▸ 7/9 · Stage 2 ▸ 0/11 · Stage 3 ▸
 - [x] **F-02** Pin the toolchain in `requirements.txt` (robotframework, robotframework-databaselibrary,
       psycopg2-binary, pandas, pyyaml, jsonschema) and a pinned Python version.
   _Check:_ clean venv install succeeds; `robot --version` prints. ✅ 7.2.2 on py3.11
-- [ ] **F-03** Quality gates: ruff/black/mypy + pre-commit + secret scanning (gitleaks).
-  _Check:_ `pre-commit run --all-files` passes.
+- [x] **F-03** Quality gates: ruff/black/mypy + pre-commit + secret scanning (gitleaks).
+  _Check:_ `pre-commit run --all-files` passes. ✅ ruff+ruff-format+mypy local;
+  gitleaks in CI (pre-commit build panics on Windows)
 - [ ] **F-04** CI skeleton that installs deps and runs a placeholder Robot suite.
   _Check:_ green build on a PR. (`.github/workflows/reconciliation.yml` written — pending first CI run)
 - [x] **F-05** Sample data: `data/samples/customer.csv` (100 valid rows) + corrupted variants

@@ -5,6 +5,7 @@ from typing import Any
 @dataclass
 class Contract:
     """Parsed data contract (config/contracts/*.yaml)."""
+
     raw: dict
     path: str
 

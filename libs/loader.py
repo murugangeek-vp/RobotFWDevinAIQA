@@ -6,10 +6,9 @@ Idempotent: the target table is truncated before each load so reruns are
 deterministic.
 """
 
-from decimal import Decimal
 from datetime import date, datetime
+from decimal import Decimal
 
-import psycopg2
 from psycopg2.extras import execute_values
 
 from libs.engine.schema import ddl_for_contract
@@ -20,13 +19,14 @@ def _to_python(v):
         return None
     try:
         import pandas as pd
+
         if pd.isna(v):
             return None
     except (TypeError, ValueError):
         pass
     if isinstance(v, Decimal):
         return float(v)
-    if isinstance(v, (date, datetime)):
+    if isinstance(v, date | datetime):
         return v
     if isinstance(v, str) and v.strip() == "":
         return None
@@ -67,21 +67,21 @@ def load_expected_rows(conn, contract, expected_df) -> int:
     if cur.fetchone()[0] == "on":
         cur.close()
         raise PermissionError(
-            "refusing to load under a read-only session (loader requires recon_rw)")
+            "refusing to load under a read-only session (loader requires recon_rw)"
+        )
 
     cur.execute(ddl_for_contract(contract))
-    cur.execute(f'TRUNCATE TABLE {contract.schema}.{contract.table}')
+    cur.execute(f"TRUNCATE TABLE {contract.schema}.{contract.table}")
 
     colnames = [c["name"] for c in contract.columns]
     coltypes = {c["name"]: c["type"] for c in contract.columns}
     rows = [
-        tuple(_coerce(row[c], coltypes[c]) for c in colnames)
-        for _, row in expected_df.iterrows()
+        tuple(_coerce(row[c], coltypes[c]) for c in colnames) for _, row in expected_df.iterrows()
     ]
     cols_sql = ", ".join(f'"{c}"' for c in colnames)
     execute_values(
         cur,
-        f'INSERT INTO {contract.schema}.{contract.table} ({cols_sql}) VALUES %s',
+        f"INSERT INTO {contract.schema}.{contract.table} ({cols_sql}) VALUES %s",
         rows,
     )
     conn.commit()

@@ -21,10 +21,21 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history for gitleaks
 
-      - uses: actions/setup-python@v5
+      - name: Secret scanning (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Quality gates (pre-commit)
+        run: |
+          pip install pre-commit
+          pre-commit run --all-files --show-diff-on-failure
 
       - name: Install dependencies
         run: pip install -r requirements.txt

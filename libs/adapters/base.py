@@ -25,7 +25,7 @@ class TargetAdapter(ABC):
     """Stable interface for targets. Verification paths must be read-only."""
 
     @abstractmethod
-    def read_table(self, table: str, columns: list = None):
+    def read_table(self, table: str, columns: "list | None" = None):
         """Return a pandas DataFrame of target rows."""
 
     @abstractmethod

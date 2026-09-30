@@ -24,8 +24,17 @@ LAST = ["Patel", "Kumar", "Chen", "Smith", "Ali", "Brown", "Diaz", "Khan", "Ross
 COUNTRIES = ["us", "gb", "in", "de", "fr", "jp", "br", "ca", "au", "nl"]
 STATUS = ["active", "inactive", "suspended"]
 
-HEADER = ["customer_id", "first_name", "last_name", "email", "dob",
-          "country", "balance", "status", "created_at"]
+HEADER = [
+    "customer_id",
+    "first_name",
+    "last_name",
+    "email",
+    "dob",
+    "country",
+    "balance",
+    "status",
+    "created_at",
+]
 
 
 def rows(n=100):
@@ -62,10 +71,10 @@ write("customer_bad_header.csv", clean, header=bad_header)
 
 # bad DQ: exactly 5 seeded violations, one per rule family
 bad_dq = [r[:] for r in clean]
-bad_dq[4][3] = ""            # row 5 : null email        -> transform_input_not_null
-bad_dq[6][6] = "-50.00"      # row 7 : balance < 0       -> range
-bad_dq[8][7] = "unknown"     # row 9 : bad status        -> allowed_values
-bad_dq[10][0] = "abc"        # row 11: non-integer id    -> type
+bad_dq[4][3] = ""  # row 5 : null email        -> transform_input_not_null
+bad_dq[6][6] = "-50.00"  # row 7 : balance < 0       -> range
+bad_dq[8][7] = "unknown"  # row 9 : bad status        -> allowed_values
+bad_dq[10][0] = "abc"  # row 11: non-integer id    -> type
 bad_dq[12][0] = bad_dq[11][0]  # row 13: duplicate key   -> unique
 write("customer_bad_dq.csv", bad_dq)
 

@@ -51,7 +51,7 @@ def ddl_for_contract(contract: Contract) -> str:
     keys = ", ".join(f'"{k}"' for k in contract.keys)
     parts.append(f"PRIMARY KEY ({keys})")
     cols = ", ".join(parts)
-    return f'CREATE TABLE IF NOT EXISTS {contract.schema}.{contract.table} ({cols})'
+    return f"CREATE TABLE IF NOT EXISTS {contract.schema}.{contract.table} ({cols})"
 
 
 def fetch_db_schema(conn, schema: str, table: str) -> list:
@@ -105,9 +105,7 @@ def validate_target_schema(conn, contract: Contract) -> list:
     live_names = [name for name, _, _ in live]
 
     if live_names != expected_names:
-        errors.append(
-            f"column order/count mismatch: expected {expected_names}, got {live_names}"
-        )
+        errors.append(f"column order/count mismatch: expected {expected_names}, got {live_names}")
 
     for col in contract.columns:
         name = col["name"]

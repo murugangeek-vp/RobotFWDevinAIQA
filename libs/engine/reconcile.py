@@ -1,17 +1,18 @@
 import csv
 import re
 from datetime import datetime
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
 import pandas as pd
 
 from libs.engine.models import ColumnDiff, Contract, ReconResult
 
-_SAFE_FUNCS = {
+_SAFE_FUNCS: dict = {
     "lower": lambda s: str(s).lower(),
     "upper": lambda s: str(s).upper(),
     "round": lambda v, nd=0: Decimal(str(v)).quantize(
-        Decimal(1).scaleb(-int(nd)), rounding=ROUND_HALF_UP),
+        Decimal(1).scaleb(-int(nd)), rounding=ROUND_HALF_UP
+    ),
     "strip": lambda s: str(s).strip(),
 }
 _FUNC_RE = re.compile(r"^(\w+)\((.*)\)$")
@@ -27,7 +28,7 @@ def validate_csv_header(path: str, contract: Contract) -> list:
     errors = []
     if len(header) != len(expected):
         errors.append(f"header column count: expected {len(expected)}, got {len(header)}")
-    for i, (exp, act) in enumerate(zip(expected, header)):
+    for i, (exp, act) in enumerate(zip(expected, header, strict=False)):
         if exp != act:
             errors.append(f"header column {i + 1}: expected '{exp}', got '{act}'")
     return errors
@@ -39,7 +40,8 @@ def validate_csv_metadata(path: str, contract: Contract) -> list:
     errors = []
     encoding = meta.get("encoding", "utf-8")
     try:
-        text = open(path, encoding=encoding).read()
+        with open(path, encoding=encoding) as fh:
+            text = fh.read()
     except UnicodeDecodeError as e:
         return [f"file not decodable as {encoding}: {e}"]
     delim = meta.get("delimiter", ",")
@@ -73,9 +75,11 @@ def apply_transform(expr: str, row: pd.Series):
             else:
                 args.append(a.strip("'\""))
         return _SAFE_FUNCS[fname](*args)
+
     # template: substitute {col} with row values (funcs may wrap placeholders)
     def _sub(match):
         return "" if pd.isna(row.get(match.group(1))) else str(row[match.group(1)])
+
     rendered = _PLACEHOLDER_RE.sub(_sub, expr)
     m2 = _FUNC_RE.match(rendered)
     if m2 and m2.group(1) in _SAFE_FUNCS:
@@ -91,7 +95,8 @@ def expected_target_rows(source_df: pd.DataFrame, contract: Contract) -> pd.Data
     for col in contract.columns:
         if "transform" in col:
             out[col["name"]] = source_df.apply(
-                lambda r: apply_transform(col["transform"], r), axis=1)
+                lambda r, c=col: apply_transform(c["transform"], r), axis=1
+            )
         else:
             out[col["name"]] = source_df[col["source_name"]]
     return pd.DataFrame(out)
@@ -126,12 +131,20 @@ def normalize(v, col: dict):
 
 
 def _isna(v) -> bool:
-    return v is None or (isinstance(v, float) and pd.isna(v)) or pd.isna(v) is True \
+    return (
+        v is None
+        or (isinstance(v, float) and pd.isna(v))
+        or pd.isna(v) is True
         or (isinstance(v, str) and v.strip() == "")
+    )
 
 
-def compare(expected_df: pd.DataFrame, actual_df: pd.DataFrame, contract: Contract,
-            columns: list = None) -> ReconResult:
+def compare(
+    expected_df: pd.DataFrame,
+    actual_df: pd.DataFrame,
+    contract: Contract,
+    columns: "list | None" = None,
+) -> ReconResult:
     """MVP-04: key-based record comparison with per-column diffs."""
     keys = contract.keys
     compare_cols = columns or [c["name"] for c in contract.columns]

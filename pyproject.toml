@@ -1,0 +1,20 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = [".venv", "results*", "data/samples"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+ignore = ["E501"]   # line length handled by formatter
+
+[tool.ruff.lint.per-file-ignores]
+# sys.path bootstrap must precede package imports (Robot loads the library by path)
+"libs/robot/ReconciliationLibrary.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "."
+exclude = ["\\.venv", "results", "data/samples", "scripts"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
