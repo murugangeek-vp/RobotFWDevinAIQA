@@ -34,7 +34,7 @@ def load_credentials(path: Path) -> None:
     """Load local database credentials when they are absent from the environment."""
     if not path.is_file():
         return
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -42,15 +42,21 @@ def load_credentials(path: Path) -> None:
         key = key.strip()
         if (
             key
-            in {
+            not in {
                 "RECON_RO_USER",
                 "RECON_RO_PASSWORD",
                 "RECON_RW_USER",
                 "RECON_RW_PASSWORD",
             }
-            and key not in os.environ
+            or key in os.environ
         ):
-            os.environ[key] = value.strip().removeprefix('"').removesuffix('"')
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        else:
+            value = value.split(" #", 1)[0].rstrip()
+        os.environ[key] = value
 
 
 class ReconciliationLibrary:

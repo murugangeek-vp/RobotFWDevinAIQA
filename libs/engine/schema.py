@@ -137,9 +137,7 @@ def validate_target_schema_by_category(conn, contract: Contract) -> dict:
 
     pk = fetch_primary_key(conn, contract.schema, contract.table)
     if pk != contract.keys:
-        errors["primary_key"].append(
-            f"primary key mismatch: expected {contract.keys}, got {pk}"
-        )
+        errors["primary_key"].append(f"primary key mismatch: expected {contract.keys}, got {pk}")
     return errors
 
 
