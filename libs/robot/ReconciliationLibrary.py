@@ -191,6 +191,13 @@ class ReconciliationLibrary:
     def get_target_count(self):
         return self._ensure_target().row_count(self.contract.table)
 
+    @keyword("Get Expected Row Count")
+    def get_expected_row_count(self):
+        n = self.contract.metadata.get("expected_row_count")
+        if n is None:
+            raise RuntimeError("contract has no metadata.expected_row_count")
+        return n
+
     @keyword("Execute Write Sql")
     def execute_write_sql(self, sql: str):
         """Write path for negative-path seeding ONLY — uses recon_rw, never ro."""
@@ -211,11 +218,23 @@ class ReconciliationLibrary:
     # ----- MVP-03: schema validation -----------------------------------------
 
     @keyword("Get Schema Errors")
-    def get_schema_errors(self):
-        self.schema_errors = schema.validate_target_schema(
+    def get_schema_errors(self, category: "str | None" = None):
+        """All schema errors, or just one aspect: columns|types|nullability|primary_key."""
+        by_cat = schema.validate_target_schema_by_category(
             self._ensure_target().conn, self.contract
         )
-        return self.schema_errors
+        self.schema_errors = []
+        for errs in by_cat.values():
+            for e in errs:
+                if e not in self.schema_errors:
+                    self.schema_errors.append(e)
+        if category is None:
+            return self.schema_errors
+        if category not in by_cat:
+            raise ValueError(
+                f"unknown schema aspect {category!r}; expected one of {sorted(by_cat)}"
+            )
+        return by_cat[category]
 
     # ----- MVP-04 / MVP-05: comparison ----------------------------------------
 

@@ -10,8 +10,7 @@ ${SOURCE_FILE}    ${ROOT}${/}data${/}samples${/}customer.csv
 
 *** Test Cases ***
 Target Row Count Matches Source
-    ${count}=    Get Target Count
-    Should Be Equal As Integers    ${count}    100
+    Validate Target Row Count
 
 All Records Match On Key Comparison
     Compare Target Records

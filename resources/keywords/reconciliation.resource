@@ -26,10 +26,23 @@ Load Target From Source
     Connect Target Read Only
     RETURN    ${loaded}
 
+Validate Target Row Count
+    [Documentation]    MVP-04: target count vs contract metadata.expected_row_count.
+    ${actual}=      Get Target Count
+    ${expected}=    Get Expected Row Count
+    Should Be Equal As Integers    ${actual}    ${expected}
+    ...    msg=target count ${actual} != contract expected_row_count ${expected}
+
 Validate Target Schema
     [Documentation]    MVP-03: live information_schema vs contract (as recon_ro).
     ${errors}=    Get Schema Errors
     Should Be Empty    ${errors}    msg=Schema errors: ${errors}
+
+Validate Schema Aspect
+    [Documentation]    MVP-03: one aspect — columns, types, nullability, primary_key.
+    [Arguments]    ${aspect}
+    ${errors}=    Get Schema Errors    ${aspect}
+    Should Be Empty    ${errors}    msg=${aspect} errors: ${errors}
 
 Compare Target Records
     [Documentation]    MVP-04: key-based comparison; fails with diff samples.

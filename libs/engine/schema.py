@@ -93,37 +93,62 @@ def fetch_primary_key(conn, schema: str, table: str) -> list:
     return rows
 
 
-def validate_target_schema(conn, contract: Contract) -> list:
-    """Compare live DB schema to the contract. Returns a list of error strings."""
-    errors = []
+SCHEMA_ASPECTS = ("columns", "types", "nullability", "primary_key")
+
+
+def validate_target_schema_by_category(conn, contract: Contract) -> dict:
+    """Compare live DB schema to the contract.
+
+    Returns {aspect: [error strings]} for each aspect in SCHEMA_ASPECTS.
+    If the table is missing, every aspect reports it — nothing is verifiable.
+    """
+    errors = {a: [] for a in SCHEMA_ASPECTS}
     live = fetch_db_schema(conn, contract.schema, contract.table)
     if not live:
-        return [f"table {contract.schema}.{contract.table} does not exist"]
+        msg = f"table {contract.schema}.{contract.table} does not exist"
+        for a in SCHEMA_ASPECTS:
+            errors[a].append(msg)
+        return errors
 
     live_by_name = {name: (dtype, nullable) for name, dtype, nullable in live}
     expected_names = [c["name"] for c in contract.columns]
     live_names = [name for name, _, _ in live]
 
     if live_names != expected_names:
-        errors.append(f"column order/count mismatch: expected {expected_names}, got {live_names}")
+        errors["columns"].append(
+            f"column order/count mismatch: expected {expected_names}, got {live_names}"
+        )
 
     for col in contract.columns:
         name = col["name"]
         if name not in live_by_name:
-            errors.append(f"missing column '{name}'")
+            errors["columns"].append(f"missing column '{name}'")
             continue
         dtype, nullable = live_by_name[name]
         allowed = PG_TYPE_ALIASES[col["type"]]
         if dtype not in allowed:
-            errors.append(
+            errors["types"].append(
                 f"column '{name}' type mismatch: expected {col['type']} ({sorted(allowed)}), got {dtype}"
             )
         if nullable != col["nullable"]:
-            errors.append(
+            errors["nullability"].append(
                 f"column '{name}' nullability mismatch: expected nullable={col['nullable']}, got {nullable}"
             )
 
     pk = fetch_primary_key(conn, contract.schema, contract.table)
     if pk != contract.keys:
-        errors.append(f"primary key mismatch: expected {contract.keys}, got {pk}")
+        errors["primary_key"].append(
+            f"primary key mismatch: expected {contract.keys}, got {pk}"
+        )
+    return errors
+
+
+def validate_target_schema(conn, contract: Contract) -> list:
+    """Flat, de-duplicated list of schema errors across all aspects."""
+    by_cat = validate_target_schema_by_category(conn, contract)
+    errors = []
+    for aspect in SCHEMA_ASPECTS:
+        for e in by_cat[aspect]:
+            if e not in errors:
+                errors.append(e)
     return errors
