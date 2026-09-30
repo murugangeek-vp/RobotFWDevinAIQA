@@ -24,8 +24,9 @@ import yaml
 from robot.api import logger
 from robot.api.deco import keyword
 
-from libs.adapters.csv_source import CsvSource
-from libs.adapters.postgres_target import PostgresTarget, connect_rw
+from libs.adapters import conformance
+from libs.adapters.base import TargetAdapter
+from libs.adapters.registry import create_source, create_target, create_writer
 from libs.engine import reconcile, rules, schema
 from libs.loader import load_expected_rows
 
@@ -98,15 +99,10 @@ class ReconciliationLibrary:
 
     @keyword("Read Source")
     def read_source(self, source_file: "str | None" = None):
-        src = self.contract.raw["source"]
-        path = source_file or src["path"]
-        adapter = CsvSource(
-            path,
-            encoding=src.get("encoding", "utf-8"),
-            delimiter=src.get("delimiter", ","),
-            header=src.get("header", True),
-        )
-        self.source_df = adapter.read_batch()
+        cfg = dict(self.contract.raw["source"])
+        if source_file:
+            cfg["path"] = source_file
+        self.source_df = create_source(cfg).read_batch()
         self.expected_df = reconcile.expected_target_rows(self.source_df, self.contract)
         logger.info(f"source rows: {len(self.source_df)}")
         return len(self.source_df)
@@ -187,7 +183,7 @@ class ReconciliationLibrary:
     def load_source_into_target(self):
         user, pw = self._creds("RW")
         t = self._target_kwargs()
-        conn = connect_rw(user=user, password=pw, **{k: v for k, v in t.items() if k != "schema"})
+        conn = create_writer(self.env["target"], user=user, password=pw)
         try:
             self.loaded_count = load_expected_rows(conn, self.contract, self.expected_df)
         finally:
@@ -201,10 +197,10 @@ class ReconciliationLibrary:
     def connect_target_read_only(self):
         self.close_target()
         user, pw = self._creds("RO")
-        self.target = PostgresTarget(user=user, password=pw, **self._target_kwargs())
+        self.target = create_target(self.env["target"], user=user, password=pw)
         return True
 
-    def _ensure_target(self) -> PostgresTarget:
+    def _ensure_target(self) -> TargetAdapter:
         if self.target is None or self.target.conn.closed:
             self.connect_target_read_only()
         assert self.target is not None
@@ -234,11 +230,7 @@ class ReconciliationLibrary:
     def execute_write_sql(self, sql: str):
         """Write path for negative-path seeding ONLY — uses recon_rw, never ro."""
         user, pw = self._creds("RW")
-        conn = connect_rw(
-            user=user,
-            password=pw,
-            **{k: v for k, v in self._target_kwargs().items() if k != "schema"},
-        )
+        conn = create_writer(self.env["target"], user=user, password=pw)
         try:
             cur = conn.cursor()
             cur.execute(sql)
@@ -344,6 +336,21 @@ class ReconciliationLibrary:
         """Read back the run_summary.json audit artifact."""
         path = Path(out_dir) / "run_summary.json"
         return json.loads(path.read_text(encoding="utf-8"))
+
+    # ----- PROD-01: adapter conformance --------------------------------------
+
+    @keyword("Check Source Adapter")
+    def check_source_adapter(self, source_file: "str | None" = None):
+        """Conformance-check the source adapter resolved from the contract."""
+        cfg = dict(self.contract.raw["source"])
+        if source_file:
+            cfg["path"] = source_file
+        return conformance.check_source(create_source(cfg))
+
+    @keyword("Check Target Adapter")
+    def check_target_adapter(self):
+        """Conformance-check the read-only target adapter from env config."""
+        return conformance.check_target(self._ensure_target(), self.contract.table)
 
     @keyword("Close Target")
     def close_target(self):

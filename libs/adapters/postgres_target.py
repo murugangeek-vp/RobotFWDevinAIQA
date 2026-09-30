@@ -2,8 +2,10 @@ import pandas as pd
 import psycopg2
 
 from libs.adapters.base import TargetAdapter
+from libs.adapters.registry import register_target, register_writer
 
 
+@register_target("postgres")
 class PostgresTarget(TargetAdapter):
     """Read-only verification adapter. Connect as recon_ro (SELECT-only role)."""
 
@@ -48,6 +50,7 @@ class PostgresTarget(TargetAdapter):
         self.conn.close()
 
 
+@register_writer("postgres")
 def connect_rw(host: str, port: int, database: str, user: str, password: str):
     """Read-write connection for the loader only (recon_rw role)."""
     return psycopg2.connect(host=host, port=port, dbname=database, user=user, password=password)

@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any
 
 
 class SourceAdapter(ABC):
@@ -22,7 +23,13 @@ class SourceAdapter(ABC):
 
 
 class TargetAdapter(ABC):
-    """Stable interface for targets. Verification paths must be read-only."""
+    """Stable interface for targets. Verification paths must be read-only.
+
+    Concrete adapters must also expose `.conn` — the underlying DBAPI
+    connection used by schema/PK introspection helpers (read-only session).
+    """
+
+    conn: Any
 
     @abstractmethod
     def read_table(self, table: str, columns: "list | None" = None):

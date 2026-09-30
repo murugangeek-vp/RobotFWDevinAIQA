@@ -123,11 +123,11 @@ Authoring loop for every item below:
 ## Stage 2 — Production hardening
 _Start only after the Stage 1 gate is ticked._
 
-- [ ] **PROD-01 Adapter architecture**
-  - [ ] `SourceAdapter` / `TargetAdapter` ABCs: `read_batch`, `row_count`, `schema`, `close`.
-  - [ ] Config-driven adapter registry; CSV + PostgreSQL refactored onto it.
-  - [ ] Shared adapter conformance suite.
-  _Check:_ a stub adapter plugs in with zero engine changes.
+- [x] **PROD-01 Adapter architecture**
+  - [x] `SourceAdapter` / `TargetAdapter` ABCs: `read_batch`, `row_count`, `schema`, `close`.
+  - [x] Config-driven adapter registry; CSV + PostgreSQL refactored onto it.
+  - [x] Shared adapter conformance suite.
+  _Check:_ a stub adapter plugs in with zero engine changes. ✅ (`libs/adapters/registry.py`, `tests/adapters/01_conformance.robot`)
 
 - [ ] **PROD-02 S3 source** — bucket/prefix/versioned reads, streaming, IAM read-only role.
   _Check:_ conformance suite green against a test bucket.

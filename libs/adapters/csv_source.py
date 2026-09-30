@@ -1,8 +1,10 @@
 import pandas as pd
 
 from libs.adapters.base import SourceAdapter
+from libs.adapters.registry import register_source
 
 
+@register_source("csv")
 class CsvSource(SourceAdapter):
     def __init__(
         self,
