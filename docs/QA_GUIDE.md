@@ -77,12 +77,15 @@ drop), see §4.
 ## 4. How to run it yourself (local, ~2 minutes)
 
 Prereqs once: `uv venv .venv && uv pip install --python .venv/Scripts/python -r requirements.txt`,
-Docker container `recon-db` running, and these env vars set:
+PostgreSQL `recon` running (e.g. the `recon-db` Docker container), and a `.env` file with the DB credentials
+(git-ignored; the library loads it automatically, so nothing needs to be set per terminal):
 
 ```powershell
-$env:RECON_RO_USER="recon_ro"; $env:RECON_RO_PASSWORD="<ro password>"
-$env:RECON_RW_USER="recon_rw"; $env:RECON_RW_PASSWORD="<rw password>"
+copy .env.example .env   # then edit the two passwords
 ```
+
+Variables already set in the shell/CI take precedence over `.env`.
+Copy the file only once; subsequent runs use it automatically.
 
 Then:
 
@@ -92,6 +95,12 @@ Then:
 
 # Just the end-to-end pipeline (pre-load → load → post-load → summary)
 .venv/Scripts/robot -d results tests/mvp/06_pipeline.robot
+
+# Two suites together (or list any other .robot files)
+.venv/Scripts/robot -d results tests/mvp/01_header_metadata.robot tests/mvp/04_record_comparison.robot
+
+# One named test case
+.venv/Scripts/robot -d results --test "All Records Match On Key Comparison" tests/mvp/04_record_comparison.robot
 
 # Test a different source file (e.g. a new extract the team received)
 .venv/Scripts/robot -d results -v SOURCE_FILE:path/to/new_extract.csv tests/mvp

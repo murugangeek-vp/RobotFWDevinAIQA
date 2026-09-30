@@ -28,6 +28,15 @@ uv venv .venv && uv pip install --python .venv/Scripts/python -r requirements.tx
 
 ## Credentials (never committed)
 
+Copy `.env.example` to `.env` (git-ignored) and fill in the passwords — the
+library loads it automatically on suite setup:
+
+```bash
+cp .env.example .env   # Windows: copy .env.example .env
+```
+
+Variables already set in the environment (e.g. CI secrets) override `.env`:
+
 ```bash
 export RECON_RO_USER=recon_ro   RECON_RO_PASSWORD=...
 export RECON_RW_USER=recon_rw   RECON_RW_PASSWORD=...

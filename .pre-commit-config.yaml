@@ -20,7 +20,7 @@ repos:
     rev: v1.14.1
     hooks:
       - id: mypy
-        additional_dependencies: [pyyaml, types-pyyaml, pandas-stubs]
+        additional_dependencies: [pyyaml, types-pyyaml, pandas-stubs, numpy==1.26.4]
         files: ^libs/
         args: [--config-file=pyproject.toml]
   # NOTE: gitleaks runs in CI (.github/workflows/reconciliation.yml) — the

@@ -4,7 +4,8 @@ Wraps libs/engine + libs/adapters so .robot suites stay declarative:
   Load Environment -> Load Contract -> Read Source -> run checks ->
   Load Source Into Target -> post-load checks -> Write Run Summary.
 
-Credentials come ONLY from environment variables:
+Credentials come from environment variables, falling back to a git-ignored
+.env file in the repo root (see .env.example):
   RECON_RO_USER / RECON_RO_PASSWORD  (verification, SELECT-only)
   RECON_RW_USER / RECON_RW_PASSWORD  (loader)
 """
@@ -27,6 +28,29 @@ from libs.adapters.csv_source import CsvSource
 from libs.adapters.postgres_target import PostgresTarget, connect_rw
 from libs.engine import reconcile, rules, schema
 from libs.loader import load_expected_rows
+
+
+def load_credentials(path: Path) -> None:
+    """Load local database credentials when they are absent from the environment."""
+    if not path.is_file():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if (
+            key
+            in {
+                "RECON_RO_USER",
+                "RECON_RO_PASSWORD",
+                "RECON_RW_USER",
+                "RECON_RW_PASSWORD",
+            }
+            and key not in os.environ
+        ):
+            os.environ[key] = value.strip().removeprefix('"').removesuffix('"')
 
 
 class ReconciliationLibrary:
@@ -52,8 +76,8 @@ class ReconciliationLibrary:
 
     @keyword("Load Environment")
     def load_environment(self, env_file: str):
-        """Load config/environments/<name>.yaml. Credentials are read from
-        RECON_RO_USER / RECON_RO_PASSWORD / RECON_RW_USER / RECON_RW_PASSWORD."""
+        """Load configuration and optional local database credentials."""
+        load_credentials(Path(_REPO_ROOT) / ".env")
         self.env = yaml.safe_load(Path(env_file).read_text(encoding="utf-8"))
         self.env_name = self.env["environment"]
         logger.info(f"environment: {self.env_name}")
@@ -87,7 +111,10 @@ class ReconciliationLibrary:
         user = os.environ.get(f"RECON_{role}_USER")
         pw = os.environ.get(f"RECON_{role}_PASSWORD")
         if not user or not pw:
-            raise RuntimeError(f"missing env vars RECON_{role}_USER / RECON_{role}_PASSWORD")
+            raise RuntimeError(
+                f"Set RECON_{role}_USER / RECON_{role}_PASSWORD "
+                "in the environment or the repo-root .env file"
+            )
         return user, pw
 
     def _target_kwargs(self):
@@ -149,13 +176,20 @@ class ReconciliationLibrary:
 
     @keyword("Connect Target Read Only")
     def connect_target_read_only(self):
+        self.close_target()
         user, pw = self._creds("RO")
         self.target = PostgresTarget(user=user, password=pw, **self._target_kwargs())
         return True
 
+    def _ensure_target(self) -> PostgresTarget:
+        if self.target is None or self.target.conn.closed:
+            self.connect_target_read_only()
+        assert self.target is not None
+        return self.target
+
     @keyword("Get Target Count")
     def get_target_count(self):
-        return self.target.row_count(self.contract.table)
+        return self._ensure_target().row_count(self.contract.table)
 
     @keyword("Execute Write Sql")
     def execute_write_sql(self, sql: str):
@@ -178,14 +212,16 @@ class ReconciliationLibrary:
 
     @keyword("Get Schema Errors")
     def get_schema_errors(self):
-        self.schema_errors = schema.validate_target_schema(self.target.conn, self.contract)
+        self.schema_errors = schema.validate_target_schema(
+            self._ensure_target().conn, self.contract
+        )
         return self.schema_errors
 
     # ----- MVP-04 / MVP-05: comparison ----------------------------------------
 
     @keyword("Compare Records")
     def compare_records(self, columns: "list | None" = None):
-        actual = self.target.read_table(
+        actual = self._ensure_target().read_table(
             self.contract.table, columns=[c["name"] for c in self.contract.columns]
         )
         self.recon_result = reconcile.compare(
@@ -250,5 +286,6 @@ class ReconciliationLibrary:
     @keyword("Close Target")
     def close_target(self):
         if self.target:
-            self.target.close()
+            if not self.target.conn.closed:
+                self.target.close()
             self.target = None
