@@ -1,0 +1,12 @@
+environment: dev
+target:
+  type: postgres
+  host: localhost
+  port: 5432
+  database: recon
+  schema: public
+  # Credentials come from environment variables only — never stored here:
+  #   read-only verification : RECON_RO_USER / RECON_RO_PASSWORD
+  #   loader (read-write)    : RECON_RW_USER / RECON_RW_PASSWORD
+source:
+  contract: config/contracts/customer.yaml

@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "robotframework": {
+      "command": "robotmcp",
+      "args": []
+    },
+    "postgres": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-e", "DATABASE_URI",
+        "mcp/postgres"
+      ],
+      "env": {
+        "DATABASE_URI": "${RECON_RO_DSN}"
+      }
+    }
+  }
+}

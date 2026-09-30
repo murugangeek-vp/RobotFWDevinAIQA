@@ -1,0 +1,10 @@
+environment: test
+target:
+  type: postgres
+  host: localhost          # override for shared test DB when provisioned
+  port: 5432
+  database: recon
+  schema: public
+  # Credentials: RECON_RO_USER / RECON_RO_PASSWORD, RECON_RW_USER / RECON_RW_PASSWORD
+source:
+  contract: config/contracts/customer.yaml

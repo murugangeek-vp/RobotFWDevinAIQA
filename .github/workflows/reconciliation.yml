@@ -1,0 +1,63 @@
+name: reconciliation
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 2 * * *"   # nightly run against the test database
+
+jobs:
+  mvp:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Provision recon database and roles
+        run: |
+          export PGPASSWORD=postgres_ci
+          psql -h localhost -U postgres -c "CREATE DATABASE recon;"
+          psql -h localhost -U postgres -d recon <<'SQL'
+            CREATE ROLE recon_rw LOGIN PASSWORD '${{ secrets.RECON_RW_PASSWORD }}';
+            CREATE ROLE recon_ro LOGIN PASSWORD '${{ secrets.RECON_RO_PASSWORD }}';
+            GRANT CONNECT ON DATABASE recon TO recon_rw, recon_ro;
+            GRANT USAGE, CREATE ON SCHEMA public TO recon_rw;
+            GRANT USAGE ON SCHEMA public TO recon_ro;
+            GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA public TO recon_rw;
+            GRANT SELECT ON ALL TABLES IN SCHEMA public TO recon_ro;
+            ALTER DEFAULT PRIVILEGES FOR ROLE recon_rw IN SCHEMA public GRANT SELECT ON TABLES TO recon_ro;
+          SQL
+
+      - name: Run MVP reconciliation suites
+        env:
+          RECON_RO_USER: recon_ro
+          RECON_RO_PASSWORD: ${{ secrets.RECON_RO_PASSWORD }}
+          RECON_RW_USER: recon_rw
+          RECON_RW_PASSWORD: ${{ secrets.RECON_RW_PASSWORD }}
+        run: robot -d results tests/mvp
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: robot-reports
+          path: |
+            results/report.html
+            results/log.html
+            results/output.xml
+            results/run_summary.json
