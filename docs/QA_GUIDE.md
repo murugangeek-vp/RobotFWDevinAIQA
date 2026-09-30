@@ -86,6 +86,7 @@ copy .env.example .env   # then edit the two passwords
 
 Variables already set in the shell/CI take precedence over `.env`.
 Copy the file only once; subsequent runs use it automatically.
+![RunTestCaseInTerminal](image-3.png)
 
 Then:
 
@@ -107,6 +108,10 @@ Then:
 ```
 
 Swap `-v ENV_FILE:config/environments/test.yaml` to point at another environment.
+
+![LogPreview](image.png)
+![LogTestOutput](image-1.png)
+![Report](image-2.png)
 
 ### Expected outcomes
 
