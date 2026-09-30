@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "robotframework": {
-      "command": "robotmcp",
-      "args": []
+      "command": "uvx",
+      "args": ["--from", "rf-mcp[database,api]", "robotmcp"]
     },
     "postgres": {
       "command": "docker",

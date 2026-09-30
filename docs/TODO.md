@@ -3,7 +3,7 @@
 Tick a box when the item's **acceptance check** passes. GitHub renders `- [x]` as a green tick.
 Every stage ends with a **Stage gate** — do not start the next stage until its gate is ticked.
 
-Progress: Stage 0 ▸ 8/14 · Stage 1 ▸ 7/9 · Stage 2 ▸ 0/11 · Stage 3 ▸ 0/4
+Progress: Stage 0 ▸ 9/14 · Stage 1 ▸ 7/9 · Stage 2 ▸ 0/11 · Stage 3 ▸ 0/4
 
 ---
 
@@ -14,6 +14,7 @@ Progress: Stage 0 ▸ 8/14 · Stage 1 ▸ 7/9 · Stage 2 ▸ 0/11 · Stage 3 ▸
   _Check:_ `python --version` → 3.12.x, `uv --version` resolves. ✅ 3.12.10
 - [x] **M-02** Install rf-mcp: `uv tool install "rf-mcp[database,api]"`.
   _Check:_ `robotmcp --help` runs; `robotmcp doctor` reports healthy. ✅
+  (also installed locally: rf-mcp 0.36.0, doctor OK, DB+API libs present)
 - [x] **M-03** Register the **Robot Framework MCP server** (STDIO, `robotmcp` executable).
   _Check:_ server lists its 19 tools (`analyze_scenario`, `execute_step`, `build_test_suite`, `run_test_suite`, …). ✅
 - [x] **M-04** Install PostgreSQL 16 and create the `recon` database with `recon_rw` / `recon_ro` roles.
@@ -22,9 +23,10 @@ Progress: Stage 0 ▸ 8/14 · Stage 1 ▸ 7/9 · Stage 2 ▸ 0/11 · Stage 3 ▸
 - [ ] **M-05** Register the **PostgreSQL MCP server** and have a person enter the `recon_ro`
       connection credentials in MCP settings, then enable it.
   _Check:_ the server appears enabled and an `information_schema` query returns rows.
-- [ ] **M-06** Commit `.mcp.json` so every engineer's agent loads the same two servers.
+- [x] **M-06** Commit `.mcp.json` so every engineer's agent loads the same two servers.
   _Check:_ a fresh clone + agent restart exposes both servers; the file contains no
-  credentials, passwords, or DSNs (connection details stay in MCP settings).
+  credentials, passwords, or DSNs (connection details stay in MCP settings). ✅
+  committed, credential-free; `robotmcp` launched via `uvx` for portability
 - [x] **M-07** Document MCP usage rules in `docs/MCP_SETUP.md`: read-only Postgres,
       `find_keywords` before authoring, `build_test_suite` before committing a `.robot`.
   _Check:_ doc reviewed and merged. ✅ written (merge pending first commit)
