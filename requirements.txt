@@ -2,6 +2,8 @@ robotframework==7.2.2
 robotframework-databaselibrary==2.1.4
 psycopg2-binary==2.9.10
 pandas==2.2.3
-pyyaml==6.0.2
-jsonschema==4.23.0
+pyyaml==6.0.3
+jsonschema==4.26.0
 requests==2.32.4
+boto3==1.43.106
+moto[s3,server]==5.2.3  # PROD-02 test stub (server extra runs the in-process moto)

@@ -44,6 +44,7 @@ def _ensure_builtin():
     import libs.adapters.api_source  # noqa: F401
     import libs.adapters.csv_source  # noqa: F401
     import libs.adapters.postgres_target  # noqa: F401
+    import libs.adapters.s3_source  # noqa: F401
 
 
 def _ctor_kwargs(fn, cfg: dict) -> dict:

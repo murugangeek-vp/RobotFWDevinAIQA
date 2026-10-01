@@ -132,8 +132,11 @@ _Start only after the Stage 1 gate is ticked._
   - [x] Shared adapter conformance suite.
   _Check:_ a stub adapter plugs in with zero engine changes. ✅ (`libs/adapters/registry.py`, `tests/adapters/01_conformance.robot`)
 
-- [ ] **PROD-02 S3 source** — bucket/prefix/versioned reads, streaming, IAM read-only role.
-  _Check:_ conformance suite green against a test bucket.
+- [x] **PROD-02 S3 source** — key/prefix reads, versioned reads (`version_id`), streamed
+      bodies, creds via standard AWS chain (grant s3:GetObject + s3:ListBucket only).
+  _Check:_ conformance suite green against a test bucket. ✅
+  (`libs/adapters/s3_source.py`, `tests/s3/01_s3_source.robot` — 8 tests incl. a
+  versioned-read proof and cross-source recon; stub: in-process moto)
 
 - [x] **PROD-03 API source** — authenticated REST reads (bearer via `token_env`), page-number
       pagination, retry/backoff with `Retry-After` honor, unreachable-endpoint reporting.

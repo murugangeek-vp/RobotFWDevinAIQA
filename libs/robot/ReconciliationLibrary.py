@@ -81,6 +81,7 @@ class ReconciliationLibrary:
         self.loaded_count = 0
         self.run_status = "UNKNOWN"
         self._api_proc = None  # test-support stub server process
+        self._s3_server = None  # test-support moto server
 
     # ----- setup -----------------------------------------------------------
 
@@ -394,6 +395,52 @@ class ReconciliationLibrary:
             except subprocess.TimeoutExpired:
                 self._api_proc.kill()
             self._api_proc = None
+
+    @keyword("Read Source Config Rows")
+    def read_source_config_rows(self, **cfg):
+        """Read a source built from arbitrary config; return the row count.
+        Used to pin specific object versions, prefixes, or endpoints."""
+        adapter = create_source(dict(cfg))
+        try:
+            return len(adapter.read_batch())
+        finally:
+            adapter.close()
+
+    @keyword("Start S3 Stub")
+    def start_s3_stub(self, port: int = 5001):
+        """Launch an in-process moto S3 for PROD-02 tests; returns endpoint URL."""
+        from moto.server import ThreadedMotoServer
+
+        self._s3_server = ThreadedMotoServer(port=int(port), verbose=False)
+        self._s3_server.start()
+        os.environ.setdefault("AWS_ACCESS_KEY_ID", "testing")
+        os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "testing")
+        return f"http://127.0.0.1:{int(port)}"
+
+    @keyword("Stop S3 Stub")
+    def stop_s3_stub(self):
+        """Stop the moto server started by `Start S3 Stub`."""
+        if self._s3_server:
+            self._s3_server.stop()
+            self._s3_server = None
+
+    @keyword("Put S3 Object")
+    def put_s3_object(
+        self, endpoint_url: str, bucket: str, key: str, file_path: str, versioning=False
+    ):
+        """Upload `file_path` to `bucket`/`key` (creating the bucket); returns
+        the VersionId when `versioning` is enabled on the bucket."""
+        import boto3
+
+        s3 = boto3.client("s3", endpoint_url=endpoint_url, region_name="us-east-1")
+        try:
+            s3.head_bucket(Bucket=bucket)
+        except Exception:
+            s3.create_bucket(Bucket=bucket)
+        if str(versioning).lower() in ("true", "yes", "1"):
+            s3.put_bucket_versioning(Bucket=bucket, VersioningConfiguration={"Status": "Enabled"})
+        resp = s3.put_object(Bucket=bucket, Key=key, Body=Path(file_path).read_bytes())
+        return resp.get("VersionId")
 
     @keyword("Close Target")
     def close_target(self):
