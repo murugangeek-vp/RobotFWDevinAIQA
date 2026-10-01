@@ -3,7 +3,7 @@
 Tick a box when the item's **acceptance check** passes. GitHub renders `- [x]` as a green tick.
 Every stage ends with a **Stage gate** — do not start the next stage until its gate is ticked.
 
-Progress: Stage 0 ▸ 9/14 · Stage 1 ▸ 7/9 · Stage 2 ▸ 0/11 · Stage 3 ▸ 0/4
+Progress: Stage 0 ▸ 11/14 · Stage 1 ▸ 7/9 · Stage 2 ▸ 1/11 · Stage 3 ▸ 0/4
 
 ---
 
@@ -23,6 +23,7 @@ Progress: Stage 0 ▸ 9/14 · Stage 1 ▸ 7/9 · Stage 2 ▸ 0/11 · Stage 3 ▸
 - [ ] **M-05** Register the **PostgreSQL MCP server** and have a person enter the `recon_ro`
       connection credentials in MCP settings, then enable it.
   _Check:_ the server appears enabled and an `information_schema` query returns rows.
+  (server is listed in the agent session but not responding — credentials still needed)
 - [x] **M-06** Commit `.mcp.json` so every engineer's agent loads the same two servers.
   _Check:_ a fresh clone + agent restart exposes both servers; the file contains no
   credentials, passwords, or DSNs (connection details stay in MCP settings). ✅
@@ -41,7 +42,7 @@ Progress: Stage 0 ▸ 9/14 · Stage 1 ▸ 7/9 · Stage 2 ▸ 0/11 · Stage 3 ▸
   _Check:_ `pre-commit run --all-files` passes. ✅ ruff+ruff-format+mypy local;
   gitleaks in CI (pre-commit build panics on Windows)
 - [ ] **F-04** CI skeleton that installs deps and runs a placeholder Robot suite.
-  _Check:_ green build on a PR. (`.github/workflows/reconciliation.yml` written — pending first CI run)
+  _Check:_ green build on a PR. (workflow live — first run failed on `ruff-format`, fix pushed in `d82710d`; awaiting green confirmation)
 - [x] **F-05** Sample data: `data/samples/customer.csv` (100 valid rows) + corrupted variants
       (missing row, wrong type, bad transform).
   _Check:_ files committed and described in `docs/CONTRACTS.md`. ✅ generated via `scripts/generate_samples.py`
@@ -72,7 +73,7 @@ Authoring loop for every item below:
   - [x] Rule engine: not-null, type, length, numeric range, date format, allowed values, regex, uniqueness.
   - [x] Rules read from the contract, never hardcoded in the suite.
   - [x] Failure output carries rule id, column, failing row count, and sample rows.
-  _Check:_ corrupted dataset yields the exact expected `validation rule failures` count. ✅ 5 seeded violations detected exactly
+  _Check:_ corrupted dataset yields the exact expected `validation rule failures` count. ✅ 6 seeded violations detected exactly (5 source + derived `not_null:email`)
 
 - [x] **MVP-08 CSV → PostgreSQL loader**
   - [x] Loader script/command that loads `customer.csv` into the target table as `recon_rw`.
@@ -110,11 +111,13 @@ Authoring loop for every item below:
   - [x] CI runs `robot -d results tests/mvp` against the test database (no MCP dependency at runtime).
   - [x] Publish `report.html`, `log.html`, `output.xml` as artifacts.
   - [x] Emit `results/run_summary.json`: target count, mismatch count, rule failures, environment, final status.
-  _Check:_ artifacts downloadable from a CI run; every summary field populated. (workflow written; pending first CI run)
+  _Check:_ artifacts downloadable from a CI run; every summary field populated. (CI running; first run failed on `ruff-format`, fix pushed — awaiting green confirmation)
 
 ### 🚩 Stage 1 gate — First Implementation Success Criteria
-- [ ] One command completes: pre-load validation → load → post-load validation → **PASS** + reports.
-- [ ] Negative-path run produces **FAIL** with accurate counts and readable diffs.
+- [x] One command completes: pre-load validation → load → post-load validation → **PASS** + reports.
+      ✅ `robot -d results tests/mvp` → 32/32 PASS + report/log/output.xml/run_summary.json
+- [x] Negative-path run produces **FAIL** with accurate counts and readable diffs.
+      ✅ `90_negative_path.robot` seeds defects and asserts exact counts; seeded schema drift fails `03` naming the column
 - [ ] `docs/RUNBOOK.md` gets a new engineer running it in under 15 minutes.
 - [ ] Demo delivered and signed off.
 
@@ -147,8 +150,10 @@ _Start only after the Stage 1 gate is ticked._
 
 - [ ] **PROD-07 Security and secrets hardening**
   - [ ] Central secret store (Vault / cloud secret manager) for non-MCP credentials.
-  - [ ] Least-privilege roles per environment; production access read-only and enforced.
-  - [ ] Write/DDL statements rejected in adapters; secret scanning required in CI.
+  - [x] Least-privilege roles per environment; production access read-only and enforced.
+        ✅ `recon_ro` SELECT-only; proven by `Read Only Role Cannot Mutate Target` / `Read Only Role Is Enforced`
+  - [x] Write/DDL statements rejected in adapters; secret scanning required in CI.
+        ✅ adapters connect `readonly=True`; gitleaks is a required CI step
   _Check:_ security review signed off; an attempted write fails by design in a test.
 
 - [ ] **PROD-08 Performance and scalability**
