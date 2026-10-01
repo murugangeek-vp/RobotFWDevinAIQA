@@ -150,8 +150,12 @@ _Start only after the Stage 1 gate is ticked._
 - [ ] **PROD-05 Snowflake target** — adapter, warehouse/role config, read-only role.
   _Check:_ schema + record comparison suites pass against Snowflake.
 
-- [ ] **PROD-06 MySQL target** — adapter with read-only user and dialect type mapping.
-  _Check:_ schema + record comparison suites pass against MySQL.
+- [x] **PROD-06 MySQL target** — `MysqlTarget` adapter + writer, SELECT-only user,
+      dialect type mapping (int/varchar/decimal/datetime) via `TYPE_ALIASES`,
+      dialect-aware DDL + loader (`executemany`).
+  _Check:_ schema + record comparison suites pass against MySQL. ✅
+  (`libs/adapters/mysql_target.py`, `tests/mysql/01_mysql_target.robot` — 11 tests
+  against mysql:8.4 container incl. read-only write rejection)
 
 - [ ] **PROD-07 Security and secrets hardening**
   - [ ] Central secret store (Vault / cloud secret manager) for non-MCP credentials.

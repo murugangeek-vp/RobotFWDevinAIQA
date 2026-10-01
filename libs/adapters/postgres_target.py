@@ -9,6 +9,8 @@ from libs.adapters.registry import register_target, register_writer
 class PostgresTarget(TargetAdapter):
     """Read-only verification adapter. Connect as recon_ro (SELECT-only role)."""
 
+    dialect = "postgres"
+
     def __init__(
         self, host: str, port: int, database: str, user: str, password: str, schema: str = "public"
     ):
@@ -38,6 +40,14 @@ class PostgresTarget(TargetAdapter):
         from libs.engine.schema import fetch_db_schema
 
         return fetch_db_schema(self.conn, self.schema_name, table)
+
+    def primary_key(self, table: str) -> list:
+        from libs.engine.schema import fetch_primary_key
+
+        return fetch_primary_key(self.conn, self.schema_name, table)
+
+    def is_closed(self) -> bool:
+        return bool(self.conn.closed)
 
     def query(self, sql: str, params=None):
         cur = self.conn.cursor()

@@ -9,7 +9,7 @@ from libs.engine.models import Contract
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CONTRACT_SCHEMA_PATH = _REPO_ROOT / "config" / "contracts" / "contract.schema.json"
 
-# contract type -> PostgreSQL type
+# contract type -> PostgreSQL DDL type
 PG_TYPE_MAP = {
     "integer": "integer",
     "decimal": "numeric",
@@ -29,6 +29,29 @@ PG_TYPE_ALIASES = {
     "boolean": {"boolean"},
 }
 
+# MySQL dialect equivalents (information_schema reports lowercase types)
+MYSQL_TYPE_MAP = {
+    "integer": "INT",
+    "decimal": "DECIMAL",
+    "string": "VARCHAR",
+    "date": "DATE",
+    "timestamp": "DATETIME",
+    "boolean": "TINYINT(1)",
+}
+
+MYSQL_TYPE_ALIASES = {
+    "integer": {"int", "bigint", "smallint", "tinyint", "mediumint"},
+    "decimal": {"decimal"},
+    "string": {"varchar", "char", "text"},
+    "date": {"date"},
+    "timestamp": {"datetime", "timestamp"},
+    "boolean": {"tinyint"},
+}
+
+_TYPE_MAPS = {"postgres": PG_TYPE_MAP, "mysql": MYSQL_TYPE_MAP}
+TYPE_ALIASES = {"postgres": PG_TYPE_ALIASES, "mysql": MYSQL_TYPE_ALIASES}
+_QUOTE = {"postgres": '"', "mysql": "`"}
+
 
 def load_contract(path: str) -> Contract:
     """Load a YAML contract and validate it against the contract JSON schema."""
@@ -39,19 +62,23 @@ def load_contract(path: str) -> Contract:
     return Contract(raw=raw, path=str(contract_path))
 
 
-def ddl_for_contract(contract: Contract) -> str:
+def ddl_for_contract(contract: Contract, dialect: str = "postgres") -> str:
     """CREATE TABLE DDL derived from the contract (used by the loader)."""
+    type_map = _TYPE_MAPS.get(dialect, PG_TYPE_MAP)
+    q = _QUOTE.get(dialect, '"')
     parts = []
     for col in contract.columns:
-        pg_type = PG_TYPE_MAP[col["type"]]
-        if col["type"] == "string" and col.get("max_length"):
-            pg_type = f"character varying({col['max_length']})"
+        col_type = type_map[col["type"]]
+        if col["type"] == "string":
+            col_type = f"{type_map['string']}({col.get('max_length', 255)})"
+        elif col["type"] == "decimal" and dialect == "mysql":
+            col_type = f"DECIMAL(18,{col.get('scale', 2)})"
         null = "" if col["nullable"] else " NOT NULL"
-        parts.append(f'"{col["name"]}" {pg_type}{null}')
-    keys = ", ".join(f'"{k}"' for k in contract.keys)
+        parts.append(f"{q}{col['name']}{q} {col_type}{null}")
+    keys = ", ".join(f"{q}{k}{q}" for k in contract.keys)
     parts.append(f"PRIMARY KEY ({keys})")
     cols = ", ".join(parts)
-    return f"CREATE TABLE IF NOT EXISTS {contract.schema}.{contract.table} ({cols})"
+    return f"CREATE TABLE IF NOT EXISTS {q}{contract.schema}{q}.{q}{contract.table}{q} ({cols})"
 
 
 def fetch_db_schema(conn, schema: str, table: str) -> list:
@@ -96,14 +123,15 @@ def fetch_primary_key(conn, schema: str, table: str) -> list:
 SCHEMA_ASPECTS = ("columns", "types", "nullability", "primary_key")
 
 
-def validate_target_schema_by_category(conn, contract: Contract) -> dict:
-    """Compare live DB schema to the contract.
+def validate_target_schema_by_category(adapter, contract: Contract) -> dict:
+    """Compare live DB schema to the contract, via the target adapter.
 
     Returns {aspect: [error strings]} for each aspect in SCHEMA_ASPECTS.
     If the table is missing, every aspect reports it — nothing is verifiable.
     """
     errors: dict[str, list] = {a: [] for a in SCHEMA_ASPECTS}
-    live = fetch_db_schema(conn, contract.schema, contract.table)
+    aliases_map = TYPE_ALIASES.get(getattr(adapter, "dialect", "postgres"), PG_TYPE_ALIASES)
+    live = adapter.schema(contract.table)
     if not live:
         msg = f"table {contract.schema}.{contract.table} does not exist"
         for a in SCHEMA_ASPECTS:
@@ -125,7 +153,7 @@ def validate_target_schema_by_category(conn, contract: Contract) -> dict:
             errors["columns"].append(f"missing column '{name}'")
             continue
         dtype, nullable = live_by_name[name]
-        allowed = PG_TYPE_ALIASES[col["type"]]
+        allowed = aliases_map[col["type"]]
         if dtype not in allowed:
             errors["types"].append(
                 f"column '{name}' type mismatch: expected {col['type']} ({sorted(allowed)}), got {dtype}"
@@ -135,15 +163,15 @@ def validate_target_schema_by_category(conn, contract: Contract) -> dict:
                 f"column '{name}' nullability mismatch: expected nullable={col['nullable']}, got {nullable}"
             )
 
-    pk = fetch_primary_key(conn, contract.schema, contract.table)
+    pk = adapter.primary_key(contract.table)
     if pk != contract.keys:
         errors["primary_key"].append(f"primary key mismatch: expected {contract.keys}, got {pk}")
     return errors
 
 
-def validate_target_schema(conn, contract: Contract) -> list:
+def validate_target_schema(adapter, contract: Contract) -> list:
     """Flat, de-duplicated list of schema errors across all aspects."""
-    by_cat = validate_target_schema_by_category(conn, contract)
+    by_cat = validate_target_schema_by_category(adapter, contract)
     errors = []
     for aspect in SCHEMA_ASPECTS:
         for e in by_cat[aspect]:

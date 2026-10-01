@@ -189,7 +189,12 @@ class ReconciliationLibrary:
         t = self._target_kwargs()
         conn = create_writer(self.env["target"], user=user, password=pw)
         try:
-            self.loaded_count = load_expected_rows(conn, self.contract, self.expected_df)
+            self.loaded_count = load_expected_rows(
+                conn,
+                self.contract,
+                self.expected_df,
+                dialect=self.env["target"].get("type", "postgres"),
+            )
         finally:
             conn.close()
         logger.info(f"loaded {self.loaded_count} rows into " f"{t['schema']}.{self.contract.table}")
@@ -205,7 +210,7 @@ class ReconciliationLibrary:
         return True
 
     def _ensure_target(self) -> TargetAdapter:
-        if self.target is None or self.target.conn.closed:
+        if self.target is None or self.target.is_closed():
             self.connect_target_read_only()
         assert self.target is not None
         return self.target
@@ -248,9 +253,7 @@ class ReconciliationLibrary:
     @keyword("Get Schema Errors")
     def get_schema_errors(self, category: "str | None" = None):
         """All schema errors, or just one aspect: columns|types|nullability|primary_key."""
-        by_cat = schema.validate_target_schema_by_category(
-            self._ensure_target().conn, self.contract
-        )
+        by_cat = schema.validate_target_schema_by_category(self._ensure_target(), self.contract)
         self.schema_errors = []
         for errs in by_cat.values():
             for e in errs:
@@ -445,6 +448,6 @@ class ReconciliationLibrary:
     @keyword("Close Target")
     def close_target(self):
         if self.target:
-            if not self.target.conn.closed:
+            if not self.target.is_closed():
                 self.target.close()
             self.target = None

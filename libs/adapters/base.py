@@ -26,10 +26,12 @@ class TargetAdapter(ABC):
     """Stable interface for targets. Verification paths must be read-only.
 
     Concrete adapters must also expose `.conn` — the underlying DBAPI
-    connection used by schema/PK introspection helpers (read-only session).
+    connection used by schema/PK introspection helpers (read-only session) —
+    and set `.dialect` to a key in libs.engine.schema.TYPE_ALIASES.
     """
 
     conn: Any
+    dialect: str = "unknown"
 
     @abstractmethod
     def read_table(self, table: str, columns: "list | None" = None):
@@ -42,6 +44,14 @@ class TargetAdapter(ABC):
     @abstractmethod
     def schema(self, table: str) -> list:
         """[(column_name, data_type, is_nullable), ...]"""
+
+    @abstractmethod
+    def primary_key(self, table: str) -> list:
+        """Primary-key column names in key order (empty if none)."""
+
+    @abstractmethod
+    def is_closed(self) -> bool:
+        """True when the underlying connection is dead."""
 
     @abstractmethod
     def close(self):

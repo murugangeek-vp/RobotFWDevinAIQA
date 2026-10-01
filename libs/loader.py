@@ -57,33 +57,42 @@ def _coerce(v, coltype: str):
     return str(v)
 
 
-def load_expected_rows(conn, contract, expected_df) -> int:
+def load_expected_rows(conn, contract, expected_df, dialect: str = "postgres") -> int:
     """Create target table per contract, truncate, bulk-insert expected rows.
 
     Raises PermissionError if the session is read-only (e.g. recon_ro creds).
+    MySQL targets rely on the write role's grants — the INSERT itself is denied
+    for read-only users.
     """
     cur = conn.cursor()
-    cur.execute("SHOW transaction_read_only")
-    if cur.fetchone()[0] == "on":
-        cur.close()
-        raise PermissionError(
-            "refusing to load under a read-only session (loader requires recon_rw)"
-        )
+    if dialect == "postgres":
+        cur.execute("SHOW transaction_read_only")
+        if cur.fetchone()[0] == "on":
+            cur.close()
+            raise PermissionError(
+                "refusing to load under a read-only session (loader requires recon_rw)"
+            )
 
-    cur.execute(ddl_for_contract(contract))
-    cur.execute(f"TRUNCATE TABLE {contract.schema}.{contract.table}")
+    quote = "`" if dialect == "mysql" else '"'
+    qualified = f"{quote}{contract.schema}{quote}.{quote}{contract.table}{quote}"
+    cur.execute(ddl_for_contract(contract, dialect))
+    cur.execute(f"TRUNCATE TABLE {qualified}")
 
     colnames = [c["name"] for c in contract.columns]
     coltypes = {c["name"]: c["type"] for c in contract.columns}
     rows = [
         tuple(_coerce(row[c], coltypes[c]) for c in colnames) for _, row in expected_df.iterrows()
     ]
-    cols_sql = ", ".join(f'"{c}"' for c in colnames)
-    execute_values(
-        cur,
-        f"INSERT INTO {contract.schema}.{contract.table} ({cols_sql}) VALUES %s",
-        rows,
-    )
+    cols_sql = ", ".join(f"{quote}{c}{quote}" for c in colnames)
+    if dialect == "mysql":
+        placeholders = ", ".join(["%s"] * len(colnames))
+        cur.executemany(f"INSERT INTO {qualified} ({cols_sql}) VALUES ({placeholders})", rows)
+    else:
+        execute_values(
+            cur,
+            f"INSERT INTO {qualified} ({cols_sql}) VALUES %s",
+            rows,
+        )
     conn.commit()
     n = len(rows)
     cur.close()
