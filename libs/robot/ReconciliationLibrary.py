@@ -12,6 +12,8 @@ Credentials come from environment variables, falling back to a git-ignored
 
 import json
 import os
+import socket
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -78,6 +80,7 @@ class ReconciliationLibrary:
         self.recon_result = None
         self.loaded_count = 0
         self.run_status = "UNKNOWN"
+        self._api_proc = None  # test-support stub server process
 
     # ----- setup -----------------------------------------------------------
 
@@ -351,6 +354,46 @@ class ReconciliationLibrary:
     def check_target_adapter(self):
         """Conformance-check the read-only target adapter from env config."""
         return conformance.check_target(self._ensure_target(), self.contract.table)
+
+    # ----- test support ------------------------------------------------------
+
+    @keyword("Check Source Config")
+    def check_source_config(self, **cfg):
+        """Conformance-check a source built from arbitrary config — e.g. a stub
+        endpoint. Robot args arrive as strings; adapters coerce. Returns [] or
+        a list of violation strings (init failures included)."""
+        try:
+            adapter = create_source(dict(cfg))
+        except Exception as e:
+            return [f"adapter init raised {e!r}"]
+        return conformance.check_source(adapter)
+
+    @keyword("Start Api Stub")
+    def start_api_stub(self, port: int = 8080, timeout: float = 15.0):
+        """Launch scripts/serve_api.py and wait for it to open `port`."""
+        script = Path(_REPO_ROOT) / "scripts" / "serve_api.py"
+        self._api_proc = subprocess.Popen([sys.executable, str(script), "--port", str(int(port))])
+        deadline = time.time() + float(timeout)
+        while time.time() < deadline:
+            if self._api_proc.poll() is not None:
+                raise RuntimeError("api stub exited early")
+            try:
+                socket.create_connection(("127.0.0.1", int(port)), timeout=1).close()
+                return
+            except OSError:
+                time.sleep(0.3)
+        raise RuntimeError(f"api stub did not open port {port} within {timeout}s")
+
+    @keyword("Stop Api Stub")
+    def stop_api_stub(self):
+        """Terminate the stub server started by `Start Api Stub`."""
+        if self._api_proc:
+            self._api_proc.terminate()
+            try:
+                self._api_proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self._api_proc.kill()
+            self._api_proc = None
 
     @keyword("Close Target")
     def close_target(self):

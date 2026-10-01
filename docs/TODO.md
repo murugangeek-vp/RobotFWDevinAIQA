@@ -135,9 +135,11 @@ _Start only after the Stage 1 gate is ticked._
 - [ ] **PROD-02 S3 source** — bucket/prefix/versioned reads, streaming, IAM read-only role.
   _Check:_ conformance suite green against a test bucket.
 
-- [ ] **PROD-03 API source** — authenticated REST reads, pagination, retry/backoff, rate limits
-      (authored with rf-mcp RequestsLibrary keywords).
-  _Check:_ conformance suite green against a stub/live endpoint.
+- [x] **PROD-03 API source** — authenticated REST reads (bearer via `token_env`), page-number
+      pagination, retry/backoff with `Retry-After` honor, unreachable-endpoint reporting.
+  _Check:_ conformance suite green against a stub/live endpoint. ✅
+  (`libs/adapters/api_source.py`, `tests/api/01_api_source.robot` — 9 tests incl. retry
+  and cross-source recon vs the CSV-loaded target; stub: `scripts/serve_api.py`)
 
 - [ ] **PROD-04 Dataiku source** — dataset reads via the Dataiku API with a scoped key.
   _Check:_ conformance suite green.

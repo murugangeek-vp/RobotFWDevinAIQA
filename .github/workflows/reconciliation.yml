@@ -56,13 +56,13 @@ jobs:
             ALTER DEFAULT PRIVILEGES FOR ROLE recon_rw IN SCHEMA public GRANT SELECT ON TABLES TO recon_ro;
           SQL
 
-      - name: Run MVP reconciliation suites
+      - name: Run reconciliation suites (MVP + adapter conformance + API source)
         env:
           RECON_RO_USER: recon_ro
           RECON_RO_PASSWORD: ${{ secrets.RECON_RO_PASSWORD }}
           RECON_RW_USER: recon_rw
           RECON_RW_PASSWORD: ${{ secrets.RECON_RW_PASSWORD }}
-        run: robot -d results tests/mvp
+        run: robot -d results tests/mvp tests/adapters tests/api
 
       - uses: actions/upload-artifact@v4
         if: always()

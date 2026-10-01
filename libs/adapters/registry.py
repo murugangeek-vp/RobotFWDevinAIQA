@@ -41,6 +41,7 @@ def register_writer(kind: str):
 
 def _ensure_builtin():
     # Importing the built-in adapter modules runs their register_* decorators.
+    import libs.adapters.api_source  # noqa: F401
     import libs.adapters.csv_source  # noqa: F401
     import libs.adapters.postgres_target  # noqa: F401
 
