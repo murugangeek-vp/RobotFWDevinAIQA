@@ -20,3 +20,9 @@ target:
 local_fixture:
   s3_port: 5002
   data_dir: data/samples/bank
+# Local evidence store: same moto stub, dedicated bucket (bank envs: separate
+# locked, versioned, object-lock bucket).
+evidence:
+  bucket: recon-evidence-local
+  prefix: evidence
+  endpoint_url: http://127.0.0.1:5002

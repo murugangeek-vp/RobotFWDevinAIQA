@@ -249,13 +249,45 @@ class MigrationLibrary:
 
         self._guard(table, "target_schema", run)
 
+    # ----- batch/delta filtering (MIG-P5) ------------------------------------------
+
+    def _batch(self):
+        """(batch_column, batch_id) or None — both must be configured together."""
+        col = self.env.get("target", {}).get("batch_column")
+        val = os.environ.get("MIGRATION_BATCH_ID")
+        if col and not val:
+            raise RuntimeError(
+                "target.batch_column is configured but MIGRATION_BATCH_ID is not set"
+            )
+        if val and not col:
+            raise RuntimeError(
+                "MIGRATION_BATCH_ID is set but target.batch_column is not configured"
+            )
+        return (col, val) if col else None
+
+    @keyword("Set Batch Filter")
+    def set_batch_filter(self, column: str, batch_id: str):
+        """Restrict target verification to one load batch (delta/incremental runs)."""
+        os.environ["MIGRATION_BATCH_ID"] = batch_id
+        self.env.setdefault("target", {})["batch_column"] = column
+
+    @keyword("Clear Batch Filter")
+    def clear_batch_filter(self):
+        os.environ.pop("MIGRATION_BATCH_ID", None)
+        (self.env.get("target") or {}).pop("batch_column", None)
+
     # ----- L3: counts and control totals -----------------------------------------
 
     @keyword("Verify Row Count")
     def verify_row_count(self, table: str):
         def run():
             ctx = self._ctx(table)
-            target_rows = self._target().row_count(ctx.contract.table)
+            batch = self._batch()
+            target_rows = (
+                self._target().row_count_filtered(ctx.contract.table, batch)
+                if batch
+                else self._target().row_count(ctx.contract.table)
+            )
             self._audit.table(table)["target_rows"] = target_rows
             source_rows = len(ctx.source_df)
             problems = []
@@ -277,6 +309,7 @@ class MigrationLibrary:
         def run():
             ctx = self._ctx(table)
             spec = self.manifest.tables[table]
+            batch = self._batch()
             declared = ctx.contract.raw.get("controls") or []
             problems: list = []
             if not declared and spec.tier == "critical":
@@ -286,7 +319,7 @@ class MigrationLibrary:
                 problems.append("contract declares a control file but none was read")
             for ctl in declared:
                 exp = controls.source_values(ctx.expected_df, ctx.contract, ctl)
-                act = controls.target_values(self._target(), ctx.contract, ctl)
+                act = controls.target_values(self._target(), ctx.contract, ctl, batch=batch)
                 group_cols = ctl.get("group_by") or []
                 value_col = ctl.get("column") or ""
 
@@ -350,11 +383,16 @@ class MigrationLibrary:
         def run():
             ctx = self._ctx(table)
             target = self._target()
+            batch = self._batch()
             bound = int(self.env["target"].get("max_rows", 100000))
             if mode == "hashed" or (mode == "auto" and len(ctx.expected_df) > bound):
-                self._verify_records_hashed(table, ctx, target)
+                self._verify_records_hashed(table, ctx, target, batch)
                 return
-            rows = target.row_count(ctx.contract.table)
+            rows = (
+                target.row_count_filtered(ctx.contract.table, batch)
+                if batch
+                else target.row_count(ctx.contract.table)
+            )
             if rows > bound:
                 self._finish(
                     table,
@@ -365,7 +403,11 @@ class MigrationLibrary:
                 )
                 return
             names = [c["name"] for c in ctx.contract.columns]
-            actual = target.read_table(ctx.contract.table, columns=names)
+            actual = (
+                target.filtered_rows(ctx.contract.table, names, batch)
+                if batch
+                else target.read_table(ctx.contract.table, columns=names)
+            )
             result = reconcile.compare(ctx.expected_df, actual, ctx.contract)
             keys, m = ctx.contract.keys, ctx.masker
             problems = (
@@ -398,13 +440,13 @@ class MigrationLibrary:
 
         self._guard(table, "records", run)
 
-    def _verify_records_hashed(self, table: str, ctx: TableContext, target):
+    def _verify_records_hashed(self, table: str, ctx: TableContext, target, batch=None):
         """Bucketed fingerprint compare — scales past the row bound without pulling rows."""
         contract, m = ctx.contract, ctx.masker
         keys = contract.keys
         nbuckets = int(os.environ.get("MIGRATION_HASH_BUCKETS") or 256)
         expected = fingerprint.source_checksums(ctx.expected_df, contract, nbuckets)
-        actual = target.bucket_checksums(contract.table, contract, nbuckets)
+        actual = target.bucket_checksums(contract.table, contract, nbuckets, batch=batch)
         diffs = fingerprint.compare_checksums(expected, actual)
         problems = [
             {"bucket": d["bucket"], "expected": d["expected"], "actual": d["actual"]}
@@ -415,7 +457,7 @@ class MigrationLibrary:
             want = fingerprint.source_rows_in_bucket(
                 ctx.expected_df, contract, nbuckets, d["bucket"]
             )
-            got = target.bucket_rows(contract.table, contract, nbuckets, d["bucket"])
+            got = target.bucket_rows(contract.table, contract, nbuckets, d["bucket"], batch=batch)
             result = reconcile.compare(want, got, contract)
             drilled += result.mismatch_count
             problems += [
@@ -457,7 +499,11 @@ class MigrationLibrary:
                 child.expected_df, child.contract, parent.expected_df, parent.contract, rel
             )
             tgt_count, tgt_samples = self._target().orphans(
-                child.contract.table, rel["column"], parent.contract.table, rel["parent_column"]
+                child.contract.table,
+                rel["column"],
+                parent.contract.table,
+                rel["parent_column"],
+                batch=self._batch(),
             )
         except Exception as e:
             self._audit.record_relationship(rel_id, "FAIL", {"error": f"{type(e).__name__}: {e}"})
@@ -490,6 +536,56 @@ class MigrationLibrary:
     @keyword("Get Migration Report")
     def get_migration_report(self):
         return self._audit.data
+
+    @keyword("Archive Evidence")
+    def archive_evidence(self, results_dir: str):
+        """Upload the evidence bundle to the environment's `evidence:` S3 prefix.
+
+        The evidence bucket should be a separate, versioned, ideally object-locked
+        bucket on bank environments. Returns the list of uploaded object keys;
+        also writes an evidence_manifest.json (object -> sha256) into the bundle
+        before uploading it last.
+        """
+        import hashlib
+        import json
+
+        import boto3
+
+        cfg = self.env.get("evidence") or {}
+        bucket = cfg.get("bucket")
+        if not bucket:
+            raise ValueError("environment has no evidence.bucket configured")
+        if self.run is None:
+            raise RuntimeError("write the migration report before archiving evidence")
+        prefix = (cfg.get("prefix") or "evidence/").strip("/")
+        root = Path(results_dir)
+        files = [p for p in sorted(root.glob("*")) if p.is_file()]
+        if not files:
+            raise ValueError(f"nothing to archive in {results_dir!r}")
+
+        manifest_entries = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
+        manifest_path = root / "evidence_manifest.json"
+        manifest_path.write_text(
+            json.dumps({"run_id": self.run.run_id, "files": manifest_entries}, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        files.append(manifest_path)
+
+        conn = self.env.get("source_connection") or {}
+        client = boto3.client(
+            "s3",
+            endpoint_url=cfg.get("endpoint_url") or conn.get("endpoint_url"),
+            region_name=cfg.get("region_name") or conn.get("region_name", "us-east-1"),
+        )
+        keys = []
+        for p in files:
+            key = f"{prefix}/{self.run.run_id}/{p.name}"
+            client.put_object(Bucket=bucket, Key=key, Body=p.read_bytes())
+            keys.append(key)
+        logger.info(
+            f"archived {len(keys)} evidence objects under s3://{bucket}/{prefix}/{self.run.run_id}/"
+        )
+        return keys
 
     # ----- local fixture (synthetic only) ----------------------------------------------
 
@@ -538,6 +634,12 @@ class MigrationLibrary:
         s3, bucket = self._s3(), self.env["source_connection"]["bucket"]
         s3.create_bucket(Bucket=bucket)
         s3.put_bucket_versioning(Bucket=bucket, VersioningConfiguration={"Status": "Enabled"})
+        evidence_bucket = (self.env.get("evidence") or {}).get("bucket")
+        if evidence_bucket and evidence_bucket != bucket:
+            s3.create_bucket(Bucket=evidence_bucket)
+            s3.put_bucket_versioning(
+                Bucket=evidence_bucket, VersioningConfiguration={"Status": "Enabled"}
+            )
         data_dir = _REPO_ROOT / fixture["data_dir"]
         for name in self.manifest.enabled_tables():
             prefix = self.manifest.tables[name].contract.raw["source"]["prefix"]
@@ -577,6 +679,13 @@ class MigrationLibrary:
             cur.close()
         finally:
             conn.close()
+
+    @keyword("List Local Objects")
+    def list_local_objects(self, bucket: str, prefix: str = ""):
+        """Object keys under a prefix in the local stub (evidence assertions)."""
+        self._require_local()
+        resp = self._s3().list_objects_v2(Bucket=bucket, Prefix=prefix)
+        return [o["Key"] for o in resp.get("Contents", [])]
 
     @keyword("Put Local Source Object")
     def put_local_source_object(self, table: str, file_path: str, name: str):

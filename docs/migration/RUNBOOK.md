@@ -101,6 +101,43 @@ passing; report overall status `PASS`.
   sum pushed down as generated SQL, drill-down only into mismatched buckets. Override
   per table (`compare_mode: full|hashed|none`) or per run (`MIGRATION_COMPARE_MODE`,
   `MIGRATION_HASH_BUCKETS`).
+
+## 6. Delta / incremental verification (MIG-P5)
+
+When the bank loads in batches, restrict every target check to the loaded batch:
+
+```powershell
+$env:MIGRATION_BATCH_ID = "M2-2024-05-01"          # batch id from the load run
+# env yaml: target.batch_column: load_batch      # the ETL batch column name
+```
+
+Row count, control totals, orphans, record compare, and bucket checksums then
+read `WHERE <batch_column> = <batch_id>` only. Setting one without the other
+fails closed. Batch ids must match `^[A-Za-z0-9_.:-]{1,128}$` (generated SQL,
+no parameters — the pattern is the injection guard). Note the semantics: the
+source extract must be the *delta file* for that batch, so batch mode verifies
+"the delta rows landed" — full-table verification still runs for complete files.
+
+## 7. Parallel and large-manifest runs (MIG-P6)
+
+Shard the manifest across processes — each shard is a complete signed run:
+
+```powershell
+$env:MIGRATION_TABLES = "account,transaction"   # this shard's tables
+robot -d results_migration_shard2 --prerunmodifier libs/robot/migration_expander.py:config/migration/webster_to_santander.yaml tests/migration/01_table_verification.robot
+```
+
+Relationship checks run in the child's shard. Unknown/disabled table names fail
+closed. Keep related tables together. `pabot` is installed for dev, but do NOT
+use `--testlevelsplit` on the migration suite: each executor would report only
+its own tests, fragmenting the audit evidence.
+
+## 8. Evidence store (MIG-P8)
+
+`Archive Evidence` uploads the bundle (report, `.sha256`, `evidence_manifest.json`
+with per-file SHA-256, logs) to `env.evidence.bucket/prefix/run_id/`. Bank envs
+should use a separate versioned bucket with Object Lock (immutability) and a
+retention policy; the archive itself does not enforce those — the bucket policy does.
 - Multi-file JSON sources and composite foreign keys are not yet supported.
 - Balance proof (opening + transactions = closing) needs source fields — Q6.
 - Trial Snowflake acceptance requires a real account; trial accounts block the managed

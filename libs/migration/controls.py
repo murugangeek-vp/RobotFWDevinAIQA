@@ -73,9 +73,11 @@ def source_values(expected_df, contract, control) -> dict:
     return out
 
 
-def target_values(adapter, contract, control) -> dict:
+def target_values(adapter, contract, control, batch=None) -> dict:
     group_by = control.get("group_by") or []
-    rows = adapter.aggregate(contract.table, control["type"], control.get("column"), group_by)
+    rows = adapter.aggregate(
+        contract.table, control["type"], control.get("column"), group_by, batch=batch
+    )
     out = {}
     for row in rows:
         group = _norm_group(contract, group_by, row[: len(group_by)])

@@ -41,12 +41,27 @@ class migration_expander(SuiteVisitor):  # class name must equal the module name
         self.manifest = load_manifest(self.manifest_path)
 
     def _instances(self, tag: str) -> list:
+        # MIG-P6: shard a run across processes — MIGRATION_TABLES="account,transaction"
+        # limits expansion; each shard writes its own signed report under its own -d dir.
+        import os
+
+        only = os.environ.get("MIGRATION_TABLES")
+        wanted = {t.strip() for t in only.split(",")} if only else None
         if tag == "per-table":
-            return [
-                (n, [f"table:{n}", f"tier:{self.manifest.tables[n].tier}"])
-                for n in self.manifest.enabled_tables()
-            ]
-        return [(r["id"], [f"relationship:{r['id']}"]) for r in self.manifest.relationships]
+            tables = [n for n in self.manifest.enabled_tables() if wanted is None or n in wanted]
+            unknown = (wanted or set()) - set(self.manifest.enabled_tables())
+            if unknown:
+                raise ValueError(
+                    f"MIGRATION_TABLES names unknown/disabled tables: {sorted(unknown)}"
+                )
+            return [(n, [f"table:{n}", f"tier:{self.manifest.tables[n].tier}"]) for n in tables]
+        # a relationship check runs in the child's shard (its ctx loads the parent on
+        # demand) — deterministic placement, no duplicates, never skipped
+        return [
+            (r["id"], [f"relationship:{r['id']}"])
+            for r in self.manifest.relationships
+            if wanted is None or r["child"] in wanted
+        ]
 
     def start_suite(self, suite):
         if not any(tag in t.tags for t in suite.tests for tag in _TEMPLATES):

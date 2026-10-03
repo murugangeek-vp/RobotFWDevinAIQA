@@ -57,10 +57,18 @@ and a PostgreSQL stand-in target; it is not bank acceptance.
   every declared control needs a file entry, undeclared file entries flagged,
   three-way file/source/target comparison. _Check:_ ✅ 5 unit tests + E2E trailer
   checks on all tables + tampered/missing-entry negative proofs.
-- [ ] **MIG-P5** Delta/incremental extracts and mock-migration run comparison.
-- [ ] **MIG-P6** Parallel execution (`pabot`) per table tier; performance SLA benchmarks.
+- [x] **MIG-P5** Delta/incremental verification: `target.batch_column` +
+  `MIGRATION_BATCH_ID` scopes every target check (count/controls/orphans/records/
+  bucket checksums) to one load batch; both-or-neither config, pattern-checked ids.
+  _Check:_ ✅ E2E batch scoping + injection-pattern unit tests.
+- [x] **MIG-P6** Parallel execution via `MIGRATION_TABLES` sharding in the expander —
+  each process produces a complete signed report for its tables; pabot installed for
+  bank environments (documented: no --testlevelsplit, it fragments the audit report).
+  SLA benchmarks still pending real volumes.
 - [ ] **MIG-P7** Live S3 → Snowflake run on a bank-approved host with bank-approved data.
-- [ ] **MIG-P8** Central immutable evidence store + dashboard + sign-off workflow.
+- [x] **MIG-P8** `Archive Evidence` uploads the report bundle + `evidence_manifest.json`
+  (per-file SHA-256) to `env.evidence` S3 prefix; bank envs use a separate locked
+  bucket. Dashboard/sign-off workflow remains.
 - [ ] **MIG-P9** DBA review of Snowflake grants (direct, inherited, PUBLIC) and S3 IAM policy.
 
 ## Phase gate — Bank acceptance

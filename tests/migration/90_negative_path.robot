@@ -104,6 +104,34 @@ Part File With Different Header Fails Closed
     Run Keyword And Expect Error    *header differs*    Verify Source Header    account
     [Teardown]    Remove Extra Source Part    account    part-9998.csv
 
+Evidence Bundle Archives With Manifest Hashes
+    [Documentation]    Archive Evidence uploads the report, hash, and a manifest of SHA-256s.
+    ${out}=    Set Variable    ${TEMPDIR}${/}evidence_test
+    Verify Row Count    account
+    ${status}=    Write Migration Report    ${out}
+    Should Not Be Equal    ${status}    NOT_STARTED
+    ${keys}=    Archive Evidence    ${out}
+    ${objects}=    List Local Objects    recon-evidence-local    evidence/
+    ${report_key}=    Evaluate    [k for k in @{objects} if k.endswith('migration_report.json')]
+    ${manifest_key}=    Evaluate    [k for k in @{objects} if k.endswith('evidence_manifest.json')]
+    Should Not Be Empty    ${report_key}
+    Should Not Be Empty    ${manifest_key}
+
+Batch Filter Scopes Verification To The Tagged Load
+    [Documentation]    Delta runs: checks see only rows carrying the batch id —
+    ...               a row missing from the batch is detected; out-of-batch rows are ignored.
+    Execute Local Target Sql
+    ...    ALTER TABLE ${ACCT_TABLE} ADD COLUMN load_batch varchar(32) DEFAULT 'B1'
+    Set Batch Filter    load_batch    B1
+    Verify Row Count    account
+    Verify Records    account
+    ${acct}=    Get Local Fixture Value    account    account_number    0
+    Execute Local Target Sql
+    ...    UPDATE ${ACCT_TABLE} SET load_batch = 'B2' WHERE account_number = '${acct}'
+    ${err}=    Run Keyword And Expect Error    *399*    Verify Row Count    account
+    Should Not Contain    ${err}    ${acct}
+    [Teardown]    Restore Batch Fixture
+
 Report Never Contains Raw PII
     ${acct}=     Get Local Fixture Value    account    account_number    0
     ${email}=    Get Local Fixture Value    customer    email    0
@@ -133,6 +161,12 @@ Restore Control File
     [Arguments]    ${table}
     Put Local Source Object    ${table}    ${MIG_ROOT}${/}data${/}samples${/}bank${/}${table}${/}_control.ctl    _control.ctl
     Reset Migration Table    ${table}
+
+Restore Batch Fixture
+    Clear Batch Filter
+    Execute Local Target Sql
+    ...    ALTER TABLE ${ACCT_TABLE} DROP COLUMN IF EXISTS load_batch
+    Seed Local Target
 
 Remove Extra Source Part
     [Arguments]    ${table}    ${name}

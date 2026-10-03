@@ -657,5 +657,46 @@ class ContractGeneratorTests(unittest.TestCase):
             gen.build_contract("account", spec, ["status_cd"], {})
 
 
+class BatchFilterTests(unittest.TestCase):
+    """MIG-P5: batch filter is generated SQL with a closed value pattern."""
+
+    def test_batch_id_rejects_sql_injection(self):
+        class T(TargetAdapter):
+            dialect = "postgres"
+            conn = None
+
+            def read_table(self, t, columns=None):
+                pass
+
+            def row_count(self, t):
+                return 0
+
+            def schema(self, t):
+                return []
+
+            def primary_key(self, t):
+                return []
+
+            def is_closed(self):
+                return False
+
+            def close(self):
+                pass
+
+            def _qualified(self, t):
+                return '"public"."t"'
+
+        adapter = T()
+        good = adapter._batch_where(("load_batch", "2024-05-01"))
+        self.assertIn('"load_batch"', good)
+        for bad in ["x' OR '1'='1", "a;b", "DROP TABLE t", "x y"]:
+            with self.assertRaises(ValueError, msg=bad):
+                adapter._batch_where(("load_batch", bad))
+        self.assertEqual(adapter._batch_where(None), "")
+        self.assertEqual(
+            adapter._batch_and(("load_batch", "B1"), "ch."), " AND ch.\"load_batch\" = 'B1'"
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
