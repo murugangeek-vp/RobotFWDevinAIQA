@@ -7,6 +7,26 @@ import pandas as pd
 
 from libs.engine.models import ColumnDiff, Contract, ReconResult
 
+
+def _trunc_words(v, limit) -> str:
+    """Word-boundary truncation: keep only whole words within `limit` chars.
+
+    If the limit lands mid-word the partial last word is dropped entirely —
+    e.g. a 5-char word with 2 chars of budget is removed, not cut. A single
+    word longer than the limit (no space to break on) is hard-truncated.
+    """
+    s = str(v)
+    n = int(limit)
+    if len(s) <= n:
+        return s
+    cut = s[:n]
+    if s[n] != " " and cut[-1] != " ":  # boundary landed mid-word
+        i = cut.rfind(" ")
+        if i >= 0:
+            cut = cut[:i]
+    return cut.rstrip()
+
+
 _SAFE_FUNCS: dict = {
     "lower": lambda s: str(s).lower(),
     "upper": lambda s: str(s).upper(),
@@ -14,6 +34,7 @@ _SAFE_FUNCS: dict = {
         Decimal(1).scaleb(-int(nd)), rounding=ROUND_HALF_UP
     ),
     "strip": lambda s: str(s).strip(),
+    "trunc_words": _trunc_words,
 }
 _FUNC_RE = re.compile(r"^(\w+)\((.*)\)$")
 _PLACEHOLDER_RE = re.compile(r"\{(\w+)\}")

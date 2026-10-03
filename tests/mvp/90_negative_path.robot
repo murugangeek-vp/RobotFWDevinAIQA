@@ -12,6 +12,7 @@ ${BAD_HEADER_FILE}     ${ROOT}${/}data${/}samples${/}customer_bad_header.csv
 ${BAD_DQ_FILE}         ${ROOT}${/}data${/}samples${/}customer_bad_dq.csv
 ${SHORT_FILE}          ${ROOT}${/}data${/}samples${/}customer_missing_rows.csv
 ${ACCOUNT_CONTRACT}    ${ROOT}${/}config${/}contracts${/}account_mvp.yaml
+${ADDRESS_CONTRACT}    ${ROOT}${/}config${/}contracts${/}address_mvp.yaml
 ${DUP_CODES}           ${ROOT}${/}data${/}samples${/}account_codes_bad_dup.csv
 ${MISSING_CODES}       ${ROOT}${/}data${/}samples${/}account_codes_bad_missing.csv
 ${BAD_CODES_HEADER}    ${ROOT}${/}data${/}samples${/}account_codes_bad_header.csv
@@ -93,6 +94,32 @@ Detects Tampered Join-Derived Column
     Should Not Be Empty    ${diffs}
     Should Be Equal    ${diffs}[0][expected]    CL|11007
     Load Source Into Target
+    Load Contract
+
+Detects Mid-Word Hard Truncation In Target
+    [Documentation]    A naive ETL cutting address2 at char 67 leaves 'Ka'
+    ...    dangling; the contract expects the whole partial word dropped.
+    Load Contract    ${ADDRESS_CONTRACT}
+    Read Source
+    Load Source Into Target
+    Connect Target Read Only
+    Execute Write Sql    UPDATE public.address_mvp SET address2 = 'Rosewood Enclave Phase Two Near Central Mall Avenue Junction XXX Ka' WHERE address_id = 3
+    Compare Records
+    ${diffs}=    Get Transform Diffs    address2
+    Should Not Be Empty    ${diffs}
+    Should Be Equal    ${diffs}[0][expected]    Rosewood Enclave Phase Two Near Central Mall Avenue Junction XXX
+    Load Source Into Target
+    Load Contract
+
+Over-Length Address2 Rejected By Target Constraint
+    [Documentation]    varchar(67) from the contract DDL refuses >67 outright;
+    ...    on engines without enforced limits (e.g. Snowflake) the record
+    ...    compare above is the backstop.
+    Load Contract    ${ADDRESS_CONTRACT}
+    Read Source
+    Load Source Into Target
+    Connect Target Read Only
+    Run Keyword And Expect Error    *value too long*    Execute Write Sql    UPDATE public.address_mvp SET address2 = repeat('X', 70) WHERE address_id = 1
     Load Contract
 
 *** Keywords ***

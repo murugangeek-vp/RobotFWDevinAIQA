@@ -1,0 +1,63 @@
+contract_name: address_mvp
+version: "1.0"
+description: >-
+  Address feed: target column address2 allows at most 67 chars; source values
+  longer than that are truncated on a word boundary — a partial last word is
+  dropped whole (a 5-char word with 2 chars of budget loses all 5).
+
+source:
+  type: csv
+  path: data/samples/address_extract.csv
+  encoding: utf-8
+  delimiter: ","
+  header: true
+  columns:
+    - addr_id
+    - address1
+    - address2
+    - city
+    - postcode
+
+metadata:
+  expected_row_count: 8
+  encoding: utf-8
+  delimiter: ","
+
+target:
+  type: postgres
+  schema: public
+  table: address_mvp
+
+keys:
+  - address_id
+
+columns:
+  - name: address_id
+    source_name: addr_id
+    type: integer
+    nullable: false
+    unique: true
+
+  - name: address1
+    type: string
+    nullable: false
+    max_length: 60
+    transform: "strip({address1})"          # trims stray edge whitespace
+
+  - name: address2
+    type: string
+    nullable: false
+    max_length: 67                          # target limit
+    transform: "trunc_words(address2, 67)"  # word-boundary truncate
+
+  - name: city
+    type: string
+    nullable: false
+    max_length: 40
+    transform: "upper({city})"
+
+  - name: postcode
+    source_name: postcode
+    type: string
+    nullable: false
+    max_length: 10

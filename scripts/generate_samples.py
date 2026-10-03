@@ -136,3 +136,54 @@ write("account_codes_bad_missing.csv", missing, header=CODES_HEADER)
 # drifted codes header: branch_code renamed -> join header validation fails
 bad_codes_header = [c if c != "branch_code" else "branch" for c in CODES_HEADER]
 write("account_codes_bad_header.csv", codes, header=bad_codes_header)
+
+# ---- address fixture: address2 truncated on word boundary at 67 chars ------
+# Business rule: target allows <=67 chars; if the limit lands mid-word the
+# whole partial last word is dropped (a 5-char word with 2 chars of budget
+# loses all 5, not 3). A lone word longer than 67 is hard-truncated.
+
+ADDR_HEADER = ["addr_id", "address1", "address2", "city", "postcode"]
+TRUNC_LIMIT = 67
+
+
+def truncw(s, n=TRUNC_LIMIT):
+    """Reference implementation mirrored in libs/engine/reconcile._trunc_words."""
+    if len(s) <= n:
+        return s
+    cut = s[:n]
+    if s[n] != " " and cut[-1] != " ":
+        i = cut.rfind(" ")
+        if i >= 0:
+            cut = cut[:i]
+    return cut.rstrip()
+
+
+EXACT_67 = "Palm Grove Residency Indiranagar Bengaluru Karnataka India 560038AA"
+HEAD_64 = "Rosewood Enclave Phase Two Near Central Mall Avenue Junction XXX"
+DROP_LAST = HEAD_64 + " Kappa Residency Towers"  # 'Kappa' starts at index 65
+FITS_67 = EXACT_67 + " Extension Block"  # full 67-char word-boundary fit
+LONG_WORD = "SupercalifragilisticexpialidociousavenueblocktwentythreebuildingoneZ"
+
+assert len(EXACT_67) == 67
+assert len(HEAD_64) == 64 and len(DROP_LAST) > 67 and DROP_LAST[67] != " "
+assert truncw(DROP_LAST) == HEAD_64  # 5-char 'Kappa' dropped whole
+assert truncw(FITS_67) == EXACT_67  # word ending exactly at 67 kept
+assert truncw(LONG_WORD) == LONG_WORD[:67]  # no space -> hard cut
+
+address_rows = [
+    [1, "221B Baker Street", "Flat 4", "london", "NW16XE"],
+    [2, "MG Road House", EXACT_67, "bangalore", "560001"],
+    [3, "Palm Residency", DROP_LAST, "bangalore", "560038"],
+    [4, "Lakeview Towers", FITS_67, "chennai", "600001"],
+    [5, "Crossword Plaza", LONG_WORD, "hyderabad", "500001"],
+    [6, "  Orchid Court  ", "Unit 12, Sector V", "kolkata", "700001"],
+    [7, "Sunrise Apartments", "Villa 9, Palm Meadows Phase 3, Whitefield", "bangalore", "560066"],
+    [
+        8,
+        "Willow Court",
+        "House 44, Green Park Extension Near Metro Gate Three South",
+        "delhi",
+        "110016",
+    ],
+]
+write("address_extract.csv", address_rows, header=ADDR_HEADER)
