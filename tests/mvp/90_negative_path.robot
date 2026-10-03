@@ -7,10 +7,14 @@ Suite Setup       Recon Suite Setup
 Suite Teardown    Reload Clean Target
 
 *** Variables ***
-${SOURCE_FILE}        ${ROOT}${/}data${/}samples${/}customer.csv
-${BAD_HEADER_FILE}    ${ROOT}${/}data${/}samples${/}customer_bad_header.csv
-${BAD_DQ_FILE}        ${ROOT}${/}data${/}samples${/}customer_bad_dq.csv
-${SHORT_FILE}         ${ROOT}${/}data${/}samples${/}customer_missing_rows.csv
+${SOURCE_FILE}         ${ROOT}${/}data${/}samples${/}customer.csv
+${BAD_HEADER_FILE}     ${ROOT}${/}data${/}samples${/}customer_bad_header.csv
+${BAD_DQ_FILE}         ${ROOT}${/}data${/}samples${/}customer_bad_dq.csv
+${SHORT_FILE}          ${ROOT}${/}data${/}samples${/}customer_missing_rows.csv
+${ACCOUNT_CONTRACT}    ${ROOT}${/}config${/}contracts${/}account_mvp.yaml
+${DUP_CODES}           ${ROOT}${/}data${/}samples${/}account_codes_bad_dup.csv
+${MISSING_CODES}       ${ROOT}${/}data${/}samples${/}account_codes_bad_missing.csv
+${BAD_CODES_HEADER}    ${ROOT}${/}data${/}samples${/}account_codes_bad_header.csv
 
 *** Test Cases ***
 Detects Header Violation With Named Column
@@ -54,8 +58,46 @@ Read Only Role Cannot Mutate Target
     ${err}=    Run Keyword And Expect Error    *    Execute Read Only Sql    DELETE FROM public.customer WHERE false
     Should Match Regexp    ${err}    read-only|permission denied
 
+Detects Duplicate Join Key Fails Closed
+    [Documentation]    A codes file with duplicate join keys would fan out
+    ...    rows silently — the read must fail before any comparison runs.
+    Load Contract    ${ACCOUNT_CONTRACT}
+    Run Keyword And Expect Error    *duplicate keys*acct_seq*    Read Source    join_path=${DUP_CODES}
+    Load Contract
+
+Detects Missing Join Key Fails Closed
+    [Documentation]    require_match: an extract row with no codes row is a
+    ...    source defect, not a silent null.
+    Load Contract    ${ACCOUNT_CONTRACT}
+    Run Keyword And Expect Error    *no match*join file*    Read Source    join_path=${MISSING_CODES}
+    Load Contract
+
+Detects Join File Header Violation
+    [Documentation]    Codes-file header drift names the drifted column.
+    Load Contract    ${ACCOUNT_CONTRACT}
+    ${errors}=    Get Header Errors    ${BAD_CODES_HEADER}    join_index=0
+    Should Not Be Empty    ${errors}
+    Should Contain    ${errors}[0]    branch_code
+    Load Contract
+
+Detects Tampered Join-Derived Column
+    [Documentation]    loan_account = "{branch_code}|{acct_seq}" — mutating the
+    ...    merged value in the target is attributed to the transform layer.
+    Load Contract    ${ACCOUNT_CONTRACT}
+    Read Source
+    Load Source Into Target
+    Connect Target Read Only
+    Execute Write Sql    UPDATE public.account_loan SET loan_account = 'XX|11007' WHERE account_seq = 11007
+    Compare Records
+    ${diffs}=    Get Transform Diffs    loan_account
+    Should Not Be Empty    ${diffs}
+    Should Be Equal    ${diffs}[0][expected]    CL|11007
+    Load Source Into Target
+    Load Contract
+
 *** Keywords ***
 Reload Clean Target
-    [Documentation]    Restore the clean 100-row load so later runs are unaffected.
+    [Documentation]    Restore the default contract and clean 100-row load.
+    Load Contract
     Load Target From Source    ${SOURCE_FILE}
     Recon Suite Teardown

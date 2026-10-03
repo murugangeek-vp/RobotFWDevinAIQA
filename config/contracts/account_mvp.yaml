@@ -1,0 +1,112 @@
+contract_name: account_loan
+version: "1.0"
+description: >-
+  Multi-source MVP: account extract joined with a branch/channel codes file
+  before transforms run. Proves columns from different CSVs can merge into one
+  target column (loan_account = SN|11000).
+
+source:
+  type: csv
+  path: data/samples/account_extract.csv
+  encoding: utf-8
+  delimiter: ","
+  header: true
+  # Physical header of the main extract, in order.
+  columns:
+    - acct_seq
+    - cust_id
+    - prod_code
+    - opened_on
+    - ccy
+    - bal
+    - st
+  joins:
+    - path: data/samples/account_codes.csv
+      "on": acct_seq            # quoted: bare `on` parses as boolean in YAML 1.1
+      how: left
+      require_match: true       # every extract row must have a codes row
+      columns:                  # enforced header for the join file
+        - acct_seq
+        - branch_code
+        - channel_code
+
+metadata:
+  expected_row_count: 100
+  encoding: utf-8
+  delimiter: ","
+
+target:
+  type: postgres
+  schema: public
+  table: account_loan
+
+keys:
+  - account_seq
+
+# Source codes -> target codes for map() transforms. Every source code must
+# appear here or the mapping DQ rule fails closed.
+mappings:
+  products:
+    LN: LOAN
+    FD: FIXED_DEPOSIT
+    RD: RECURRING_DEPOSIT
+  statuses:
+    A: ACTIVE
+    C: CLOSED
+    S: SUSPENDED
+
+columns:
+  - name: account_seq
+    source_name: acct_seq
+    type: integer
+    nullable: false
+    unique: true
+
+  - name: customer_id
+    source_name: cust_id
+    type: integer
+    nullable: false
+
+  - name: loan_account
+    type: string
+    nullable: false
+    max_length: 24
+    transform: "{branch_code}|{acct_seq}"   # SN|11000 — cross-file merge
+
+  - name: product_name
+    type: string
+    nullable: false
+    max_length: 32
+    transform: "map(prod_code, products)"   # LN -> LOAN
+
+  - name: channel
+    type: string
+    nullable: false
+    max_length: 4
+    transform: "upper({channel_code})"      # join-file column, uppercased
+
+  - name: status
+    type: string
+    nullable: false
+    max_length: 16
+    transform: "map(st, statuses)"          # A -> ACTIVE
+
+  - name: currency
+    type: string
+    nullable: false
+    max_length: 3
+    transform: "upper({ccy})"
+
+  - name: balance
+    source_name: bal
+    type: decimal
+    nullable: false
+    scale: 2
+    range: [0, 100000]
+    transform: "round({bal}, 2)"
+
+  - name: opened_on
+    source_name: opened_on
+    type: date
+    nullable: false
+    date_format: "%Y-%m-%d"

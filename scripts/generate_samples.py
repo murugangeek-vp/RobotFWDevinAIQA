@@ -6,6 +6,14 @@ Outputs (data/samples/):
   customer_bad_dq.csv          exactly 5 seeded rule violations
   customer_missing_rows.csv    99 rows (row-count metadata check fails; also
                                usable to seed a missing-in-target defect)
+  account_extract.csv          100 rows, main file for the multi-source MVP
+                               (acct_seq 11001-11100)
+  account_codes.csv            per-account branch/channel codes; joined onto
+                               account_extract on acct_seq (loan_account = SN|11001)
+  account_codes_bad_dup.csv    duplicate join key -> read must fail closed
+  account_codes_bad_missing.csv missing join key -> read must fail closed
+                               (require_match) and row-count check fails
+  account_codes_bad_header.csv 'branch_code' renamed -> join header fails
 
 Run:  .venv/Scripts/python scripts/generate_samples.py
 """
@@ -80,3 +88,51 @@ write("customer_bad_dq.csv", bad_dq)
 
 # missing row: 99 rows
 write("customer_missing_rows.csv", clean[:99])
+
+# ---- multi-source MVP: account extract + branch/channel codes file --------
+# business case: target column loan_account merges two files, e.g. SN|11001
+
+ACCT_HEADER = ["acct_seq", "cust_id", "prod_code", "opened_on", "ccy", "bal", "st"]
+CODES_HEADER = ["acct_seq", "branch_code", "channel_code"]
+PRODUCTS = ["LN", "FD", "RD"]
+BRANCHES = ["SN", "PR", "CL", "ED", "DL"]
+CHANNELS = ["ib", "mb", "br"]
+ACCT_STATUS = ["A", "C", "S"]
+CCY = ["usd", "eur", "gbp", "inr", "jpy"]
+
+
+def account_rows(n=100):
+    base = date(2024, 1, 1)
+    for i in range(1, n + 1):
+        yield [
+            10999 + i,  # acct_seq 11000..11099
+            i,
+            PRODUCTS[i % 3],
+            str(base + timedelta(days=i)),
+            CCY[i % 5],
+            f"{random.uniform(100, 50000):.4f}",
+            ACCT_STATUS[i % 3],
+        ]
+
+
+def code_rows(n=100):
+    for i in range(1, n + 1):
+        yield [10999 + i, BRANCHES[(i - 1) % 5], CHANNELS[i % 3]]
+
+
+accounts = list(account_rows())
+codes = list(code_rows())
+write("account_extract.csv", accounts, header=ACCT_HEADER)
+write("account_codes.csv", codes, header=CODES_HEADER)
+
+# duplicate join key: acct_seq 11050 appears twice -> read fails closed
+dup = codes[:50] + [[11050, "XX", "ib"]] + codes[50:]
+write("account_codes_bad_dup.csv", dup, header=CODES_HEADER)
+
+# missing join key: no row for acct_seq 11050 -> require_match fails closed
+missing = [r for r in codes if r[0] != 11050]
+write("account_codes_bad_missing.csv", missing, header=CODES_HEADER)
+
+# drifted codes header: branch_code renamed -> join header validation fails
+bad_codes_header = [c if c != "branch_code" else "branch" for c in CODES_HEADER]
+write("account_codes_bad_header.csv", codes, header=bad_codes_header)

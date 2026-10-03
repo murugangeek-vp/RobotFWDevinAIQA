@@ -118,6 +118,19 @@ def _check_semantics(raw: dict) -> None:
         # YAML turns unquoted 00/Y/1 into ints/bools, silently losing codes.
         if not all(isinstance(k, str) for k in table):
             raise ValueError(f"mapping {name!r} has non-string codes; quote every code in YAML")
+    src_cols = set((raw.get("source") or {}).get("columns") or [])
+    for j in (raw.get("source") or {}).get("joins") or []:
+        on = j["on"] if isinstance(j["on"], list) else [j["on"]]
+        missing = [k for k in on if src_cols and k not in src_cols]
+        if missing:
+            raise ValueError(f"join {j.get('path')!r}: keys {missing} not in source.columns")
+        jcols = j.get("columns")
+        if jcols:
+            missing_r = [k for k in on if k not in jcols]
+            if missing_r:
+                raise ValueError(
+                    f"join {j.get('path')!r}: keys {missing_r} not in its declared columns"
+                )
     seen = set()
     for ctl in raw.get("controls") or []:
         if ctl["id"] in seen:

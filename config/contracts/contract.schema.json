@@ -28,6 +28,39 @@
         "control_file": {
           "type": "string",
           "description": "Bank trailer file (key or path) with declared totals: CSV columns name,group,value"
+        },
+        "joins": {
+          "type": "array",
+          "description": "Secondary source files merged onto the main extract before checks (csv sources)",
+          "items": {
+            "type": "object",
+            "required": ["path", "on"],
+            "additionalProperties": false,
+            "properties": {
+              "path": {"type": "string", "minLength": 1},
+              "on": {
+                "oneOf": [
+                  {"type": "string", "minLength": 1},
+                  {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1}
+                ]
+              },
+              "how": {"type": "string", "enum": ["left", "inner"]},
+              "columns": {
+                "type": "array",
+                "items": {"type": "string"},
+                "minItems": 1,
+                "description": "Expected header of the join file; enforced exactly when present"
+              },
+              "suffix": {
+                "type": "string",
+                "description": "Suffix applied to non-key columns that collide with main-file names"
+              },
+              "require_match": {
+                "type": "boolean",
+                "description": "Fail the read when a main-file row has no join match"
+              }
+            }
+          }
         }
       }
     },

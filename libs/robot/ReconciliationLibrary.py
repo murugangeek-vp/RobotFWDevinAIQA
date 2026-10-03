@@ -138,10 +138,17 @@ class ReconciliationLibrary:
         return self.contract.name
 
     @keyword("Read Source")
-    def read_source(self, source_file: "str | None" = None):
+    def read_source(self, source_file: "str | None" = None, join_path: "str | None" = None):
         cfg = dict(self.contract.raw["source"])
         if source_file:
             cfg["path"] = source_file
+        if join_path is not None:
+            joins = cfg.get("joins") or []
+            if not joins:
+                raise ValueError("contract has no joins to override")
+            joins = [dict(j) for j in joins]
+            joins[0]["path"] = join_path
+            cfg["joins"] = joins
         adapter = create_source(cfg)
         try:
             self.source_df = adapter.read_batch()
@@ -165,9 +172,11 @@ class ReconciliationLibrary:
     # ----- MVP-01: header / metadata ---------------------------------------
 
     @keyword("Get Header Errors")
-    def get_header_errors(self, source_file: "str | None" = None):
+    def get_header_errors(self, source_file: "str | None" = None, join_index: "str | None" = None):
         path = source_file or self.contract.raw["source"]["path"]
-        self.header_errors = reconcile.validate_csv_header(path, self.contract)
+        self.header_errors = reconcile.validate_csv_header(
+            path, self.contract, join_index=join_index
+        )
         return self.header_errors
 
     @keyword("Get Metadata Errors")

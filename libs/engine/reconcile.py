@@ -19,12 +19,35 @@ _FUNC_RE = re.compile(r"^(\w+)\((.*)\)$")
 _PLACEHOLDER_RE = re.compile(r"\{(\w+)\}")
 
 
-def validate_csv_header(path: str, contract: Contract) -> list:
-    """MVP-01: header names/order/count vs contract source.columns."""
+def _expected_header_for(path: str, contract: Contract) -> "list | None":
+    """Expected header for `path`: join files validate against their own
+    declared `columns`, everything else against source.columns."""
+    import os
+
+    want = os.path.normcase(os.path.abspath(path))
+    for j in contract.raw["source"].get("joins") or []:
+        if os.path.normcase(os.path.abspath(j["path"])) == want:
+            cols = j.get("columns")
+            return list(cols) if cols else None
+    return contract.source_columns
+
+
+def validate_csv_header(path: str, contract: Contract, join_index=None) -> list:
+    """MVP-01: header names/order/count vs contract — per file, joins included.
+
+    `join_index` forces comparison against joins[i].columns (used to check a
+    variant file as the join file, e.g. a defective fixture path).
+    """
     with open(path, newline="", encoding=contract.raw["source"].get("encoding", "utf-8")) as fh:
         reader = csv.reader(fh, delimiter=contract.raw["source"].get("delimiter", ","))
         header = next(reader, [])
-    expected = contract.source_columns
+    if join_index is not None:
+        cols = (contract.raw["source"].get("joins") or [])[int(join_index)].get("columns")
+        expected = list(cols) if cols else None
+    else:
+        expected = _expected_header_for(path, contract)
+    if expected is None:
+        return []  # join file with no declared columns: header unconstrained
     errors = []
     if len(header) != len(expected):
         errors.append(f"header column count: expected {len(expected)}, got {len(header)}")
