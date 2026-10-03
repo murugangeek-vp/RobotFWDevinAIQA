@@ -19,7 +19,6 @@ source:
     - postcode
 
 metadata:
-  expected_row_count: 8
   encoding: utf-8
   delimiter: ","
 

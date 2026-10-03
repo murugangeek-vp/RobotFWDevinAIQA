@@ -25,10 +25,18 @@ Detects Header Violation With Named Column
     Should Not Be Empty    ${errors}
     Should Contain    ${errors}[0]    email
 
-Detects Row Count Violation
-    ${errors}=    Get Metadata Errors    ${SHORT_FILE}
-    Should Not Be Empty    ${errors}
-    Should Contain    ${errors}[-1]    row count
+Detects Short File As Extra Keys
+    [Documentation]    A truncated extract is caught at compare time: target
+    ...    keys the file is short by must surface in extra_in_target.
+    Read Source    ${SHORT_FILE}
+    Connect Target Read Only
+    Compare Records
+    ${detail}=    Get Mismatch Detail
+    Should Not Be Empty    ${detail}[extra_in_target]
+    ${stats}=    Get Source Filter Stats
+    ${target}=   Get Target Count
+    ${gap}=      Evaluate    ${target} - ${stats}[total]
+    Should Be Equal As Integers    ${{len(${detail}[extra_in_target])}}    ${gap}
 
 Detects Exactly Six Data Quality Violations
     Read Source    ${BAD_DQ_FILE}
@@ -42,6 +50,7 @@ Detects Missing Record In Target
     [Documentation]    Seeds a defect via a target write — loader mode only
     ...    (verify-only runs exclude it via the requires_write tag).
     [Tags]    requires_write
+    Require Loader Mode
     Load Target From Source    ${SOURCE_FILE}
     Execute Write Sql    DELETE FROM public.customer WHERE customer_id = 50
     ${mismatches}=    Compare Records
@@ -51,6 +60,7 @@ Detects Missing Record In Target
 
 Detects Transform Layer Defect
     [Tags]    requires_write
+    Require Loader Mode
     Load Target From Source    ${SOURCE_FILE}
     Execute Write Sql    UPDATE public.customer SET email = UPPER(email) WHERE customer_id = 7
     Compare Records
@@ -91,6 +101,7 @@ Detects Tampered Join-Derived Column
     [Documentation]    loan_account = "{branch_code}|{acct_seq}" — mutating the
     ...    merged value in the target is attributed to the transform layer.
     [Tags]    requires_write
+    Require Loader Mode
     Load Contract    ${ACCOUNT_CONTRACT}
     Read Source
     Load Source Into Target
@@ -107,6 +118,7 @@ Detects Mid-Word Hard Truncation In Target
     [Documentation]    A naive ETL cutting address2 at char 67 leaves 'Ka'
     ...    dangling; the contract expects the whole partial word dropped.
     [Tags]    requires_write
+    Require Loader Mode
     Load Contract    ${ADDRESS_CONTRACT}
     Read Source
     Load Source Into Target
@@ -137,6 +149,7 @@ Detects Out-Of-Scope Row In Filtered Target
     [Documentation]    Only 'active' rows migrate. An ETL that leaks an
     ...    out-of-scope row must surface as extra_in_target.
     [Tags]    requires_write
+    Require Loader Mode
     Load Contract    ${FILTERED_CONTRACT}
     Read Source
     Load Source Into Target
@@ -152,6 +165,7 @@ Detects In-Scope Row Missing From Filtered Target
     [Documentation]    An ETL that drops an in-scope ('active') row must
     ...    surface as missing_in_target — the filter only excuses out-of-scope rows.
     [Tags]    requires_write
+    Require Loader Mode
     Load Contract    ${FILTERED_CONTRACT}
     Read Source
     Load Source Into Target
@@ -171,7 +185,7 @@ Row Filter Column Must Exist In Source
 
 *** Keywords ***
 Reload Clean Target
-    [Documentation]    Restore the default contract and clean 100-row load.
+    [Documentation]    Restore the default contract and reload the current source rows.
     Load Contract
     Load Target From Source    ${SOURCE_FILE}
     Recon Suite Teardown

@@ -23,8 +23,14 @@ class GuidePDF(FPDF):
     def header(self):
         self.set_font("Arial", "I", 8)
         self.set_text_color(120)
-        self.cell(0, 6, "QA Guide — Data Reconciliation Testing Framework", new_x="LMARGIN",
-                  new_y="NEXT", align="R")
+        self.cell(
+            0,
+            6,
+            "QA Guide — Data Reconciliation Testing Framework",
+            new_x="LMARGIN",
+            new_y="NEXT",
+            align="R",
+        )
         self.set_text_color(0)
 
     def footer(self):
@@ -82,8 +88,9 @@ def table_block(pdf, rows):
     if not parsed:
         return
     pdf.set_font("Arial", "", 8.5)
-    with pdf.table(text_align="LEFT", line_height=5, width=pdf.epw,
-                   headings_style=fpdf_fonts_style()) as tbl:
+    with pdf.table(
+        text_align="LEFT", line_height=5, width=pdf.epw, headings_style=fpdf_fonts_style()
+    ) as tbl:
         for i, row in enumerate(parsed):
             tr = tbl.row()
             for cell in row:
@@ -107,7 +114,11 @@ def image(pdf, alt, rel):
     if not path.exists():
         paragraph(pdf, f"[missing image: {rel}]")
         return
-    pdf.image(str(path), w=min(pdf.epw * 0.85, 150), x=pdf.l_margin + (pdf.epw - min(pdf.epw * 0.85, 150)) / 2)
+    pdf.image(
+        str(path),
+        w=min(pdf.epw * 0.85, 150),
+        x=pdf.l_margin + (pdf.epw - min(pdf.epw * 0.85, 150)) / 2,
+    )
     pdf.ln(1)
 
 
@@ -148,9 +159,12 @@ def main():
             image(pdf, m.group(1), m.group(2))
         elif line.strip():
             buf = [line.strip()]
-            while i + 1 < len(lines) and lines[i + 1].strip() and not re.match(
-                r"^(#{1,3} |```|\||!|\- |---$)", lines[i + 1].strip()
-            ) and not lines[i + 1].lstrip().startswith("```"):
+            while (
+                i + 1 < len(lines)
+                and lines[i + 1].strip()
+                and not re.match(r"^(#{1,3} |```|\||!|\- |---$)", lines[i + 1].strip())
+                and not lines[i + 1].lstrip().startswith("```")
+            ):
                 i += 1
                 buf.append(lines[i].strip())
             text = " ".join(buf)

@@ -118,12 +118,16 @@ source:
   #            any: [...]     allow_empty: true (permit a zero-row scope)
 ```
 
-`config/contracts/customer_filtered.yaml` demonstrates it (33 of 100 rows).
+`config/contracts/customer_filtered.yaml` demonstrates it (the active subset).
 `Get Source Filter Stats` reports `{total, included, excluded}`; with a filter,
-the target row-count check expects the *included* count while
-`metadata.expected_row_count` still validates the source file. A filter on an
+the target row-count check expects the *included* count. A filter on an
 unknown column fails closed at `Load Contract`; a zero-row scope fails at
 `Read Source` unless `allow_empty: true`.
+
+**Row counts are dynamic**: expected target count = rows the source actually
+delivered (post-filter, post-transform) — never a contract literal. The
+optional `metadata.expected_row_count` remains for feeds with a contractual
+fixed size, but the pilot contracts don't use it.
 
 ## Switching environment / contract
 

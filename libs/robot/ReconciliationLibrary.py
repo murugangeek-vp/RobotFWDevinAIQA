@@ -22,7 +22,7 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 import yaml
-from robot.api import logger
+from robot.api import SkipExecution, logger
 from robot.api.deco import keyword
 
 from libs.adapters.base import TargetAdapter
@@ -263,16 +263,11 @@ class ReconciliationLibrary:
 
     @keyword("Get Expected Row Count")
     def get_expected_row_count(self):
-        # with a row_filter the expected target holds only in-scope rows;
-        # expected_row_count stays the source-file count (metadata check).
-        if (self.contract.raw.get("source") or {}).get("row_filter"):
-            if self.expected_df is None:
-                raise RuntimeError("Read Source must run before the row count check")
-            return len(self.expected_df)
-        n = self.contract.metadata.get("expected_row_count")
-        if n is None:
-            raise RuntimeError("contract has no metadata.expected_row_count")
-        return n
+        """Expected target count = rows the source actually delivered (after
+        row_filter scoping and transforms) — never a hardcoded number."""
+        if self.expected_df is None:
+            raise RuntimeError("Read Source must run before the row count check")
+        return len(self.expected_df)
 
     @keyword("Get Source Filter Stats")
     def get_source_filter_stats(self):
@@ -295,6 +290,16 @@ class ReconciliationLibrary:
     def _verify_only(self) -> bool:
         v = os.environ.get("RECON_SKIP_LOAD", "").strip().lower()
         return v in ("1", "true", "yes")
+
+    @keyword("Require Loader Mode")
+    def require_loader_mode(self):
+        """Skip this test when verify-only mode (RECON_SKIP_LOAD) is active —
+        the test must write to the target to seed a defect, which verify-only
+        intentionally rejects."""
+        if self._verify_only():
+            raise SkipExecution(
+                "requires loader mode: unset RECON_SKIP_LOAD to run defect-seeding tests"
+            )
 
     @keyword("Execute Write Sql")
     def execute_write_sql(self, sql: str):

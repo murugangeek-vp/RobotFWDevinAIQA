@@ -26,9 +26,6 @@ source:
     column: status
     in: [active]
 
-metadata:
-  expected_row_count: 100   # source-file rows (header/metadata check); target holds 33
-
 target:
   type: postgres
   schema: public

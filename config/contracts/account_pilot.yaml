@@ -31,7 +31,6 @@ source:
         - channel_code
 
 metadata:
-  expected_row_count: 100
   encoding: utf-8
   delimiter: ","
 

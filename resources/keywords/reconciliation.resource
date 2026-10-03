@@ -43,11 +43,11 @@ Load Target From Source
     RETURN    ${loaded}
 
 Validate Target Row Count
-    [Documentation]    Pilot-04: target count vs contract metadata.expected_row_count.
+    [Documentation]    Pilot-04: target count vs rows the source actually delivered.
     ${actual}=      Get Target Count
     ${expected}=    Get Expected Row Count
     Should Be Equal As Integers    ${actual}    ${expected}
-    ...    msg=target count ${actual} != contract expected_row_count ${expected}
+    ...    msg=target count ${actual} != source rows ${expected}
 
 Validate Target Schema
     [Documentation]    Pilot-03: live information_schema vs contract (as recon_ro).
