@@ -2,3 +2,4 @@
 pre-commit==4.0.1
 ruff==0.8.6
 mypy==1.14.1
+fpdf2==2.8.9    # scripts/build_qa_guide_pdf.py

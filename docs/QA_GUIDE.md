@@ -20,7 +20,7 @@ Every run reports five facts:
 | Target count | Records actually loaded into the database |
 | Mismatch count | Records that differ between source and database |
 | Validation rule failures | Data-quality rule violations (bad types, out-of-range, duplicates, …) |
-| Environment | Which environment the run hit (`dev` / `test` / `prod_read`) |
+| Environment | Which environment the run hit (`dev` / `prod`) |
 | Final status | **PASS** or **FAIL** |
 
 These land in `results/run_summary.json` and the Robot HTML reports.
@@ -80,23 +80,20 @@ drop), see §4.
 Run these commands from the repository root, with PostgreSQL `recon` running on
 `localhost:5432` and the `recon_ro` / `recon_rw` roles already created.
 
-### Get the version that loads `.env`
+### Get the pilot branch
 
-The automatic `.env` loading is in
-[PR #1](https://github.com/murugangeek-vp/RobotFWDevinAIQA/pull/1).
-Until that PR is merged, use its branch. Check for local changes before
-switching; an empty `git status --short` means your tracked files are clean:
+The pilot framework (with automatic `.env` loading) lives on the `pilot` branch.
+Check for local changes before switching; an empty `git status --short` means
+your tracked files are clean:
 
 ```powershell
 git status --short
 git fetch origin
-git switch --track origin/devin/1790763979-dotenv-autoconnect
+git switch --track origin/pilot
 ```
 
-If the branch already exists locally, run
-`git switch devin/1790763979-dotenv-autoconnect` instead of `git switch --track`.
-After the PR is merged, you can run `git switch main` and `git pull origin main`
-to get this change on main.
+If the branch already exists locally, run `git switch pilot` instead of
+`git switch --track`.
 
 ### Set up once
 
@@ -168,7 +165,7 @@ says `Set RECON_RW_USER / RECON_RW_PASSWORD in the environment or the repo-root
 .env file`, check that `.env` is in this repository's root and contains both RW
 keys. Suite 04 loads data with `recon_rw` before comparing with `recon_ro`.
 
-Swap `-v ENV_FILE:config/environments/test.yaml` to point at another environment.
+Swap `-v ENV_FILE:config/environments/dev.yaml` to point at another environment.
 
 ![LogPreview](image.png)
 ![LogTestOutput](image-1.png)
