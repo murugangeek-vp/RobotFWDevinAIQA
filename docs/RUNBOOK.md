@@ -102,6 +102,29 @@ the loaders truncate/reload every Pilot table.
 **Snowflake/production:** verify-only is the *only* mode — the write paths are
 hard-disabled for Snowflake targets regardless of this flag.
 
+## Migration scope — `source.row_filter`
+
+Bank ETLs often migrate a *subset* of source rows (e.g. active accounts only).
+Declare the scope in the contract; rows outside it are out of scope, not
+defects — they are excluded from the expected set AND flagged as
+`extra_in_target` if the ETL leaks them:
+
+```yaml
+source:
+  row_filter:
+    column: status
+    in: [active, "1"]        # operators: in, not_in, eq, ne
+  # compound:  all: [{column: a, eq: x}, {column: b, in: [...]}]
+  #            any: [...]     allow_empty: true (permit a zero-row scope)
+```
+
+`config/contracts/customer_filtered.yaml` demonstrates it (33 of 100 rows).
+`Get Source Filter Stats` reports `{total, included, excluded}`; with a filter,
+the target row-count check expects the *included* count while
+`metadata.expected_row_count` still validates the source file. A filter on an
+unknown column fails closed at `Load Contract`; a zero-row scope fails at
+`Read Source` unless `allow_empty: true`.
+
 ## Switching environment / contract
 
 ```bash

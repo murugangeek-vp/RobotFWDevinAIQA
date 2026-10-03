@@ -13,6 +13,8 @@ ${BAD_DQ_FILE}         ${ROOT}${/}data${/}samples${/}customer_bad_dq.csv
 ${SHORT_FILE}          ${ROOT}${/}data${/}samples${/}customer_missing_rows.csv
 ${ACCOUNT_CONTRACT}    ${ROOT}${/}config${/}contracts${/}account_pilot.yaml
 ${ADDRESS_CONTRACT}    ${ROOT}${/}config${/}contracts${/}address_pilot.yaml
+${FILTERED_CONTRACT}   ${ROOT}${/}config${/}contracts${/}customer_filtered.yaml
+${BAD_FILTER_CONTRACT}    ${ROOT}${/}data${/}samples${/}contract_bad_filter.yaml
 ${DUP_CODES}           ${ROOT}${/}data${/}samples${/}account_codes_bad_dup.csv
 ${MISSING_CODES}       ${ROOT}${/}data${/}samples${/}account_codes_bad_missing.csv
 ${BAD_CODES_HEADER}    ${ROOT}${/}data${/}samples${/}account_codes_bad_header.csv
@@ -128,6 +130,43 @@ Over-Length Address2 Rejected By Target Constraint
     Connect Target Read Only
     ${err}=    Run Keyword And Expect Error    *    Execute Write Sql    UPDATE public.address_pilot SET address2 = repeat('X', 70) WHERE address_id = 1
     Should Match Regexp    ${err}    value too long|permission denied|read-only
+    Load Contract
+
+# -------------------------------------- row_filter: migration scope -------
+Detects Out-Of-Scope Row In Filtered Target
+    [Documentation]    Only 'active' rows migrate. An ETL that leaks an
+    ...    out-of-scope row must surface as extra_in_target.
+    [Tags]    requires_write
+    Load Contract    ${FILTERED_CONTRACT}
+    Read Source
+    Load Source Into Target
+    Connect Target Read Only
+    Execute Write Sql    INSERT INTO public.customer_filtered (customer_id, full_name, email, dob, country, balance, status, created_at) VALUES (1, 'X Y', 'x@y.com', '1990-01-01', 'US', 10.0, 'active', '2024-01-02 10:00:00')
+    Compare Records
+    ${detail}=    Get Mismatch Detail
+    Should Be Equal    ${detail}[extra_in_target]    ${{[1]}}
+    Load Source Into Target
+    Load Contract
+
+Detects In-Scope Row Missing From Filtered Target
+    [Documentation]    An ETL that drops an in-scope ('active') row must
+    ...    surface as missing_in_target — the filter only excuses out-of-scope rows.
+    [Tags]    requires_write
+    Load Contract    ${FILTERED_CONTRACT}
+    Read Source
+    Load Source Into Target
+    Connect Target Read Only
+    Execute Write Sql    DELETE FROM public.customer_filtered WHERE customer_id = 3
+    Compare Records
+    ${detail}=    Get Mismatch Detail
+    Should Be Equal    ${detail}[missing_in_target]    ${{[3]}}
+    Load Source Into Target
+    Load Contract
+
+Row Filter Column Must Exist In Source
+    [Documentation]    A filter on an unknown source column fails closed at
+    ...    contract load — silently ignoring the scope rule would pass bad data.
+    Run Keyword And Expect Error    *not in source.columns*    Load Contract    ${BAD_FILTER_CONTRACT}
     Load Contract
 
 *** Keywords ***

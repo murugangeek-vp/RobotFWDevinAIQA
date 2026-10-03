@@ -1,0 +1,90 @@
+contract_name: customer_filtered
+version: "1.0"
+description: >-
+  Customer feed with migration scope — only 'active' rows migrate. Rows outside
+  the filter are out of scope, not defects; a filtered row in the target is an
+  extra_in_target defect (ETL failed to exclude it).
+
+source:
+  type: csv
+  path: data/samples/customer.csv
+  encoding: utf-8
+  delimiter: ","
+  header: true
+  columns:
+    - customer_id
+    - first_name
+    - last_name
+    - email
+    - dob
+    - country
+    - balance
+    - status
+    - created_at
+  # Business rule: the ETL migrates active accounts only.
+  row_filter:
+    column: status
+    in: [active]
+
+metadata:
+  expected_row_count: 100   # source-file rows (header/metadata check); target holds 33
+
+target:
+  type: postgres
+  schema: public
+  table: customer_filtered
+
+keys:
+  - customer_id
+
+columns:
+  - name: customer_id
+    source_name: customer_id
+    type: integer
+    nullable: false
+    unique: true
+
+  - name: full_name
+    type: string
+    nullable: false
+    max_length: 201
+    transform: "{first_name} {last_name}"
+
+  - name: email
+    type: string
+    nullable: false
+    max_length: 320
+    regex: '^[^@\s]+@[^@\s]+\.[^@\s]+$'
+    transform: "lower({email})"
+
+  - name: dob
+    source_name: dob
+    type: date
+    nullable: false
+    date_format: "%Y-%m-%d"
+
+  - name: country
+    type: string
+    nullable: false
+    max_length: 2
+    transform: "upper({country})"
+
+  - name: balance
+    source_name: balance
+    type: decimal
+    nullable: false
+    scale: 2
+    range: [0, 1000000]
+    transform: "round({balance}, 2)"
+
+  - name: status
+    source_name: status
+    type: string
+    nullable: false
+    allowed_values: [active, inactive, suspended]
+
+  - name: created_at
+    source_name: created_at
+    type: timestamp
+    nullable: false
+    ts_format: "%Y-%m-%d %H:%M:%S"

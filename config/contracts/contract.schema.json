@@ -29,6 +29,10 @@
           "type": "string",
           "description": "Bank trailer file (key or path) with declared totals: CSV columns name,group,value"
         },
+        "row_filter": {
+          "type": "object",
+          "description": "Migration scope: only matching source rows are expected in the target — e.g. {column: status, in: [active]}, or {all|any: [predicates]} with ops in|not_in|eq|ne; allow_empty permits a zero-row scope"
+        },
         "joins": {
           "type": "array",
           "description": "Secondary source files merged onto the main extract before checks (csv sources)",

@@ -119,6 +119,13 @@ def _check_semantics(raw: dict) -> None:
         if not all(isinstance(k, str) for k in table):
             raise ValueError(f"mapping {name!r} has non-string codes; quote every code in YAML")
     src_cols = set((raw.get("source") or {}).get("columns") or [])
+    rf = (raw.get("source") or {}).get("row_filter")
+    if rf is not None:
+        from libs.engine.reconcile import row_filter_predicates
+
+        for p in row_filter_predicates(rf)[1]:
+            if src_cols and p["column"] not in src_cols:
+                raise ValueError(f"row_filter column {p['column']!r} not in source.columns")
     for j in (raw.get("source") or {}).get("joins") or []:
         on = j["on"] if isinstance(j["on"], list) else [j["on"]]
         missing = [k for k in on if src_cols and k not in src_cols]

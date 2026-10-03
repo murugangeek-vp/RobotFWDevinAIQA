@@ -280,10 +280,24 @@ class ReconciliationLibrary:
 
     @keyword("Get Expected Row Count")
     def get_expected_row_count(self):
+        # with a row_filter the expected target holds only in-scope rows;
+        # expected_row_count stays the source-file count (metadata check).
+        if (self.contract.raw.get("source") or {}).get("row_filter"):
+            if self.expected_df is None:
+                raise RuntimeError("Read Source must run before the row count check")
+            return len(self.expected_df)
         n = self.contract.metadata.get("expected_row_count")
         if n is None:
             raise RuntimeError("contract has no metadata.expected_row_count")
         return n
+
+    @keyword("Get Source Filter Stats")
+    def get_source_filter_stats(self):
+        """{total, included, excluded, filter} — scope accounting for
+        source.row_filter contracts (migration-scope filters)."""
+        if self.source_df is None:
+            raise RuntimeError("Read Source must run before filter stats")
+        return reconcile.row_filter_stats(self.source_df, self.contract)
 
     @keyword("Execute Read Only Sql")
     def execute_read_only_sql(self, sql: str):

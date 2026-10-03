@@ -8,17 +8,19 @@ source_system: webster_s3_extract
 target_system: santander_snowflake
 data_classification: synthetic
 
+# Shared per-table config — declare once, override per entry where different.
+# At bank scale (1000s of tables) most entries inherit; exceptions say so.
+defaults:
+  tier: critical
+
 tables:
   - name: customer
     contract: config/contracts/migration/customer.yaml
-    tier: critical
   - name: account
     contract: config/contracts/migration/account.yaml
-    tier: critical
     depends_on: [customer]
   - name: transaction
     contract: config/contracts/migration/transaction.yaml
-    tier: critical
     depends_on: [account]
 
 relationships:

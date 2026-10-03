@@ -155,8 +155,92 @@ def apply_transform(expr: str, row: pd.Series, mappings: "dict | None" = None):
     return rendered
 
 
+_FILTER_OPS = ("in", "not_in", "eq", "ne")
+
+
+def row_filter_predicates(rf) -> "tuple[str, list]":
+    """Normalize contract source.row_filter -> (mode, [predicate, ...]).
+
+    Forms: a single predicate {column, <op>} or {all: [...]} / {any: [...]}.
+    Optional sibling key allow_empty lets a zero-row result pass validation
+    (still a hard error at filter time unless set — see apply_row_filter).
+    Fails closed on any malformed shape.
+    """
+    if not isinstance(rf, dict):
+        raise ValueError("source.row_filter must be a mapping")
+    wrapper = [k for k in ("all", "any") if k in rf]
+    if len(wrapper) > 1:
+        raise ValueError("row_filter cannot mix 'all' and 'any'")
+    if wrapper:
+        mode = wrapper[0]
+        unknown = set(rf) - {mode, "allow_empty"}
+        if unknown:
+            raise ValueError(f"row_filter has unknown keys: {sorted(unknown)}")
+        preds = rf[mode]
+        if not isinstance(preds, list) or not preds:
+            raise ValueError(f"row_filter.{mode} must be a non-empty list")
+    else:
+        mode, preds = "all", [rf]
+    for p in preds:
+        if not isinstance(p, dict):
+            raise ValueError("row_filter predicates must be mappings")
+        ops = [o for o in _FILTER_OPS if o in p]
+        if "column" not in p or len(ops) != 1:
+            raise ValueError(
+                f"row_filter predicate needs 'column' plus exactly one of {_FILTER_OPS}: {p!r}"
+            )
+        if ops[0] in ("in", "not_in") and (not isinstance(p[ops[0]], list) or not p[ops[0]]):
+            raise ValueError(f"row_filter '{ops[0]}' needs a non-empty value list: {p!r}")
+    return mode, preds
+
+
+def _filter_mask(df: pd.DataFrame, pred: dict):
+    col = pred["column"]
+    if col not in df.columns:
+        raise ValueError(f"row_filter column {col!r} not in source columns {sorted(df.columns)}")
+    vals = df[col].astype(str).str.strip()
+    if "in" in pred:
+        return vals.isin([str(v) for v in pred["in"]])
+    if "not_in" in pred:
+        return ~vals.isin([str(v) for v in pred["not_in"]])
+    if "eq" in pred:
+        return vals == str(pred["eq"])
+    return vals != str(pred["ne"])
+
+
+def apply_row_filter(source_df: pd.DataFrame, contract: Contract) -> pd.DataFrame:
+    """Contract source.row_filter — the migration scope. Rows outside the
+    filter are out of scope, not defects: they are excluded from expected
+    target rows AND flagged as extras if they appear in the target."""
+    rf = (contract.raw.get("source") or {}).get("row_filter")
+    if rf is None:
+        return source_df
+    mode, preds = row_filter_predicates(rf)
+    mask = _filter_mask(source_df, preds[0])
+    for p in preds[1:]:
+        m = _filter_mask(source_df, p)
+        mask = mask & m if mode == "all" else mask | m
+    out = source_df[mask]
+    if len(out) == 0 and not rf.get("allow_empty"):
+        raise ValueError(
+            "row_filter matched zero source rows — check the filter or set allow_empty: true"
+        )
+    return out
+
+
+def row_filter_stats(source_df: pd.DataFrame, contract: Contract) -> dict:
+    """{total, included, excluded, filter} scope accounting for reporting."""
+    rf = (contract.raw.get("source") or {}).get("row_filter")
+    total = len(source_df)
+    if rf is None:
+        return {"total": total, "included": total, "excluded": 0, "filter": None}
+    included = len(apply_row_filter(source_df, contract))
+    return {"total": total, "included": included, "excluded": total - included, "filter": rf}
+
+
 def expected_target_rows(source_df: pd.DataFrame, contract: Contract) -> pd.DataFrame:
     """Derive the expected target dataframe from source data + contract rules."""
+    source_df = apply_row_filter(source_df, contract)
     out = {}
     mappings = contract.raw.get("mappings")
     for col in contract.columns:

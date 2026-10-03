@@ -312,6 +312,31 @@ class ManifestTests(unittest.TestCase):
             with self.subTest(message), self.assertRaisesRegex(ValueError, message):
                 self.load(raw)
 
+    def test_defaults_apply_and_entries_override(self):
+        m = load_manifest(MANIFEST)  # tier comes from defaults: critical
+        self.assertTrue(all(s.tier == "critical" for s in m.tables.values()))
+        raw = yaml.safe_load(yaml.safe_dump(self.raw))
+        raw["defaults"] = {"compare_mode": "hashed", "enabled": False, "tier": "standard"}
+        raw["relationships"] = []  # disabled tables may not carry relationships
+        raw["tables"][0]["enabled"] = True  # entry overrides default
+        raw["tables"][1]["compare_mode"] = "none"  # entry overrides default
+        m = self.load(raw)
+        self.assertTrue(m.tables["customer"].enabled)
+        self.assertFalse(m.tables["account"].enabled)
+        self.assertEqual(m.tables["account"].compare_mode, "none")
+        self.assertEqual(m.tables["transaction"].compare_mode, "hashed")
+        self.assertEqual(m.tables["transaction"].tier, "standard")
+
+    def test_default_depends_on_unions_with_entry(self):
+        raw = yaml.safe_load(yaml.safe_dump(self.raw))
+        raw["defaults"] = {"depends_on": ["customer"]}
+        m = self.load(raw)
+        # fleet default applies to every table except the parent itself
+        self.assertEqual(m.tables["customer"].depends_on, [])
+        self.assertEqual(m.tables["account"].depends_on, ["customer"])
+        self.assertEqual(m.tables["transaction"].depends_on, ["customer", "account"])
+        self.assertEqual(m.enabled_tables(), ["customer", "account", "transaction"])
+
 
 class AuditTests(unittest.TestCase):
     def setUp(self):

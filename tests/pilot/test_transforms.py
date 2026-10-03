@@ -7,6 +7,101 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from libs.engine import reconcile  # noqa: E402
+from libs.engine.models import Contract  # noqa: E402
+
+
+def _df(rows):
+    import pandas as pd
+
+    return pd.DataFrame(rows)
+
+
+def _contract(rf):
+    return Contract(raw={"source": {"row_filter": rf}}, path="t.yaml")
+
+
+class RowFilterTests(unittest.TestCase):
+    DF = None  # built lazily
+
+    def df(self):
+        if RowFilterTests.DF is None:
+            RowFilterTests.DF = _df(
+                [
+                    {"id": i, "status": ["active", "inactive", "suspended"][i % 3]}
+                    for i in range(1, 101)
+                ]
+            )
+        return RowFilterTests.DF
+
+    def test_in_filter_keeps_matching_only(self):
+        out = reconcile.apply_row_filter(
+            self.df(), _contract({"column": "status", "in": ["active"]})
+        )
+        self.assertEqual(len(out), 33)
+        self.assertTrue((out["status"] == "active").all())
+
+    def test_multiple_codes_accepted(self):
+        out = reconcile.apply_row_filter(
+            self.df(), _contract({"column": "status", "in": ["active", "suspended"]})
+        )
+        self.assertEqual(len(out), 66)
+
+    def test_not_in_excludes(self):
+        out = reconcile.apply_row_filter(
+            self.df(), _contract({"column": "status", "not_in": ["active"]})
+        )
+        self.assertEqual(len(out), 67)
+
+    def test_all_and_any_composition(self):
+        df = _df(
+            [
+                {"status": "active", "ccy": "usd"},
+                {"status": "active", "ccy": "gbp"},
+                {"status": "inactive", "ccy": "usd"},
+            ]
+        )
+        both = reconcile.apply_row_filter(
+            df,
+            _contract(
+                {"all": [{"column": "status", "eq": "active"}, {"column": "ccy", "eq": "usd"}]}
+            ),
+        )
+        either = reconcile.apply_row_filter(
+            df,
+            _contract(
+                {"any": [{"column": "status", "eq": "active"}, {"column": "ccy", "eq": "usd"}]}
+            ),
+        )
+        self.assertEqual(len(both), 1)
+        self.assertEqual(len(either), 3)
+
+    def test_zero_match_fails_closed(self):
+        with self.assertRaisesRegex(ValueError, "zero source rows"):
+            reconcile.apply_row_filter(self.df(), _contract({"column": "status", "eq": "ghost"}))
+
+    def test_allow_empty_permits_zero_rows(self):
+        out = reconcile.apply_row_filter(
+            self.df(),
+            _contract({"column": "status", "eq": "ghost", "allow_empty": True}),
+        )
+        self.assertEqual(len(out), 0)
+
+    def test_malformed_filters_rejected(self):
+        for bad in (
+            {"all": [], "any": []},
+            {"all": []},
+            {"column": "status"},
+            {"in": ["active"]},
+            {"column": "status", "in": [], "eq": "x"},
+            {"column": "status", "in": "active"},
+            ["status"],
+        ):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                reconcile.row_filter_predicates(bad)
+
+    def test_stats_shape(self):
+        s = reconcile.row_filter_stats(self.df(), _contract({"column": "status", "in": ["active"]}))
+        self.assertEqual((s["total"], s["included"], s["excluded"]), (100, 33, 67))
 
 
 class TruncWordsTests(unittest.TestCase):

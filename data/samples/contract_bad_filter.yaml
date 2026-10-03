@@ -1,0 +1,30 @@
+contract_name: customer_filtered
+version: "1.0"
+description: Negative fixture — row_filter column is not in source.columns.
+
+source:
+  type: csv
+  path: data/samples/customer.csv
+  columns: [customer_id, status]
+  row_filter:
+    column: tier_code     # does not exist in source.columns -> must fail closed
+    in: ["1"]
+
+target:
+  type: postgres
+  schema: public
+  table: customer_filtered
+
+keys:
+  - customer_id
+
+columns:
+  - name: customer_id
+    source_name: customer_id
+    type: integer
+    nullable: false
+    unique: true
+  - name: status
+    source_name: status
+    type: string
+    nullable: false

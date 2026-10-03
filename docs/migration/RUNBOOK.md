@@ -10,7 +10,7 @@ source extract and the target with read-only identities and produce per-table ev
 
 | Path | Contents |
 |---|---|
-| `config/migration/*.yaml` | manifest: tables in scope, tiers, dependencies, relationships |
+| `config/migration/*.yaml` | manifest: `defaults:` (shared tier/compare/deps), tables in scope, dependencies, relationships |
 | `config/contracts/migration/*.yaml` | per-table contract: columns, keys, DQ rules, mappings, controls, `pii` flags |
 | `config/environments/migration_*.yaml` | S3 + target connection per environment (no secrets) |
 | `tests/migration/` | generic suite + negative-path proofs + unit tests |
@@ -101,6 +101,10 @@ passing; report overall status `PASS`.
   sum pushed down as generated SQL, drill-down only into mismatched buckets. Override
   per table (`compare_mode: full|hashed|none`) or per run (`MIGRATION_COMPARE_MODE`,
   `MIGRATION_HASH_BUCKETS`).
+- Manifest `defaults:` declares shared per-table settings once (`tier`, `enabled`,
+  `full_compare`, `compare_mode`, `depends_on`); each entry overrides any of them.
+  `depends_on` unions — a fleet-wide parent applies to every table except itself.
+  At bank scale (1000s of tables) most entries inherit; exceptions say so.
 
 ## 6. Delta / incremental verification (MIG-P5)
 

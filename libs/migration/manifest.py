@@ -100,7 +100,16 @@ def load_manifest(path) -> Manifest:
 
     tables: dict = {}
     target_tables: dict = {}
-    for entry in raw["tables"]:
+    defaults = raw.get("defaults") or {}
+    for raw_entry in raw["tables"]:
+        entry = {**defaults, **raw_entry}
+        # depends_on unions rather than overrides: defaults carry shared
+        # parents, the entry adds table-specific ones. A defaults parent equal
+        # to the entry itself is dropped (a fleet-wide 'depends on customer'
+        # must not give customer a self-cycle); a self-dep written on the
+        # entry itself still reaches order() and fails as a cycle.
+        deps = [d for d in (defaults.get("depends_on") or []) if d != raw_entry["name"]]
+        entry["depends_on"] = list(dict.fromkeys(deps + list(raw_entry.get("depends_on") or [])))
         name = entry["name"]
         if name in tables:
             raise ValueError(f"duplicate manifest table {name!r}")
