@@ -1,0 +1,17 @@
+environment: trial-snowflake
+target:
+  type: snowflake
+  account: OQOHVNH-ED00488
+  warehouse: ${SNOWFLAKE_WAREHOUSE}
+  database: ${SNOWFLAKE_DATABASE}
+  schema: PUBLIC
+  role: ${SNOWFLAKE_ROLE}
+  authenticator: SNOWFLAKE_JWT
+  private_key_file_env: SNOWFLAKE_PRIVATE_KEY_FILE
+  private_key_password_env: SNOWFLAKE_PRIVATE_KEY_PASSWORD
+  login_timeout: 30
+  network_timeout: 60
+  statement_timeout: 120
+  max_rows: 100000
+source:
+  contract: config/contracts/customer_snowflake.yaml

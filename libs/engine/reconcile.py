@@ -108,7 +108,10 @@ def normalize(v, col: dict):
         return None
     ctype = col["type"]
     if ctype == "integer":
-        return int(Decimal(str(v).strip()))
+        number = Decimal(str(v).strip())
+        if not number.is_finite() or number != number.to_integral_value():
+            raise ValueError("Integer comparison received a non-integral value")
+        return int(number)
     if ctype == "decimal":
         q = Decimal(1).scaleb(-int(col.get("scale", 2)))
         return Decimal(str(v).strip()).quantize(q, rounding=ROUND_HALF_UP)
@@ -156,8 +159,19 @@ def compare(
         k = tuple(normalize(row[name], colspec[name]) for name in keys)
         return k[0] if len(k) == 1 else k
 
-    exp_idx = {key_of(r): r for _, r in expected_df.iterrows()}
-    act_idx = {key_of(r): r for _, r in actual_df.iterrows()}
+    def index_rows(frame, side):
+        index = {}
+        for _, row in frame.iterrows():
+            if any(_isna(row[name]) for name in keys):
+                raise ValueError(f"{side} contains null reconciliation keys")
+            key = key_of(row)
+            if key in index:
+                raise ValueError(f"{side} contains duplicate reconciliation keys")
+            index[key] = row
+        return index
+
+    exp_idx = index_rows(expected_df, "source")
+    act_idx = index_rows(actual_df, "target")
 
     result.missing_in_target = [k for k in exp_idx if k not in act_idx]
     result.extra_in_target = [k for k in act_idx if k not in exp_idx]

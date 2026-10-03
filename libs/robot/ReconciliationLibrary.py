@@ -12,6 +12,7 @@ Credentials come from environment variables, falling back to a git-ignored
 
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -62,6 +63,25 @@ def load_credentials(path: Path) -> None:
         os.environ[key] = value
 
 
+_ENV_REF = re.compile(r"^\$\{([A-Z0-9_]+)\}$")
+
+
+def _expand_env(obj):
+    """Resolve whole-value environment references; missing values fail closed."""
+    if isinstance(obj, dict):
+        return {k: _expand_env(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_expand_env(v) for v in obj]
+    if isinstance(obj, str):
+        m = _ENV_REF.match(obj)
+        if m:
+            value = os.environ.get(m.group(1))
+            if not value or not value.strip():
+                raise ValueError(f"Required environment variable {m.group(1)} is not set")
+            return value
+    return obj
+
+
 class ReconciliationLibrary:
     ROBOT_LIBRARY_SCOPE = "GLOBAL"
     ROBOT_LIBRARY_DOC_FORMAT = "REST"
@@ -89,7 +109,7 @@ class ReconciliationLibrary:
     def load_environment(self, env_file: str):
         """Load configuration and optional local database credentials."""
         load_credentials(Path(_REPO_ROOT) / ".env")
-        self.env = yaml.safe_load(Path(env_file).read_text(encoding="utf-8"))
+        self.env = _expand_env(yaml.safe_load(Path(env_file).read_text(encoding="utf-8")))
         self.env_name = self.env["environment"]
         logger.info(f"environment: {self.env_name}")
         return self.env_name
@@ -106,7 +126,11 @@ class ReconciliationLibrary:
         cfg = dict(self.contract.raw["source"])
         if source_file:
             cfg["path"] = source_file
-        self.source_df = create_source(cfg).read_batch()
+        adapter = create_source(cfg)
+        try:
+            self.source_df = adapter.read_batch()
+        finally:
+            adapter.close()
         self.expected_df = reconcile.expected_target_rows(self.source_df, self.contract)
         logger.info(f"source rows: {len(self.source_df)}")
         return len(self.source_df)
@@ -116,6 +140,11 @@ class ReconciliationLibrary:
     def _creds(self, role: str):
         user = os.environ.get(f"RECON_{role}_USER")
         pw = os.environ.get(f"RECON_{role}_PASSWORD")
+        target = (self.env or {}).get("target", {})
+        if target.get("type") == "snowflake" and target.get("authenticator") == "SNOWFLAKE_JWT":
+            if not user:
+                raise ValueError(f"Set RECON_{role}_USER for Snowflake key-pair authentication")
+            return user, ""
         if not user or not pw:
             raise RuntimeError(
                 f"Set RECON_{role}_USER / RECON_{role}_PASSWORD "
@@ -185,6 +214,8 @@ class ReconciliationLibrary:
 
     @keyword("Load Source Into Target")
     def load_source_into_target(self):
+        if self.env["target"]["type"] == "snowflake":
+            raise PermissionError("Snowflake loading is disabled; PROD-05 is verification-only")
         user, pw = self._creds("RW")
         t = self._target_kwargs()
         conn = create_writer(self.env["target"], user=user, password=pw)
@@ -205,6 +236,12 @@ class ReconciliationLibrary:
     @keyword("Connect Target Read Only")
     def connect_target_read_only(self):
         self.close_target()
+        target = self.env["target"]
+        if target["type"] == "snowflake":
+            if self.contract.raw["target"]["type"] != "snowflake":
+                raise ValueError("Snowflake environment requires a Snowflake contract")
+            if target["schema"].upper() != self.contract.schema.upper():
+                raise ValueError("Snowflake environment and contract schemas differ")
         user, pw = self._creds("RO")
         self.target = create_target(self.env["target"], user=user, password=pw)
         return True
@@ -229,7 +266,12 @@ class ReconciliationLibrary:
     @keyword("Execute Read Only Sql")
     def execute_read_only_sql(self, sql: str):
         """Runs SQL on the read-only connection — write attempts must fail."""
-        cur = self._ensure_target().conn.cursor()
+        target = self._ensure_target()
+        if target.dialect == "snowflake":
+            raise PermissionError(
+                "Snowflake arbitrary SQL is disabled; use verification adapter methods"
+            )
+        cur = target.conn.cursor()
         try:
             cur.execute(sql)
         finally:
@@ -238,6 +280,8 @@ class ReconciliationLibrary:
     @keyword("Execute Write Sql")
     def execute_write_sql(self, sql: str):
         """Write path for negative-path seeding ONLY — uses recon_rw, never ro."""
+        if self.env["target"]["type"] == "snowflake":
+            raise PermissionError("Snowflake loading is disabled; PROD-05 is verification-only")
         user, pw = self._creds("RW")
         conn = create_writer(self.env["target"], user=user, password=pw)
         try:

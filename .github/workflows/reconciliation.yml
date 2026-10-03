@@ -80,7 +80,7 @@ jobs:
           RECON_RO_PASSWORD: ${{ secrets.RECON_RO_PASSWORD }}
           RECON_RW_USER: recon_rw
           RECON_RW_PASSWORD: ${{ secrets.RECON_RW_PASSWORD }}
-        run: robot -d results tests/mvp tests/adapters tests/api tests/s3 tests/mysql
+        run: robot -d results tests/mvp tests/adapters tests/api tests/s3 tests/mysql tests/snowflake
 
       - uses: actions/upload-artifact@v4
         if: always()

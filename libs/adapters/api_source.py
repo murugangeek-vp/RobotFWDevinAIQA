@@ -68,7 +68,7 @@ class ApiSource(SourceAdapter):
 
     def _get(self, params: dict):
         """GET with retry/backoff; 429 honors Retry-After."""
-        last_err: "Exception | None" = None
+        last_err: Exception | None = None
         for attempt in range(self.max_retries + 1):
             try:
                 resp = self._session.get(self.url, params=params, timeout=self.timeout)

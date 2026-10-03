@@ -46,6 +46,7 @@ def _ensure_builtin():
     import libs.adapters.mysql_target  # noqa: F401
     import libs.adapters.postgres_target  # noqa: F401
     import libs.adapters.s3_source  # noqa: F401
+    import libs.adapters.snowflake_target  # noqa: F401
 
 
 def _ctor_kwargs(fn, cfg: dict) -> dict:
@@ -77,6 +78,8 @@ def create_target(cfg: dict, user: str, password: str):
 
 def create_writer(cfg: dict, user: str, password: str):
     """Open the read-write loader connection for an environment `target:` block."""
+    if cfg.get("type") == "snowflake":
+        raise PermissionError("Snowflake loading is disabled; PROD-05 is verification-only")
     _ensure_builtin()
     fn = _WRITER_REGISTRY.get(cfg.get("type"))
     if fn is None:

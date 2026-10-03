@@ -148,7 +148,22 @@ _Start only after the Stage 1 gate is ticked._
   _Check:_ conformance suite green.
 
 - [ ] **PROD-05 Snowflake target** — adapter, warehouse/role config, read-only role.
+  - [x] Verification-only adapter, validated identifiers, key-pair/password auth,
+        explicit primary role, secondary roles disabled, bounded reads/timeouts.
+  - [x] Offline connector-contract/security tests and Robot evidence wrapper.
+  - [x] Read-only live suite with explicit opt-in; missing configuration fails closed.
+  - [x] Live schema/record checks against a provisioned Snowflake trial dataset.
+        Verified `results_sf_live/output.xml`: 14 passed, 0 failed, 0 skipped;
+        100 source rows, 100 target rows, no record mismatches.
+  - [ ] Independent Snowflake MCP read-only checks against the trial dataset.
+        OAuth, MCP initialize, and `tools/list` succeeded; `SYSTEM_EXECUTE_SQL`
+        is denied by Snowflake's trial-account restriction. Requires a paid or
+        organizational account for query evidence.
+  - [ ] DBA review of SELECT-only role, inherited/PUBLIC grants and live RBAC evidence.
   _Check:_ schema + record comparison suites pass against Snowflake.
+  Functional acceptance passed in the personal trial (report dated 2026-10-02).
+  Parent remains open for DBA/RBAC review; organizational production access is unverified.
+  See `docs/RUNBOOK.md` for supported scope, execution, and evidence locations.
 
 - [x] **PROD-06 MySQL target** — `MysqlTarget` adapter + writer, SELECT-only user,
       dialect type mapping (int/varchar/decimal/datetime) via `TYPE_ALIASES`,

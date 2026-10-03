@@ -11,6 +11,7 @@ from decimal import Decimal
 
 from psycopg2.extras import execute_values
 
+from libs.engine import schema as schema_mod
 from libs.engine.schema import ddl_for_contract
 
 
@@ -64,6 +65,10 @@ def load_expected_rows(conn, contract, expected_df, dialect: str = "postgres") -
     MySQL targets rely on the write role's grants — the INSERT itself is denied
     for read-only users.
     """
+    if dialect == "snowflake":
+        raise PermissionError("Snowflake loading is disabled; PROD-05 is verification-only")
+    if dialect not in ("postgres", "mysql"):
+        raise ValueError(f"Unsupported loader dialect: {dialect}")
     cur = conn.cursor()
     if dialect == "postgres":
         cur.execute("SHOW transaction_read_only")
@@ -73,8 +78,9 @@ def load_expected_rows(conn, contract, expected_df, dialect: str = "postgres") -
                 "refusing to load under a read-only session (loader requires recon_rw)"
             )
 
-    quote = "`" if dialect == "mysql" else '"'
-    qualified = f"{quote}{contract.schema}{quote}.{quote}{contract.table}{quote}"
+    qualified = (
+        f"{schema_mod.ident(contract.schema, dialect)}.{schema_mod.ident(contract.table, dialect)}"
+    )
     cur.execute(ddl_for_contract(contract, dialect))
     cur.execute(f"TRUNCATE TABLE {qualified}")
 
@@ -83,7 +89,7 @@ def load_expected_rows(conn, contract, expected_df, dialect: str = "postgres") -
     rows = [
         tuple(_coerce(row[c], coltypes[c]) for c in colnames) for _, row in expected_df.iterrows()
     ]
-    cols_sql = ", ".join(f"{quote}{c}{quote}" for c in colnames)
+    cols_sql = ", ".join(schema_mod.ident(c, dialect) for c in colnames)
     if dialect == "mysql":
         placeholders = ", ".join(["%s"] * len(colnames))
         cur.executemany(f"INSERT INTO {qualified} ({cols_sql}) VALUES ({placeholders})", rows)

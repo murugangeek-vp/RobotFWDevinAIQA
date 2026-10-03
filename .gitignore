@@ -25,6 +25,7 @@ report.html
 !.env.example
 *.pem
 *.key
+.devin/mcp_config.local.json
 
 # OS
 Thumbs.db

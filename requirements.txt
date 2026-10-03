@@ -4,7 +4,8 @@ psycopg2-binary==2.9.10
 pandas==2.2.3
 pyyaml==6.0.3
 jsonschema==4.26.0
-requests==2.32.4
+requests==2.33.0
 boto3==1.43.106
 moto[s3,server]==5.2.3  # PROD-02 test stub (server extra runs the in-process moto)
 pymysql==1.2.3
+snowflake-connector-python==4.8.0
