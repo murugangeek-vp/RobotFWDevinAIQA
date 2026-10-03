@@ -182,14 +182,21 @@ supported transform vocabulary in `contract.columns[].transform`:
 Code-mapping tabs become `mappings:` blocks; **every unmapped source value fails
 DQ** — the completeness of their spec is itself verified.
 
-### Next (MIG-P1 — contract generator, planned)
+### Next (MIG-P1 — contract generator, delivered)
 
-`scripts/generate_contracts.py` (Phase 2): parses the Excel/CSV mapping spec +
-the S3 header + Snowflake `INFORMATION_SCHEMA`, and drafts contracts
-automatically — then a reviewer marks `pii:` flags and `controls:`, and commits.
-The Robot tests **do not need regeneration**: the manifest-driven suite expands
-automatically from the manifest. So "write the test cases" literally means
-"write the contract" — the suite is already written once, generically.
+`scripts/generate_contracts.py` converts the bank's mapping workbook (as CSV)
++ code-mapping CSV + real extract headers into **draft** contracts:
+
+```powershell
+python scripts/generate_contracts.py `
+  --spec mapping_spec.csv --mappings code_mappings.csv `
+  --headers-dir <extract-parts> --out-dir config/contracts/migration
+```
+
+Spec columns: `contract,target_table,column,source_name,type,nullable,key,pii,transform,scale,max_length,unique`.
+The draft is marked `version: 0.1.0-draft` — a reviewer still confirms `pii:` flags
+and adds `controls:` before committing. The Robot tests **do not need
+regeneration**: the manifest-driven suite expands automatically.
 
 ### Guardrail on complex transforms
 

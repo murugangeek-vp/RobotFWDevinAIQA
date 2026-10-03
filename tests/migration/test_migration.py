@@ -571,5 +571,91 @@ class ControlFileTests(unittest.TestCase):
         self.assertEqual(controls.declared_names(df), {"row_count", "undeclared"})
 
 
+class ContractGeneratorTests(unittest.TestCase):
+    """MIG-P1: spec -> draft contract -> load_contract validation."""
+
+    def _gen(self, tmp, spec_rows, maps_rows=None, headers=True):
+        import importlib.util
+
+        spec_mod = importlib.util.spec_from_file_location(
+            "gen", REPO_ROOT / "scripts" / "generate_contracts.py"
+        )
+        gen = importlib.util.module_from_spec(spec_mod)
+        spec_mod.loader.exec_module(gen)
+        return gen
+
+    def test_generates_valid_contract_from_spec(self):
+        gen = self._gen(None, None)
+        with tempfile.TemporaryDirectory() as d:
+            spec = Path(d) / "spec.csv"
+            spec.write_text(
+                "contract,target_table,column,source_name,type,nullable,key,pii,transform,scale,max_length,unique\n"
+                "account,bank_account,account_number,acct_no,string,false,true,true,,,10,true\n"
+                'account,bank_account,status,,string,false,,,"map(status_cd, account_status)",,10,\n'
+                "account,bank_account,current_balance,cur_bal,decimal,false,,,,2,,\n",
+                encoding="utf-8",
+            )
+            maps = Path(d) / "maps.csv"
+            maps.write_text(
+                "mapping,source_value,target_value\naccount_status,A,ACTIVE\naccount_status,C,CLOSED\naccount_status,D,DORMANT\n",
+                encoding="utf-8",
+            )
+            out = Path(d) / "out"
+            specs = gen.load_spec(spec)
+            mappings = gen.load_mappings(maps)
+            header = gen.header_for(REPO_ROOT / "data" / "samples" / "bank", "account")
+            contract = gen.build_contract("account", specs["account"], header, mappings)
+            contract.pop("mappings", None) if not contract["mappings"] else None
+            path = out / "account.yaml"
+            out.mkdir()
+            path.write_text(yaml.safe_dump(contract, sort_keys=False), encoding="utf-8")
+            loaded = schema.load_contract(str(path))
+            self.assertEqual(loaded.keys, ["account_number"])
+            self.assertEqual(len(loaded.columns), 3)
+            self.assertEqual(loaded.raw["mappings"]["account_status"]["A"], "ACTIVE")
+            self.assertIn("acct_no", loaded.source_columns)
+
+    def test_spec_rejects_unknown_source_column(self):
+        gen = self._gen(None, None)
+        spec = {
+            "target_table": "t",
+            "keys": ["k"],
+            "columns": [
+                {"name": "k", "type": "string", "source_name": "missing_col", "nullable": False}
+            ],
+        }
+        with self.assertRaisesRegex(ValueError, "absent from the extract header"):
+            gen.build_contract("account", spec, ["acct_no", "cust_id"], {})
+
+    def test_spec_requires_key_columns(self):
+        gen = self._gen(None, None)
+        spec = {
+            "target_table": "t",
+            "keys": [],
+            "columns": [
+                {"name": "k", "type": "string", "source_name": "acct_no", "nullable": False}
+            ],
+        }
+        with self.assertRaisesRegex(ValueError, "no key columns"):
+            gen.build_contract("account", spec, ["acct_no"], {})
+
+    def test_transform_undefined_mapping_rejected(self):
+        gen = self._gen(None, None)
+        spec = {
+            "target_table": "t",
+            "keys": ["s"],
+            "columns": [
+                {
+                    "name": "s",
+                    "type": "string",
+                    "nullable": False,
+                    "transform": "map(status_cd, no_such_mapping)",
+                }
+            ],
+        }
+        with self.assertRaisesRegex(ValueError, "undefined mapping"):
+            gen.build_contract("account", spec, ["status_cd"], {})
+
+
 if __name__ == "__main__":
     unittest.main()

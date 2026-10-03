@@ -41,8 +41,10 @@ and a PostgreSQL stand-in target; it is not bank acceptance.
 
 ## Phase 2 — Scale and bank environment (needs answers Q1–Q10)
 
-- [ ] **MIG-P1** Contract generator: draft contracts from S3 header + Snowflake
-  `INFORMATION_SCHEMA` + mapping spec; human review required.
+- [x] **MIG-P1** Contract generator: `scripts/generate_contracts.py` drafts
+  contracts from a mapping-spec CSV + code-mapping CSV + real extract headers;
+  marks output DRAFT for human review (pii flags, controls). Snowflake
+  `INFORMATION_SCHEMA` drafting remains — needs a bank environment to sample.
 - [x] **MIG-P2** Bucketed fingerprint comparison for tables above `max_rows`:
   engine-independent MD5 key-buckets (256), per-bucket COUNT + row-fingerprint sums as
   generated pushdown SQL (Postgres/MySQL/Snowflake), drill-down only into mismatched
