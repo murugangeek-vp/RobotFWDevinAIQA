@@ -1,0 +1,89 @@
+contract_name: customer
+version: "0.1.0"
+description: >
+  SYNTHETIC example — Webster customer extract -> Santander customer table.
+  Column names, codes, and rules are placeholders until the approved
+  source-to-target mapping spec is available (ARCHITECTURE.md Q1).
+
+source:
+  type: s3
+  prefix: webster/customer/
+  suffix: .csv
+  format: csv
+  encoding: utf-8
+  delimiter: ","
+  columns: [cust_id, first_nm, last_nm, email_addr, birth_dt, tax_id, segment_cd, open_ts]
+
+target:
+  type: snowflake
+  table: bank_customer
+
+keys: [customer_id]
+
+mappings:
+  customer_segment:
+    "R": RETAIL
+    "B": BUSINESS
+
+controls:
+  - id: customers_by_segment
+    type: count
+    group_by: [segment]
+  - id: tax_id_nulls
+    type: null_count
+    column: tax_id
+  - id: earliest_customer
+    type: min
+    column: created_at
+
+columns:
+  - name: customer_id
+    source_name: cust_id
+    type: integer
+    nullable: false
+    unique: true
+    range: [1, 999999999]
+  - name: first_name
+    source_name: first_nm
+    type: string
+    nullable: false
+    max_length: 100
+    pii: true
+  - name: last_name
+    source_name: last_nm
+    type: string
+    nullable: false
+    max_length: 100
+    pii: true
+  - name: email
+    type: string
+    nullable: false
+    max_length: 320
+    regex: '^[^@\s]+@[^@\s]+\.[^@\s]+$'
+    transform: "lower({email_addr})"
+    pii: true
+  - name: date_of_birth
+    source_name: birth_dt
+    type: date
+    nullable: false
+    date_format: "%Y-%m-%d"
+    pii: true
+  - name: tax_id
+    source_name: tax_id
+    type: string
+    nullable: false
+    max_length: 11
+    regex: '^\d{3}-\d{2}-\d{4}$'
+    unique: true
+    pii: true
+  - name: segment
+    type: string
+    nullable: false
+    max_length: 20
+    allowed_values: [RETAIL, BUSINESS]
+    transform: "map(segment_cd, customer_segment)"
+  - name: created_at
+    source_name: open_ts
+    type: timestamp
+    nullable: false
+    ts_format: "%Y-%m-%d %H:%M:%S"

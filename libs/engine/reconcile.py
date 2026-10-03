@@ -59,9 +59,31 @@ def validate_csv_metadata(path: str, contract: Contract) -> list:
     return errors
 
 
-def apply_transform(expr: str, row: pd.Series):
-    """Evaluate a contract transform: '{a} {b}' template or func(arg, ...) call."""
+_MAP_RE = re.compile(r"^map\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*\)$")
+
+
+def parse_map(expr: "str | None"):
+    """`map(column, mapping_name)` -> (column, mapping_name), else None."""
+    m = _MAP_RE.match((expr or "").strip())
+    return (m.group(1), m.group(2)) if m else None
+
+
+def map_code(value, mapping_name: str, mappings: "dict | None"):
+    """Translate a source code via a contract mapping; unmapped/empty -> None."""
+    if not mappings or mapping_name not in mappings:
+        raise ValueError(f"contract has no mapping {mapping_name!r}")
+    if _isna(value):
+        return None
+    return mappings[mapping_name].get(str(value).strip())
+
+
+def apply_transform(expr: str, row: pd.Series, mappings: "dict | None" = None):
+    """Evaluate a contract transform: '{a} {b}' template, func(arg, ...) call,
+    or map(column, mapping_name) code translation."""
     expr = expr.strip()
+    mapped = parse_map(expr)
+    if mapped:
+        return map_code(row[mapped[0]], mapped[1], mappings)
     m = _FUNC_RE.match(expr)
     if m and m.group(1) in _SAFE_FUNCS and "{" not in expr:
         fname, argstr = m.group(1), m.group(2)
@@ -92,10 +114,11 @@ def apply_transform(expr: str, row: pd.Series):
 def expected_target_rows(source_df: pd.DataFrame, contract: Contract) -> pd.DataFrame:
     """Derive the expected target dataframe from source data + contract rules."""
     out = {}
+    mappings = contract.raw.get("mappings")
     for col in contract.columns:
         if "transform" in col:
             out[col["name"]] = source_df.apply(
-                lambda r, c=col: apply_transform(c["transform"], r), axis=1
+                lambda r, c=col: apply_transform(c["transform"], r, mappings), axis=1
             )
         else:
             out[col["name"]] = source_df[col["source_name"]]

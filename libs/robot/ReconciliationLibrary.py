@@ -82,6 +82,22 @@ def _expand_env(obj):
     return obj
 
 
+def resolve_credentials(role: str, target: dict):
+    """(user, password) for RECON_<role>_*; Snowflake key-pair needs only the user."""
+    user = os.environ.get(f"RECON_{role}_USER")
+    pw = os.environ.get(f"RECON_{role}_PASSWORD")
+    if target.get("type") == "snowflake" and target.get("authenticator") == "SNOWFLAKE_JWT":
+        if not user:
+            raise ValueError(f"Set RECON_{role}_USER for Snowflake key-pair authentication")
+        return user, ""
+    if not user or not pw:
+        raise RuntimeError(
+            f"Set RECON_{role}_USER / RECON_{role}_PASSWORD "
+            "in the environment or the repo-root .env file"
+        )
+    return user, pw
+
+
 class ReconciliationLibrary:
     ROBOT_LIBRARY_SCOPE = "GLOBAL"
     ROBOT_LIBRARY_DOC_FORMAT = "REST"
@@ -138,19 +154,7 @@ class ReconciliationLibrary:
     # ----- credential helpers ---------------------------------------------
 
     def _creds(self, role: str):
-        user = os.environ.get(f"RECON_{role}_USER")
-        pw = os.environ.get(f"RECON_{role}_PASSWORD")
-        target = (self.env or {}).get("target", {})
-        if target.get("type") == "snowflake" and target.get("authenticator") == "SNOWFLAKE_JWT":
-            if not user:
-                raise ValueError(f"Set RECON_{role}_USER for Snowflake key-pair authentication")
-            return user, ""
-        if not user or not pw:
-            raise RuntimeError(
-                f"Set RECON_{role}_USER / RECON_{role}_PASSWORD "
-                "in the environment or the repo-root .env file"
-            )
-        return user, pw
+        return resolve_credentials(role, (self.env or {}).get("target", {}))
 
     def _target_kwargs(self):
         t = self.env["target"]

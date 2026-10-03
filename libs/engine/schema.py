@@ -98,7 +98,42 @@ def load_contract(path: str) -> Contract:
     raw = yaml.safe_load(contract_path.read_text(encoding="utf-8"))
     schema = json.loads(_CONTRACT_SCHEMA_PATH.read_text(encoding="utf-8"))
     js_validate(instance=raw, schema=schema)
+    _check_semantics(raw)
     return Contract(raw=raw, path=str(contract_path))
+
+
+_NUMERIC = ("integer", "decimal")
+
+
+def _check_semantics(raw: dict) -> None:
+    """Cross-field rules JSON schema cannot express; fail closed on ambiguity."""
+    names = [c["name"] for c in raw["columns"]]
+    if len(names) != len(set(names)):
+        raise ValueError("contract has duplicate column names")
+    by_name = {c["name"]: c for c in raw["columns"]}
+    missing_keys = [k for k in raw["keys"] if k not in by_name]
+    if missing_keys:
+        raise ValueError(f"contract keys are not columns: {missing_keys}")
+    for name, table in (raw.get("mappings") or {}).items():
+        # YAML turns unquoted 00/Y/1 into ints/bools, silently losing codes.
+        if not all(isinstance(k, str) for k in table):
+            raise ValueError(f"mapping {name!r} has non-string codes; quote every code in YAML")
+    seen = set()
+    for ctl in raw.get("controls") or []:
+        if ctl["id"] in seen:
+            raise ValueError(f"duplicate control id {ctl['id']!r}")
+        seen.add(ctl["id"])
+        col = ctl.get("column")
+        if ctl["type"] == "count":
+            if col is not None:
+                raise ValueError(f"control {ctl['id']!r}: count takes no column")
+        elif col not in by_name:
+            raise ValueError(f"control {ctl['id']!r}: unknown column {col!r}")
+        if ctl["type"] == "sum" and by_name[col]["type"] not in _NUMERIC:
+            raise ValueError(f"control {ctl['id']!r}: sum requires a numeric column")
+        for g in ctl.get("group_by") or []:
+            if g not in by_name:
+                raise ValueError(f"control {ctl['id']!r}: unknown group_by column {g!r}")
 
 
 def ddl_for_contract(contract: Contract, dialect: str = "postgres") -> str:

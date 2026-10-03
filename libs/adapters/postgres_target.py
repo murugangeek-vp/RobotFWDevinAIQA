@@ -46,6 +46,19 @@ class PostgresTarget(TargetAdapter):
 
         return fetch_primary_key(self.conn, self.schema_name, table)
 
+    def _qualified(self, table: str) -> str:
+        from libs.engine.schema import ident
+
+        return f"{ident(self.schema_name)}.{ident(table)}"
+
+    def _fetch(self, sql: str, max_rows: int) -> list:
+        cur = self.conn.cursor()
+        try:
+            cur.execute(sql)
+            return cur.fetchmany(max_rows)
+        finally:
+            cur.close()
+
     def is_closed(self) -> bool:
         return bool(self.conn.closed)
 

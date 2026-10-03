@@ -1,0 +1,34 @@
+# Webster -> Santander migration scope. One entry per table; contracts own the rules.
+# Adding a table = add its contract + one entry here (no suite changes).
+# data_classification gates which environments may run this manifest.
+migration: webster_to_santander
+version: "0.1.0"
+description: SYNTHETIC pilot scope (customer, account, transaction)
+source_system: webster_s3_extract
+target_system: santander_snowflake
+data_classification: synthetic
+
+tables:
+  - name: customer
+    contract: config/contracts/migration/customer.yaml
+    tier: critical
+  - name: account
+    contract: config/contracts/migration/account.yaml
+    tier: critical
+    depends_on: [customer]
+  - name: transaction
+    contract: config/contracts/migration/transaction.yaml
+    tier: critical
+    depends_on: [account]
+
+relationships:
+  - id: account_customer
+    child: account
+    column: customer_id
+    parent: customer
+    parent_column: customer_id
+  - id: transaction_account
+    child: transaction
+    column: account_number
+    parent: account
+    parent_column: account_number

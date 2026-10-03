@@ -10,6 +10,8 @@ ignore = ["E501"]   # line length handled by formatter
 [tool.ruff.lint.per-file-ignores]
 # sys.path bootstrap must precede package imports (Robot loads the library by path)
 "libs/robot/ReconciliationLibrary.py" = ["E402"]
+"libs/robot/MigrationLibrary.py" = ["E402"]
+"libs/robot/migration_expander.py" = ["E402"]
 
 [tool.mypy]
 python_version = "3.11"

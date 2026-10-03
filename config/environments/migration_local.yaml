@@ -1,0 +1,22 @@
+# Local migration verification: S3 stub (moto) as the Webster extract, loopback
+# PostgreSQL as a stand-in for Santander. Synthetic manifests only.
+environment: local-migration
+allowed_data_classifications: [synthetic]
+require_object_versioning: true
+source_connection:
+  bucket: webster-extract-synthetic
+  endpoint_url: http://127.0.0.1:5002
+  region_name: us-east-1
+target:
+  type: postgres
+  host: localhost
+  port: 5432
+  database: recon
+  schema: public
+  max_rows: 100000
+  # Credentials from environment / git-ignored .env only:
+  #   RECON_RO_USER / RECON_RO_PASSWORD  verification (SELECT-only)
+  #   RECON_RW_USER / RECON_RW_PASSWORD  local stand-in seeding only
+local_fixture:
+  s3_port: 5002
+  data_dir: data/samples/bank

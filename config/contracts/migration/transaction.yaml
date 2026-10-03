@@ -1,0 +1,83 @@
+contract_name: transaction
+version: "0.1.0"
+description: >
+  SYNTHETIC example — Webster posted transactions -> Santander transaction table.
+  Narratives can contain personal data, so they are treated as PII. Placeholders
+  until the approved mapping spec is available (ARCHITECTURE.md Q1, Q4, Q6).
+
+source:
+  type: s3
+  prefix: webster/transaction/
+  suffix: .csv
+  format: csv
+  encoding: utf-8
+  delimiter: ","
+  columns: [txn_id, acct_no, post_ts, amt, dr_cr_ind, ccy, narrative]
+
+target:
+  type: snowflake
+  table: bank_transaction
+
+keys: [transaction_id]
+
+mappings:
+  direction:
+    "DR": DEBIT
+    "CR": CREDIT
+
+controls:
+  - id: txn_count
+    type: count
+  - id: amount_by_direction_currency
+    type: sum
+    column: amount
+    group_by: [direction, currency]
+  - id: latest_posting
+    type: max
+    column: posted_at
+  - id: earliest_posting
+    type: min
+    column: posted_at
+
+columns:
+  - name: transaction_id
+    source_name: txn_id
+    type: integer
+    nullable: false
+    unique: true
+  - name: account_number
+    source_name: acct_no
+    type: string
+    nullable: false
+    max_length: 10
+    regex: '^\d{10}$'
+    pii: true
+  - name: posted_at
+    source_name: post_ts
+    type: timestamp
+    nullable: false
+    ts_format: "%Y-%m-%d %H:%M:%S"
+  - name: amount
+    source_name: amt
+    type: decimal
+    nullable: false
+    scale: 2
+    range: [0.01, 100000000]
+  - name: direction
+    type: string
+    nullable: false
+    max_length: 6
+    allowed_values: [DEBIT, CREDIT]
+    transform: "map(dr_cr_ind, direction)"
+  - name: currency
+    source_name: ccy
+    type: string
+    nullable: false
+    max_length: 3
+    regex: '^[A-Z]{3}$'
+  - name: description
+    source_name: narrative
+    type: string
+    nullable: true
+    max_length: 200
+    pii: true

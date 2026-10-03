@@ -98,6 +98,19 @@ class MysqlTarget(TargetAdapter):
         cur.close()
         return rows
 
+    def _qualified(self, table: str) -> str:
+        from libs.engine.schema import ident
+
+        return f"{ident(self.schema_name, 'mysql')}.{ident(table, 'mysql')}"
+
+    def _fetch(self, sql: str, max_rows: int) -> list:
+        cur = self.conn.cursor()
+        try:
+            cur.execute(sql)
+            return list(cur.fetchmany(max_rows))
+        finally:
+            cur.close()
+
     def is_closed(self) -> bool:
         return not self.conn.open
 

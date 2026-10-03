@@ -16,7 +16,38 @@
         "encoding": {"type": "string"},
         "delimiter": {"type": "string"},
         "header": {"type": "boolean"},
-        "columns": {"type": "array", "items": {"type": "string"}, "minItems": 1}
+        "columns": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "bucket": {"type": "string", "minLength": 3},
+        "key": {"type": "string", "minLength": 1},
+        "prefix": {"type": "string"},
+        "suffix": {"type": "string"},
+        "format": {"type": "string", "enum": ["csv", "json", "jsonl"]},
+        "version_id": {"type": "string"},
+        "expected_bucket_owner": {"type": "string", "pattern": "^[0-9]{12}$"},
+        "max_objects": {"type": "integer", "minimum": 1}
+      }
+    },
+    "mappings": {
+      "type": "object",
+      "description": "Code translation tables used by map(column, mapping_name) transforms",
+      "additionalProperties": {
+        "type": "object",
+        "minProperties": 1,
+        "additionalProperties": {"type": "string"}
+      }
+    },
+    "controls": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "type"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$"},
+          "type": {"type": "string", "enum": ["count", "sum", "min", "max", "null_count", "count_distinct"]},
+          "column": {"type": "string"},
+          "group_by": {"type": "array", "items": {"type": "string"}, "maxItems": 3}
+        }
       }
     },
     "metadata": {
@@ -56,7 +87,8 @@
           "regex": {"type": "string"},
           "date_format": {"type": "string"},
           "ts_format": {"type": "string"},
-          "transform": {"type": "string"}
+          "transform": {"type": "string"},
+          "pii": {"type": "boolean"}
         }
       }
     }

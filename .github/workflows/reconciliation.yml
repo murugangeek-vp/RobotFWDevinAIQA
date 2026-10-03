@@ -82,6 +82,22 @@ jobs:
           RECON_RW_PASSWORD: ${{ secrets.RECON_RW_PASSWORD }}
         run: robot -d results tests/mvp tests/adapters tests/api tests/s3 tests/mysql tests/snowflake
 
+      - name: Migration unit tests
+        run: python -m unittest discover -s tests/migration -p "test_*.py" -v
+
+      - name: Migration verification (synthetic, S3 stub -> PostgreSQL stand-in)
+        env:
+          RECON_RO_USER: recon_ro
+          RECON_RO_PASSWORD: ${{ secrets.RECON_RO_PASSWORD }}
+          RECON_RW_USER: recon_rw
+          RECON_RW_PASSWORD: ${{ secrets.RECON_RW_PASSWORD }}
+        run: |
+          robot -d results_migration \
+            --prerunmodifier libs/robot/migration_expander.py:config/migration/webster_to_santander.yaml \
+            tests/migration/01_table_verification.robot
+          python -c "from libs.migration.audit import verify_report as v; import sys; sys.exit(0 if v('results_migration/migration_report.json') else 1)"
+          robot -d results_migration_negative tests/migration/90_negative_path.robot
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -91,3 +107,11 @@ jobs:
             results/log.html
             results/output.xml
             results/run_summary.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: migration-evidence
+          path: |
+            results_migration/
+            results_migration_negative/

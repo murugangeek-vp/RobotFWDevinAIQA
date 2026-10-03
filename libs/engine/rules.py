@@ -15,7 +15,10 @@ RULE_TYPES = (
     "regex",
     "unique",
     "transform_input_not_null",
+    "mapping",
 )
+
+_MAP_RE = re.compile(r"^map\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*\)$")
 
 
 def contract_rule_types(contract: Contract) -> list:
@@ -29,6 +32,8 @@ def contract_rule_types(contract: Contract) -> list:
             continue
         if derived and not col["nullable"]:
             used.add("transform_input_not_null")
+        if derived and _MAP_RE.match(col["transform"].strip()):
+            used.add("mapping")
         if not col["nullable"]:
             used.add("not_null")
         if col["type"] in ("integer", "decimal", "date", "timestamp", "boolean"):
@@ -164,6 +169,22 @@ def evaluate_source_rules(df: pd.DataFrame, contract: Contract) -> list:
         if not src or src not in source_cols:
             continue
         _eval_column(failures, col, df[src], df, col["name"])
+
+    # every populated source code must have a target code (fail closed)
+    mappings = contract.raw.get("mappings") or {}
+    for col in contract.columns:
+        m = _MAP_RE.match((col.get("transform") or "").strip())
+        if not m:
+            continue
+        src, name = m.group(1), m.group(2)
+        if name not in mappings:
+            raise ValueError(f"column '{col['name']}' references unknown mapping {name!r}")
+        if src not in source_cols:
+            continue
+        codes = set(mappings[name])
+        series = df[src]
+        unmapped = ~series.map(_is_empty) & ~series.map(lambda v, c=codes: str(v).strip() in c)
+        _record(failures, "mapping", col["name"], unmapped, df)
 
     return list(failures.values())
 

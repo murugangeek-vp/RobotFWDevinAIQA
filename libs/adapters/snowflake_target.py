@@ -185,6 +185,15 @@ class SnowflakeTarget(TargetAdapter):
             for r in sorted(rows, key=lambda r: int(r["key_sequence"]))
         ]
 
+    def _qualified(self, table: str) -> str:
+        return self._table(table)
+
+    def _fetch(self, sql: str, max_rows: int) -> list:
+        # Only reached via TargetAdapter.aggregate/orphans (generated SQL).
+        with closing(self.conn.cursor()) as cur:
+            cur.execute(sql)
+            return cur.fetchmany(max_rows)
+
     def query(self, sql: str, params=None):
         raise PermissionError(
             "Snowflake arbitrary SQL is disabled; use verification adapter methods"
