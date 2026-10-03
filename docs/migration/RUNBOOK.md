@@ -1,5 +1,8 @@
 # Migration Verification — Runbook (Webster S3 → Santander Snowflake)
 
+Client-facing playbook (proof-of-quality demo, intake checklists, environment
+onboarding, mapping-file intake): [CLIENT_INTAKE.md](CLIENT_INTAKE.md).
+
 The framework is **verification-only**: the bank ETL loads the target; we read the
 source extract and the target with read-only identities and produce per-table evidence.
 
