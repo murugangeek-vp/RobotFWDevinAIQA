@@ -51,6 +51,7 @@ def load_credentials(path: Path) -> None:
                 "RECON_RO_PASSWORD",
                 "RECON_RW_USER",
                 "RECON_RW_PASSWORD",
+                "RECON_SKIP_LOAD",
             }
             or key in os.environ
         ):
@@ -232,7 +233,7 @@ class ReconciliationLibrary:
         # Verification then needs only the read-only role; a missing/broken
         # RECON_RW_* credential must not fail it.
         if os.environ.get("RECON_SKIP_LOAD", "").strip().lower() in ("1", "true", "yes"):
-            logger.warn("RECON_SKIP_LOAD set — target left untouched (verify-only)")
+            logger.warn("RECON_SKIP_LOAD set - target left untouched (verify-only)")
             self.loaded_count = 0
             return 0
         if self.env["target"]["type"] == "snowflake":
