@@ -2,5 +2,3 @@
 pre-commit==4.0.1
 ruff==0.8.6
 mypy==1.14.1
-python-pptx==1.0.2   # docs only — scripts/build_migration_presentation.py
-robotframework-pabot==5.2.2  # parallel sharded runs (bank environments)

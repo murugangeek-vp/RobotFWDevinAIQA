@@ -5,6 +5,11 @@ Owner: QA Engineering / Data Platform
 Automation stack: Robot Framework + Python, driven through MCP servers
 Status: POC environment provisioned and verified
 
+> **Branch scope (`pilot`):** this branch ships only Phase 1 — CSV source →
+> PostgreSQL target. Phase-2 items (S3/API/Dataiku sources, Snowflake/MySQL
+> targets, migration tooling) are the roadmap and live on the main development
+> branch, not in this codebase.
+
 ---
 
 ## 1. Purpose
@@ -116,16 +121,17 @@ into session text or committed.
 data-reconciliation-testing/
 ├── .mcp.json                        # rf-mcp + postgres MCP config for local agents
 ├── config/
-│   ├── environments/{dev,test,prod_read}.yaml
+│   ├── environments/dev.yaml
 │   └── contracts/{customer.yaml,contract.schema.json}
 ├── libs/
-│   ├── adapters/{base.py,csv_source.py,postgres_target.py}
+│   ├── adapters/{base.py,csv_source.py,postgres_target.py,registry.py}
 │   ├── engine/{reconcile.py,rules.py,schema.py,models.py}
+│   ├── loader.py
 │   └── robot/ReconciliationLibrary.py
 ├── resources/keywords/{common.resource,reconciliation.resource}
-├── tests/pilot/ … tests/prod/
+├── tests/pilot/
 ├── data/samples/customer.csv
-├── docs/{IMPLEMENTATION_PLAN.md,TODO.md,CONTRACTS.md,RUNBOOK.md,MCP_SETUP.md}
+├── docs/{IMPLEMENTATION_PLAN.md,TODO.md,CONTRACTS.md,RUNBOOK.md,QA_GUIDE.md}
 └── .github/workflows/reconciliation.yml
 ```
 

@@ -62,12 +62,8 @@ def load_expected_rows(conn, contract, expected_df, dialect: str = "postgres") -
     """Create target table per contract, truncate, bulk-insert expected rows.
 
     Raises PermissionError if the session is read-only (e.g. recon_ro creds).
-    MySQL targets rely on the write role's grants — the INSERT itself is denied
-    for read-only users.
     """
-    if dialect == "snowflake":
-        raise PermissionError("Snowflake loading is disabled; PROD-05 is verification-only")
-    if dialect not in ("postgres", "mysql"):
+    if dialect != "postgres":
         raise ValueError(f"Unsupported loader dialect: {dialect}")
     cur = conn.cursor()
     if dialect == "postgres":
@@ -90,15 +86,11 @@ def load_expected_rows(conn, contract, expected_df, dialect: str = "postgres") -
         tuple(_coerce(row[c], coltypes[c]) for c in colnames) for _, row in expected_df.iterrows()
     ]
     cols_sql = ", ".join(schema_mod.ident(c, dialect) for c in colnames)
-    if dialect == "mysql":
-        placeholders = ", ".join(["%s"] * len(colnames))
-        cur.executemany(f"INSERT INTO {qualified} ({cols_sql}) VALUES ({placeholders})", rows)
-    else:
-        execute_values(
-            cur,
-            f"INSERT INTO {qualified} ({cols_sql}) VALUES %s",
-            rows,
-        )
+    execute_values(
+        cur,
+        f"INSERT INTO {qualified} ({cols_sql}) VALUES %s",
+        rows,
+    )
     conn.commit()
     n = len(rows)
     cur.close()

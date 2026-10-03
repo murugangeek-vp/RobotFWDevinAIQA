@@ -107,7 +107,7 @@
       "type": "object",
       "required": ["type", "table"],
       "properties": {
-        "type": {"type": "string", "enum": ["postgres", "snowflake", "mysql"]},
+        "type": {"type": "string", "enum": ["postgres"]},
         "schema": {"type": "string"},
         "table": {"type": "string", "minLength": 1}
       }

@@ -1,5 +1,4 @@
 import json
-import re
 from pathlib import Path
 
 import yaml
@@ -30,65 +29,16 @@ PG_TYPE_ALIASES = {
     "boolean": {"boolean"},
 }
 
-# MySQL dialect equivalents (information_schema reports lowercase types)
-MYSQL_TYPE_MAP = {
-    "integer": "INT",
-    "decimal": "DECIMAL",
-    "string": "VARCHAR",
-    "date": "DATE",
-    "timestamp": "DATETIME",
-    "boolean": "TINYINT(1)",
-}
-
-MYSQL_TYPE_ALIASES = {
-    "integer": {"int", "bigint", "smallint", "tinyint", "mediumint"},
-    "decimal": {"decimal"},
-    "string": {"varchar", "char", "text"},
-    "date": {"date"},
-    "timestamp": {"datetime", "timestamp"},
-    "boolean": {"tinyint"},
-}
-
-# Snowflake dialect equivalents (adapter normalizes live names/types to
-# lowercase — unquoted identifiers fold to UPPERCASE server-side)
-SNOWFLAKE_TYPE_MAP = {
-    "integer": "NUMBER(38,0)",
-    "decimal": "NUMBER",
-    "string": "VARCHAR",
-    "date": "DATE",
-    "timestamp": "TIMESTAMP_NTZ",
-    "boolean": "BOOLEAN",
-}
-
-SNOWFLAKE_TYPE_ALIASES = {
-    "integer": {"number"},
-    "decimal": {"number", "decimal", "numeric"},
-    "string": {"varchar", "text", "string", "char"},
-    "date": {"date"},
-    "timestamp": {"timestamp_ntz"},
-    "boolean": {"boolean"},
-}
-
-_TYPE_MAPS = {"postgres": PG_TYPE_MAP, "mysql": MYSQL_TYPE_MAP, "snowflake": SNOWFLAKE_TYPE_MAP}
-TYPE_ALIASES = {
-    "postgres": PG_TYPE_ALIASES,
-    "mysql": MYSQL_TYPE_ALIASES,
-    "snowflake": SNOWFLAKE_TYPE_ALIASES,
-}
+_TYPE_MAPS = {"postgres": PG_TYPE_MAP}
+TYPE_ALIASES = {"postgres": PG_TYPE_ALIASES}
 
 
 def ident(name: str, dialect: str = "postgres") -> str:
-    """Quote an identifier; Snowflake supports conventional folded identifiers only."""
+    """Quote an identifier for the configured SQL dialect (postgres only)."""
     if dialect not in TYPE_ALIASES:
         raise ValueError(f"Unsupported SQL dialect: {dialect}")
     if not isinstance(name, str) or not name:
         raise ValueError("SQL identifier must be a nonempty string")
-    if dialect == "mysql":
-        return "`" + name.replace("`", "``") + "`"
-    if dialect == "snowflake":
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_$]{0,254}", name):
-            raise ValueError("Snowflake identifiers must use unquoted identifier syntax")
-        name = name.upper()
     return '"' + name.replace('"', '""') + '"'
 
 
@@ -166,9 +116,6 @@ def ddl_for_contract(contract: Contract, dialect: str = "postgres") -> str:
         col_type = type_map[col["type"]]
         if col["type"] == "string":
             col_type = f"{type_map['string']}({col.get('max_length', 255)})"
-        elif col["type"] == "decimal" and dialect in ("mysql", "snowflake"):
-            width = "DECIMAL(18,{})" if dialect == "mysql" else "NUMBER(18,{})"
-            col_type = width.format(col.get("scale", 2))
         null = "" if col["nullable"] else " NOT NULL"
         parts.append(f"{ident(col['name'], dialect)} {col_type}{null}")
     keys = ", ".join(ident(k, dialect) for k in contract.keys)
@@ -263,8 +210,6 @@ def validate_target_schema_by_category(adapter, contract: Contract) -> dict:
                 f"column '{name}' nullability mismatch: expected nullable={col['nullable']}, got {nullable}"
             )
 
-    if dialect == "snowflake":
-        errors["types"].extend(adapter.type_errors(contract))
     pk = adapter.primary_key(contract.table)
     if pk != contract.keys:
         errors["primary_key"].append(f"primary key mismatch: expected {contract.keys}, got {pk}")

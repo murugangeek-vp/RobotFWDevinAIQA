@@ -13,8 +13,6 @@ Credentials come from environment variables, falling back to a git-ignored
 import json
 import os
 import re
-import socket
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -27,7 +25,6 @@ import yaml
 from robot.api import logger
 from robot.api.deco import keyword
 
-from libs.adapters import conformance
 from libs.adapters.base import TargetAdapter
 from libs.adapters.registry import create_source, create_target, create_writer
 from libs.engine import reconcile, rules, schema
@@ -84,13 +81,9 @@ def _expand_env(obj):
 
 
 def resolve_credentials(role: str, target: dict):
-    """(user, password) for RECON_<role>_*; Snowflake key-pair needs only the user."""
+    """(user, password) for RECON_<role>_* — RO verifies, RW loads."""
     user = os.environ.get(f"RECON_{role}_USER")
     pw = os.environ.get(f"RECON_{role}_PASSWORD")
-    if target.get("type") == "snowflake" and target.get("authenticator") == "SNOWFLAKE_JWT":
-        if not user:
-            raise ValueError(f"Set RECON_{role}_USER for Snowflake key-pair authentication")
-        return user, ""
     if not user or not pw:
         raise RuntimeError(
             f"Set RECON_{role}_USER / RECON_{role}_PASSWORD "
@@ -117,8 +110,6 @@ class ReconciliationLibrary:
         self.recon_result = None
         self.loaded_count = 0
         self.run_status = "UNKNOWN"
-        self._api_proc = None  # test-support stub server process
-        self._s3_server = None  # test-support moto server
 
     # ----- setup -----------------------------------------------------------
 
@@ -236,8 +227,6 @@ class ReconciliationLibrary:
             logger.warn("RECON_SKIP_LOAD set - target left untouched (verify-only)")
             self.loaded_count = 0
             return 0
-        if self.env["target"]["type"] == "snowflake":
-            raise PermissionError("Snowflake loading is disabled; PROD-05 is verification-only")
         user, pw = self._creds("RW")
         t = self._target_kwargs()
         conn = create_writer(self.env["target"], user=user, password=pw)
@@ -258,12 +247,6 @@ class ReconciliationLibrary:
     @keyword("Connect Target Read Only")
     def connect_target_read_only(self):
         self.close_target()
-        target = self.env["target"]
-        if target["type"] == "snowflake":
-            if self.contract.raw["target"]["type"] != "snowflake":
-                raise ValueError("Snowflake environment requires a Snowflake contract")
-            if target["schema"].upper() != self.contract.schema.upper():
-                raise ValueError("Snowflake environment and contract schemas differ")
         user, pw = self._creds("RO")
         self.target = create_target(self.env["target"], user=user, password=pw)
         return True
@@ -303,10 +286,6 @@ class ReconciliationLibrary:
     def execute_read_only_sql(self, sql: str):
         """Runs SQL on the read-only connection — write attempts must fail."""
         target = self._ensure_target()
-        if target.dialect == "snowflake":
-            raise PermissionError(
-                "Snowflake arbitrary SQL is disabled; use verification adapter methods"
-            )
         cur = target.conn.cursor()
         try:
             cur.execute(sql)
@@ -322,8 +301,6 @@ class ReconciliationLibrary:
         """Write path for negative-path seeding ONLY — recon_rw in loader mode.
         In verify-only mode (RECON_SKIP_LOAD) it runs as recon_ro instead, so
         the engine itself must reject the mutation — no write credential used."""
-        if self.env["target"]["type"] == "snowflake":
-            raise PermissionError("Snowflake loading is disabled; PROD-05 is verification-only")
         role = "RO" if self._verify_only() else "RW"
         user, pw = self._creds(role)
         conn = create_writer(self.env["target"], user=user, password=pw)
@@ -430,107 +407,6 @@ class ReconciliationLibrary:
         """Read back the run_summary.json audit artifact."""
         path = Path(out_dir) / "run_summary.json"
         return json.loads(path.read_text(encoding="utf-8"))
-
-    # ----- PROD-01: adapter conformance --------------------------------------
-
-    @keyword("Check Source Adapter")
-    def check_source_adapter(self, source_file: "str | None" = None):
-        """Conformance-check the source adapter resolved from the contract."""
-        cfg = dict(self.contract.raw["source"])
-        if source_file:
-            cfg["path"] = source_file
-        return conformance.check_source(create_source(cfg))
-
-    @keyword("Check Target Adapter")
-    def check_target_adapter(self):
-        """Conformance-check the read-only target adapter from env config."""
-        return conformance.check_target(self._ensure_target(), self.contract.table)
-
-    # ----- test support ------------------------------------------------------
-
-    @keyword("Check Source Config")
-    def check_source_config(self, **cfg):
-        """Conformance-check a source built from arbitrary config — e.g. a stub
-        endpoint. Robot args arrive as strings; adapters coerce. Returns [] or
-        a list of violation strings (init failures included)."""
-        try:
-            adapter = create_source(dict(cfg))
-        except Exception as e:
-            return [f"adapter init raised {e!r}"]
-        return conformance.check_source(adapter)
-
-    @keyword("Start Api Stub")
-    def start_api_stub(self, port: int = 8080, timeout: float = 15.0):
-        """Launch scripts/serve_api.py and wait for it to open `port`."""
-        script = Path(_REPO_ROOT) / "scripts" / "serve_api.py"
-        self._api_proc = subprocess.Popen([sys.executable, str(script), "--port", str(int(port))])
-        deadline = time.time() + float(timeout)
-        while time.time() < deadline:
-            if self._api_proc.poll() is not None:
-                raise RuntimeError("api stub exited early")
-            try:
-                socket.create_connection(("127.0.0.1", int(port)), timeout=1).close()
-                return
-            except OSError:
-                time.sleep(0.3)
-        raise RuntimeError(f"api stub did not open port {port} within {timeout}s")
-
-    @keyword("Stop Api Stub")
-    def stop_api_stub(self):
-        """Terminate the stub server started by `Start Api Stub`."""
-        if self._api_proc:
-            self._api_proc.terminate()
-            try:
-                self._api_proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                self._api_proc.kill()
-            self._api_proc = None
-
-    @keyword("Read Source Config Rows")
-    def read_source_config_rows(self, **cfg):
-        """Read a source built from arbitrary config; return the row count.
-        Used to pin specific object versions, prefixes, or endpoints."""
-        adapter = create_source(dict(cfg))
-        try:
-            return len(adapter.read_batch())
-        finally:
-            adapter.close()
-
-    @keyword("Start S3 Stub")
-    def start_s3_stub(self, port: int = 5001):
-        """Launch an in-process moto S3 for PROD-02 tests; returns endpoint URL."""
-        from moto.server import ThreadedMotoServer
-
-        self._s3_server = ThreadedMotoServer(port=int(port), verbose=False)
-        self._s3_server.start()
-        os.environ.setdefault("AWS_ACCESS_KEY_ID", "testing")
-        os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "testing")
-        return f"http://127.0.0.1:{int(port)}"
-
-    @keyword("Stop S3 Stub")
-    def stop_s3_stub(self):
-        """Stop the moto server started by `Start S3 Stub`."""
-        if self._s3_server:
-            self._s3_server.stop()
-            self._s3_server = None
-
-    @keyword("Put S3 Object")
-    def put_s3_object(
-        self, endpoint_url: str, bucket: str, key: str, file_path: str, versioning=False
-    ):
-        """Upload `file_path` to `bucket`/`key` (creating the bucket); returns
-        the VersionId when `versioning` is enabled on the bucket."""
-        import boto3
-
-        s3 = boto3.client("s3", endpoint_url=endpoint_url, region_name="us-east-1")
-        try:
-            s3.head_bucket(Bucket=bucket)
-        except Exception:
-            s3.create_bucket(Bucket=bucket)
-        if str(versioning).lower() in ("true", "yes", "1"):
-            s3.put_bucket_versioning(Bucket=bucket, VersioningConfiguration={"Status": "Enabled"})
-        resp = s3.put_object(Bucket=bucket, Key=key, Body=Path(file_path).read_bytes())
-        return resp.get("VersionId")
 
     @keyword("Close Target")
     def close_target(self):

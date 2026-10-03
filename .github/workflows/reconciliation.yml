@@ -5,25 +5,17 @@ on:
   pull_request:
   workflow_dispatch:      # on-demand runs (e.g. pre-demo verification, single test)
     inputs:
-      scope:
-        description: "Which stage to run"
-        type: choice
-        options: [all, core, migration]
-        default: all
       suite:
-        description: "Core robot path (e.g. tests/pilot or one .robot file); empty = all core suites"
+        description: "Robot path (e.g. tests/pilot or one .robot file); empty = all suites"
         default: ""
       test_name:
-        description: "robot --test NAME on the core step (exact name or glob, e.g. '*Header*')"
+        description: "robot --test NAME (exact name or glob, e.g. '*Header*')"
         default: ""
       include_tag:
-        description: "robot --include TAG on the core step"
+        description: "robot --include TAG (e.g. exclude nothing / include smoke)"
         default: ""
-      migration_tables:
-        description: "MIGRATION_TABLES shard for the migration suite (e.g. 'account'); empty = all"
-        default: ""
-      migration_test:
-        description: "robot --test on the migration suite (glob ok, e.g. '*account*')"
+      exclude_tag:
+        description: "robot --exclude TAG (e.g. requires_write for verify-only runs)"
         default: ""
   schedule:
     - cron: "0 2 * * *"   # nightly run against the test database
@@ -40,15 +32,6 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s --health-timeout 5s --health-retries 10
-      mysql:
-        image: mysql:8.4
-        env:
-          MYSQL_ROOT_PASSWORD: mysql_ci
-          MYSQL_DATABASE: recon
-        ports: ["3307:3306"]   # 3307 matches dev_mysql.yaml (3306 may be taken)
-        options: >-
-          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -pmysql_ci"
-          --health-interval 5s --health-timeout 5s --health-retries 20
 
     steps:
       - uses: actions/checkout@v4
@@ -87,17 +70,7 @@ jobs:
             ALTER DEFAULT PRIVILEGES FOR ROLE recon_rw IN SCHEMA public GRANT SELECT ON TABLES TO recon_ro;
           SQL
 
-      - name: Provision MySQL database and roles
-        run: |
-          docker exec "${{ job.services.mysql.id }}" mysql -uroot -pmysql_ci -e "
-            CREATE USER IF NOT EXISTS 'recon_rw'@'%' IDENTIFIED BY '${{ secrets.RECON_RW_PASSWORD }}';
-            CREATE USER IF NOT EXISTS 'recon_ro'@'%' IDENTIFIED BY '${{ secrets.RECON_RO_PASSWORD }}';
-            GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, REFERENCES ON recon.* TO 'recon_rw'@'%';
-            GRANT SELECT ON recon.* TO 'recon_ro'@'%';
-            FLUSH PRIVILEGES;"
-
-      - name: Run reconciliation suites (Pilot + adapters + api + s3 + mysql)
-        if: inputs.scope != 'migration'
+      - name: Run reconciliation suites
         env:
           RECON_RO_USER: recon_ro
           RECON_RO_PASSWORD: ${{ secrets.RECON_RO_PASSWORD }}
@@ -106,47 +79,17 @@ jobs:
           SUITE: ${{ inputs.suite }}
           TEST_NAME: ${{ inputs.test_name }}
           INCLUDE_TAG: ${{ inputs.include_tag }}
+          EXCLUDE_TAG: ${{ inputs.exclude_tag }}
         run: |
           cmd=(robot -d results)
           [ -n "$TEST_NAME" ] && cmd+=(--test "$TEST_NAME")
           [ -n "$INCLUDE_TAG" ] && cmd+=(--include "$INCLUDE_TAG")
-          if [ -n "$SUITE" ]; then
-            cmd+=("$SUITE")
-          else
-            cmd+=(tests/pilot tests/adapters tests/api tests/s3 tests/mysql tests/snowflake)
-          fi
+          [ -n "$EXCLUDE_TAG" ] && cmd+=(--exclude "$EXCLUDE_TAG")
+          cmd+=("${SUITE:-tests/pilot}")
           "${cmd[@]}"
 
-      - name: Engine unit tests (transforms)
-        if: inputs.scope != 'migration'
+      - name: Engine unit tests
         run: python -m unittest discover -s tests/pilot -p "test_*.py" -v
-
-      - name: Migration unit tests
-        if: inputs.scope != 'core'
-        run: python -m unittest discover -s tests/migration -p "test_*.py" -v
-
-      - name: Migration verification (synthetic, S3 stub -> PostgreSQL stand-in)
-        if: inputs.scope != 'core'
-        env:
-          RECON_RO_USER: recon_ro
-          RECON_RO_PASSWORD: ${{ secrets.RECON_RO_PASSWORD }}
-          RECON_RW_USER: recon_rw
-          RECON_RW_PASSWORD: ${{ secrets.RECON_RW_PASSWORD }}
-          MIGRATION_TABLES_IN: ${{ inputs.migration_tables }}
-          MIGRATION_TEST: ${{ inputs.migration_test }}
-        run: |
-          [ -n "$MIGRATION_TABLES_IN" ] && export MIGRATION_TABLES="$MIGRATION_TABLES_IN"
-          cmd=(robot -d results_migration
-            --prerunmodifier libs/robot/migration_expander.py:config/migration/webster_to_santander.yaml)
-          [ -n "$MIGRATION_TEST" ] && cmd+=(--test "$MIGRATION_TEST")
-          cmd+=(tests/migration/01_table_verification.robot)
-          "${cmd[@]}"
-          # audit verification is only meaningful for a complete run — a filtered
-          # run reports INCOMPLETE by design, so skip the gate when filters are set
-          if [ -z "$MIGRATION_TABLES_IN" ] && [ -z "$MIGRATION_TEST" ]; then
-            python -c "from libs.migration.audit import verify_report as v; import sys; sys.exit(0 if v('results_migration/migration_report.json') else 1)"
-          fi
-          robot -d results_migration_negative tests/migration/90_negative_path.robot
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -157,11 +100,3 @@ jobs:
             results/log.html
             results/output.xml
             results/run_summary.json
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: migration-evidence
-          path: |
-            results_migration/
-            results_migration_negative/
