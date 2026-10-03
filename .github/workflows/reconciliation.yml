@@ -3,6 +3,7 @@ name: reconciliation
 on:
   push:
   pull_request:
+  workflow_dispatch:      # on-demand runs (e.g. pre-demo verification)
   schedule:
     - cron: "0 2 * * *"   # nightly run against the test database
 
