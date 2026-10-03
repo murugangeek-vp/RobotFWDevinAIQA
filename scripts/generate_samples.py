@@ -6,7 +6,7 @@ Outputs (data/samples/):
   customer_bad_dq.csv          exactly 5 seeded rule violations
   customer_missing_rows.csv    99 rows (row-count metadata check fails; also
                                usable to seed a missing-in-target defect)
-  account_extract.csv          100 rows, main file for the multi-source MVP
+  account_extract.csv          100 rows, main file for the multi-source Pilot
                                (acct_seq 11001-11100)
   account_codes.csv            per-account branch/channel codes; joined onto
                                account_extract on acct_seq (loan_account = SN|11001)
@@ -89,7 +89,7 @@ write("customer_bad_dq.csv", bad_dq)
 # missing row: 99 rows
 write("customer_missing_rows.csv", clean[:99])
 
-# ---- multi-source MVP: account extract + branch/channel codes file --------
+# ---- multi-source Pilot: account extract + branch/channel codes file --------
 # business case: target column loan_account merges two files, e.g. SN|11001
 
 ACCT_HEADER = ["acct_seq", "cust_id", "prod_code", "opened_on", "ccy", "bal", "st"]

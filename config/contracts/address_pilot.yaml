@@ -1,4 +1,4 @@
-contract_name: address_mvp
+contract_name: address_pilot
 version: "1.0"
 description: >-
   Address feed: target column address2 allows at most 67 chars; source values
@@ -26,7 +26,7 @@ metadata:
 target:
   type: postgres
   schema: public
-  table: address_mvp
+  table: address_pilot
 
 keys:
   - address_id

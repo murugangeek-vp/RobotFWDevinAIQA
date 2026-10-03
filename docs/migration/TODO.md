@@ -2,7 +2,7 @@
 
 Version 2 of the delivery checklist, scoped to the bank migration
 (see [ARCHITECTURE.md](ARCHITECTURE.md)). The v1 checklist (`docs/TODO.md`) stays the
-record of the MVP and adapter work.
+record of the Pilot and adapter work.
 
 Tick a box only when its **check** passes. "Local" means synthetic fixtures with an S3 stub
 and a PostgreSQL stand-in target; it is not bank acceptance.

@@ -1,5 +1,5 @@
 *** Settings ***
-Documentation     MVP-05: recomputed expected values vs actual for every
+Documentation     Pilot-05: recomputed expected values vs actual for every
 ...               derived/transformed column — diffs are attributed to the
 ...               transform layer. Three contracts in one suite:
 ...               customer  — {templates}, lower(), upper(), round()
@@ -12,8 +12,8 @@ Suite Teardown    Recon Suite Teardown
 
 *** Variables ***
 ${SOURCE_FILE}         ${ROOT}${/}data${/}samples${/}customer.csv
-${ACCOUNT_CONTRACT}    ${ROOT}${/}config${/}contracts${/}account_mvp.yaml
-${ADDRESS_CONTRACT}    ${ROOT}${/}config${/}contracts${/}address_mvp.yaml
+${ACCOUNT_CONTRACT}    ${ROOT}${/}config${/}contracts${/}account_pilot.yaml
+${ADDRESS_CONTRACT}    ${ROOT}${/}config${/}contracts${/}address_pilot.yaml
 ${CODES_FILE}          ${ROOT}${/}data${/}samples${/}account_codes.csv
 
 *** Test Cases ***

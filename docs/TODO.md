@@ -56,66 +56,66 @@ Progress: Stage 0 ▸ 11/14 · Stage 1 ▸ 7/9 · Stage 2 ▸ 1/11 · Stage 3 �
 
 ---
 
-## Stage 1 — POC / MVP (CSV → PostgreSQL)
+## Stage 1 — POC / Pilot (CSV → PostgreSQL)
 
 Authoring loop for every item below:
 `analyze_scenario` → `find_keywords` / `get_keyword_info` → `execute_step` / `execute_batch`
 (live) → `build_test_suite` → `run_test_suite` → commit.
 
-- [x] **MVP-01 Header and metadata validation**
+- [x] **Pilot-01 Header and metadata validation**
   - [x] Compare CSV header names, order, and count against the contract.
   - [x] Validate encoding, delimiter, row count, and trailer/control totals.
-  - [ ] Suite `tests/mvp/01_header_metadata.robot` generated via `build_test_suite`.
+  - [ ] Suite `tests/pilot/01_header_metadata.robot` generated via `build_test_suite`.
         (hand-authored and verified green via `robot`; rf-mcp regeneration pending M-02 on this machine)
   _Check:_ passes on a valid file; fails with a named-column message on a mangled header. ✅ verified
 
-- [x] **MVP-02 Data-quality checks**
+- [x] **Pilot-02 Data-quality checks**
   - [x] Rule engine: not-null, type, length, numeric range, date format, allowed values, regex, uniqueness.
   - [x] Rules read from the contract, never hardcoded in the suite.
   - [x] Failure output carries rule id, column, failing row count, and sample rows.
   _Check:_ corrupted dataset yields the exact expected `validation rule failures` count. ✅ 6 seeded violations detected exactly (5 source + derived `not_null:email`)
 
-- [x] **MVP-08 CSV → PostgreSQL loader**
+- [x] **Pilot-08 CSV → PostgreSQL loader**
   - [x] Loader script/command that loads `customer.csv` into the target table as `recon_rw`.
   - [x] Idempotent per-run load (clean target table or versioned batch id) so reruns are deterministic.
   - [x] Loader is invoked as a Robot step so the one-command flow is truly end to end.
   _Check:_ clean run leaves exactly the 100 contract rows in target; loader refuses to run as `recon_ro`. ✅ (`libs/loader.py`, `Load Source Into Target` keyword)
 
-- [x] **MVP-03 PostgreSQL schema validation**
+- [x] **Pilot-03 PostgreSQL schema validation**
   - [x] Read live schema via the **PostgreSQL MCP** (`information_schema`).
         (implemented via `information_schema` + `pg_catalog` over `recon_ro`; MCP path pending M-05)
   - [x] Compare column names, types, nullability, primary key, ordering vs contract.
   - [x] All queries run as `recon_ro`.
   _Check:_ suite fails when a column type is altered in the test DB. ✅ suite `03_schema_validation.robot` green
 
-- [x] **MVP-04 Key-based record comparison**
+- [x] **Pilot-04 Key-based record comparison**
   - [x] Join source and target on contract key columns.
   - [x] Report target count, missing-in-target, extra-in-target, per-column differences.
   - [x] Normalize whitespace, case, numeric precision, timezone.
   - [ ] Cross-check counts independently through the PostgreSQL MCP. (pending M-05)
   _Check:_ 0 mismatches on the clean run; exact count on the seeded-defect run. ✅ verified in `90_negative_path.robot`
 
-- [x] **MVP-05 Transformation validation**
+- [x] **Pilot-05 Transformation validation**
   - [x] Express mappings/derivations/formatting in the contract.
   - [x] Recompute expected target values from source and assert against actual.
   _Check:_ a deliberately wrong mapping is detected and attributed to the transform layer. ✅ `Get Transform Diffs` isolates derived columns
 
-- [x] **MVP-06 Configuration and secrets separation**
+- [x] **Pilot-06 Configuration and secrets separation**
   - [x] `config/environments/*.yaml` for host/db/schema/paths — no credentials.
   - [x] Credentials only via environment variables / MCP-managed settings.
   - [x] `.env.example` documented; `.gitignore` covers secret files, IDE files (`.idea/`),
         Python artifacts, and `results/`.
   _Check:_ secret scanner clean; suite runs with credentials supplied only at runtime. ✅ (gitleaks wiring lands with F-03)
 
-- [ ] **MVP-07 CI execution and reports**
-  - [x] CI runs `robot -d results tests/mvp` against the test database (no MCP dependency at runtime).
+- [ ] **Pilot-07 CI execution and reports**
+  - [x] CI runs `robot -d results tests/pilot` against the test database (no MCP dependency at runtime).
   - [x] Publish `report.html`, `log.html`, `output.xml` as artifacts.
   - [x] Emit `results/run_summary.json`: target count, mismatch count, rule failures, environment, final status.
   _Check:_ artifacts downloadable from a CI run; every summary field populated. (CI running; first run failed on `ruff-format`, fix pushed — awaiting green confirmation)
 
 ### 🚩 Stage 1 gate — First Implementation Success Criteria
 - [x] One command completes: pre-load validation → load → post-load validation → **PASS** + reports.
-      ✅ `robot -d results tests/mvp` → 32/32 PASS + report/log/output.xml/run_summary.json
+      ✅ `robot -d results tests/pilot` → 32/32 PASS + report/log/output.xml/run_summary.json
 - [x] Negative-path run produces **FAIL** with accurate counts and readable diffs.
       ✅ `90_negative_path.robot` seeds defects and asserts exact counts; seeded schema drift fails `03` naming the column
 - [ ] `docs/RUNBOOK.md` gets a new engineer running it in under 15 minutes.

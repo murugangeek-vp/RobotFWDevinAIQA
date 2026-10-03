@@ -1,4 +1,4 @@
-"""MVP-08: CSV -> PostgreSQL loader.
+"""Pilot-08: CSV -> PostgreSQL loader.
 
 Loads the *expected* target rows (contract transforms applied) into the target
 table. Runs as recon_rw; refuses to run under a read-only session.

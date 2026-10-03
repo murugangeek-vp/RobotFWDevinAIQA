@@ -67,7 +67,7 @@ environment variables / GitHub secrets. Never commit real passwords.
 | Every **push** to `main` | GitHub Actions | automatic |
 | Every **pull request** | GitHub Actions | automatic |
 | **Nightly** at 02:00 UTC | GitHub Actions (schedule) | automatic |
-| On demand | Any engineer's machine / IDE | `robot -d results tests/mvp` |
+| On demand | Any engineer's machine / IDE | `robot -d results tests/pilot` |
 
 A QA engineer never needs to trigger anything for routine coverage — merges and
 the nightly run handle it. To run a specific check manually (e.g. a new data
@@ -141,25 +141,25 @@ required. Each command works in a new PowerShell terminal from the repo root:
 
 ```powershell
 # Full suite
-.\.venv\Scripts\robot.exe -d results .\tests\mvp
+.\.venv\Scripts\robot.exe -d results .\tests\pilot
 
 # One suite (record comparison)
-.\.venv\Scripts\robot.exe -d results .\tests\mvp\04_record_comparison.robot
+.\.venv\Scripts\robot.exe -d results .\tests\pilot\04_record_comparison.robot
 
 # Two or more suites
-.\.venv\Scripts\robot.exe -d results .\tests\mvp\01_header_metadata.robot .\tests\mvp\04_record_comparison.robot
+.\.venv\Scripts\robot.exe -d results .\tests\pilot\01_header_metadata.robot .\tests\pilot\04_record_comparison.robot
 
 # One named test case
-.\.venv\Scripts\robot.exe -d results --test "No Records Missing In Target" .\tests\mvp\04_record_comparison.robot
+.\.venv\Scripts\robot.exe -d results --test "No Records Missing In Target" .\tests\pilot\04_record_comparison.robot
 
 # Multiple named test cases
-.\.venv\Scripts\robot.exe -d results --test "Header Matches Contract" --test "File Metadata Matches Contract" .\tests\mvp\01_header_metadata.robot
+.\.venv\Scripts\robot.exe -d results --test "Header Matches Contract" --test "File Metadata Matches Contract" .\tests\pilot\01_header_metadata.robot
 
 # End-to-end pipeline
-.\.venv\Scripts\robot.exe -d results .\tests\mvp\06_pipeline.robot
+.\.venv\Scripts\robot.exe -d results .\tests\pilot\06_pipeline.robot
 
 # Different source file
-.\.venv\Scripts\robot.exe -d results -v SOURCE_FILE:data/samples/customer.csv .\tests\mvp
+.\.venv\Scripts\robot.exe -d results -v SOURCE_FILE:data/samples/customer.csv .\tests\pilot
 ```
 
 If a run still says `missing env vars RECON_RW_USER / RECON_RW_PASSWORD`, the
@@ -192,7 +192,7 @@ Swap `-v ENV_FILE:config/environments/test.yaml` to point at another environment
   checked on the post-transform values too — a malformed input can't hide
   behind a transform.
 
-`tests/mvp/90_negative_path.robot` is a built-in proof: it deliberately seeds
+`tests/pilot/90_negative_path.robot` is a built-in proof: it deliberately seeds
 defects (missing record, wrong transformation, bad data) and asserts the
 framework catches each one with the exact count. Run it in a demo to show
 detection working live.
@@ -261,5 +261,5 @@ to prepare the test table.
 `Load Target From Source` fails fast with a connection error — no silent skips.
 
 **How do we demo it?**
-Run `robot -d results tests/mvp` → open `results/report.html`. Then run
+Run `robot -d results tests/pilot` → open `results/report.html`. Then run
 `90_negative_path.robot` to show seeded defects being caught and counted.

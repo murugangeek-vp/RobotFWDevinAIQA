@@ -1,7 +1,7 @@
 contract_name: account_loan
 version: "1.0"
 description: >-
-  Multi-source MVP: account extract joined with a branch/channel codes file
+  Multi-source Pilot: account extract joined with a branch/channel codes file
   before transforms run. Proves columns from different CSVs can merge into one
   target column (loan_account = SN|11000).
 

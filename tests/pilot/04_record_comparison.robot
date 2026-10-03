@@ -1,5 +1,5 @@
 *** Settings ***
-Documentation     MVP-04: key-based record comparison — target count,
+Documentation     Pilot-04: key-based record comparison — target count,
 ...               missing/extra keys, per-column diffs with normalization.
 Resource          ../../resources/keywords/reconciliation.resource
 Suite Setup       Load Target For Compare Suite

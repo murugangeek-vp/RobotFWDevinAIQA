@@ -1,5 +1,5 @@
 *** Settings ***
-Documentation     MVP-03: live PostgreSQL schema (information_schema) compared
+Documentation     Pilot-03: live PostgreSQL schema (information_schema) compared
 ...               to the contract — columns, types, nullability, primary key.
 Resource          ../../resources/keywords/reconciliation.resource
 Suite Setup       Load Target For Schema Suite

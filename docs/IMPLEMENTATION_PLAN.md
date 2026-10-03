@@ -68,7 +68,7 @@ never-executed suites.
 
 ### 2.3 PostgreSQL MCP — how we use it
 
-- Introspect `information_schema` for MVP-03 schema validation (columns, types,
+- Introspect `information_schema` for Pilot-03 schema validation (columns, types,
   nullability, primary keys).
 - Run read-only verification queries (counts, key sets, aggregates) independently of the
   Robot suite, as a second opinion when a mismatch is being triaged.
@@ -123,7 +123,7 @@ data-reconciliation-testing/
 │   ├── engine/{reconcile.py,rules.py,schema.py,models.py}
 │   └── robot/ReconciliationLibrary.py
 ├── resources/keywords/{common.resource,reconciliation.resource}
-├── tests/mvp/ … tests/prod/
+├── tests/pilot/ … tests/prod/
 ├── data/samples/customer.csv
 ├── docs/{IMPLEMENTATION_PLAN.md,TODO.md,CONTRACTS.md,RUNBOOK.md,MCP_SETUP.md}
 └── .github/workflows/reconciliation.yml
@@ -179,18 +179,18 @@ MCP servers installed and reachable, Python/Robot toolchain pinned, repo scaffol
 linting, pre-commit, CI skeleton, `.mcp.json` committed so every engineer's agent gets
 the same servers.
 
-### Phase 1 — POC / MVP (CSV → PostgreSQL)
+### Phase 1 — POC / Pilot (CSV → PostgreSQL)
 
 | ID | Item | MCP tooling used |
 | --- | --- | --- |
-| MVP-01 | Header and metadata validation | rf-mcp `execute_step` + OperatingSystem/CSV keywords |
-| MVP-02 | Data-quality checks | rf-mcp step execution over contract-driven rules |
-| MVP-03 | PostgreSQL schema validation | PostgreSQL MCP `information_schema` + rf-mcp DatabaseLibrary |
-| MVP-08 | CSV → PostgreSQL loader (`recon_rw`) | rf-mcp `execute_step` over the loader keyword; idempotent per-run load |
-| MVP-04 | Key-based record comparison | rf-mcp + engine; PostgreSQL MCP for independent count/key checks |
-| MVP-05 | Transformation validation | rf-mcp live execution of expected-vs-actual derivations |
-| MVP-06 | Configuration and secrets separation | env YAML + MCP-managed credentials; zero secrets in git |
-| MVP-07 | CI execution and reports | rf-mcp `run_test_suite`; Robot reports published as CI artifacts |
+| Pilot-01 | Header and metadata validation | rf-mcp `execute_step` + OperatingSystem/CSV keywords |
+| Pilot-02 | Data-quality checks | rf-mcp step execution over contract-driven rules |
+| Pilot-03 | PostgreSQL schema validation | PostgreSQL MCP `information_schema` + rf-mcp DatabaseLibrary |
+| Pilot-08 | CSV → PostgreSQL loader (`recon_rw`) | rf-mcp `execute_step` over the loader keyword; idempotent per-run load |
+| Pilot-04 | Key-based record comparison | rf-mcp + engine; PostgreSQL MCP for independent count/key checks |
+| Pilot-05 | Transformation validation | rf-mcp live execution of expected-vs-actual derivations |
+| Pilot-06 | Configuration and secrets separation | env YAML + MCP-managed credentials; zero secrets in git |
+| Pilot-07 | CI execution and reports | rf-mcp `run_test_suite`; Robot reports published as CI artifacts |
 
 ### Phase 2 — Production hardening
 
@@ -233,7 +233,7 @@ customer.csv  (100 valid data rows)
 
 Exit criteria:
 
-1. `robot -d results tests/mvp` (or rf-mcp `run_test_suite`) returns rc = 0 on clean data.
+1. `robot -d results tests/pilot` (or rf-mcp `run_test_suite`) returns rc = 0 on clean data.
 2. A deliberately corrupted dataset (missing row, wrong type, bad transform) produces a
    FAIL with an accurate mismatch count and a readable diff sample.
 3. No credentials in the repository; DB access via env config + MCP-managed credentials.
@@ -266,7 +266,7 @@ S3, API, Dataiku, Snowflake, and MySQL work does not begin until the above are m
 | --- | --- |
 | Large datasets exhaust memory during compare | Chunked streaming + row hashing (PROD-08) |
 | Credential sprawl across sources | MCP-managed credentials + single secret-store abstraction |
-| Contract drift vs actual schema | Schema validation fails fast (MVP-03) |
+| Contract drift vs actual schema | Schema validation fails fast (Pilot-03) |
 | Flaky comparisons (ordering, timezone, float precision) | Normalization layer with documented rules |
 | AI-generated tests weakening assertions | Human PR review; assertion-change diff check in CI |
 | Accidental production writes | `recon_ro` read-only role; MCP Postgres connection read-only |

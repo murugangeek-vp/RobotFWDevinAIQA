@@ -54,7 +54,7 @@ def _expected_header_for(path: str, contract: Contract) -> "list | None":
 
 
 def validate_csv_header(path: str, contract: Contract, join_index=None) -> list:
-    """MVP-01: header names/order/count vs contract — per file, joins included.
+    """Pilot-01: header names/order/count vs contract — per file, joins included.
 
     `join_index` forces comparison against joins[i].columns (used to check a
     variant file as the join file, e.g. a defective fixture path).
@@ -79,7 +79,7 @@ def validate_csv_header(path: str, contract: Contract, join_index=None) -> list:
 
 
 def validate_csv_metadata(path: str, contract: Contract) -> list:
-    """MVP-01: encoding decodable, delimiter parses to expected width, row count."""
+    """Pilot-01: encoding decodable, delimiter parses to expected width, row count."""
     meta = contract.metadata
     errors = []
     encoding = meta.get("encoding", "utf-8")
@@ -215,7 +215,7 @@ def compare(
     contract: Contract,
     columns: "list | None" = None,
 ) -> ReconResult:
-    """MVP-04: key-based record comparison with per-column diffs."""
+    """Pilot-04: key-based record comparison with per-column diffs."""
     keys = contract.keys
     compare_cols = columns or [c["name"] for c in contract.columns]
     colspec = {c["name"]: c for c in contract.columns}

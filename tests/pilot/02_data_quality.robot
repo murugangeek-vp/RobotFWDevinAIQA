@@ -1,5 +1,5 @@
 *** Settings ***
-Documentation     MVP-02: contract-driven data-quality rules on the source file —
+Documentation     Pilot-02: contract-driven data-quality rules on the source file —
 ...               one test per rule type exercised by the contract.
 Resource          ../../resources/keywords/reconciliation.resource
 Suite Setup       Evaluate Source For DQ Suite

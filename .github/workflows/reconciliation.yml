@@ -11,7 +11,7 @@ on:
         options: [all, core, migration]
         default: all
       suite:
-        description: "Core robot path (e.g. tests/mvp or one .robot file); empty = all core suites"
+        description: "Core robot path (e.g. tests/pilot or one .robot file); empty = all core suites"
         default: ""
       test_name:
         description: "robot --test NAME on the core step (exact name or glob, e.g. '*Header*')"
@@ -29,7 +29,7 @@ on:
     - cron: "0 2 * * *"   # nightly run against the test database
 
 jobs:
-  mvp:
+  pilot:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -96,7 +96,7 @@ jobs:
             GRANT SELECT ON recon.* TO 'recon_ro'@'%';
             FLUSH PRIVILEGES;"
 
-      - name: Run reconciliation suites (MVP + adapters + api + s3 + mysql)
+      - name: Run reconciliation suites (Pilot + adapters + api + s3 + mysql)
         if: inputs.scope != 'migration'
         env:
           RECON_RO_USER: recon_ro
@@ -113,13 +113,13 @@ jobs:
           if [ -n "$SUITE" ]; then
             cmd+=("$SUITE")
           else
-            cmd+=(tests/mvp tests/adapters tests/api tests/s3 tests/mysql tests/snowflake)
+            cmd+=(tests/pilot tests/adapters tests/api tests/s3 tests/mysql tests/snowflake)
           fi
           "${cmd[@]}"
 
       - name: Engine unit tests (transforms)
         if: inputs.scope != 'migration'
-        run: python -m unittest discover -s tests/mvp -p "test_*.py" -v
+        run: python -m unittest discover -s tests/pilot -p "test_*.py" -v
 
       - name: Migration unit tests
         if: inputs.scope != 'core'

@@ -47,7 +47,7 @@ Windows PowerShell: `$env:RECON_RO_USER="recon_ro"` etc.
 ## Run everything (clean data → PASS, rc=0)
 
 ```bash
-.venv/Scripts/robot -d results tests/mvp
+.venv/Scripts/robot -d results tests/pilot
 ```
 
 Produces `results/{report.html,log.html,output.xml,run_summary.json}`.
@@ -55,16 +55,16 @@ Produces `results/{report.html,log.html,output.xml,run_summary.json}`.
 ## Run against a corrupted file → expected FAIL
 
 ```bash
-robot -d results_neg -v SOURCE_FILE:data/samples/customer_bad_dq.csv tests/mvp/02_data_quality.robot
-robot -d results_neg -v SOURCE_FILE:data/samples/customer_missing_rows.csv tests/mvp/01_header_metadata.robot
+robot -d results_neg -v SOURCE_FILE:data/samples/customer_bad_dq.csv tests/pilot/02_data_quality.robot
+robot -d results_neg -v SOURCE_FILE:data/samples/customer_missing_rows.csv tests/pilot/01_header_metadata.robot
 ```
 
-`tests/mvp/90_negative_path.robot` proves detection end-to-end (it seeds defects
+`tests/pilot/90_negative_path.robot` proves detection end-to-end (it seeds defects
 into the target DB and asserts the exact mismatch counts).
 
 ## Verify-only mode — `RECON_SKIP_LOAD` (production semantics)
 
-In normal MVP runs the suite *is* the fixture loader: each test truncates and
+In normal Pilot runs the suite *is* the fixture loader: each test truncates and
 reloads expected rows as `recon_rw` before comparing. That keeps tests
 deterministic, but it also **overwrites whatever the target already holds** —
 a pre-existing defect is erased before it can be seen.
@@ -78,7 +78,7 @@ A missing or broken `RECON_RW_*` credential cannot fail verification.
 RECON_SKIP_LOAD=true
 
 # then a plain run is verify-only:
-robot --exclude requires_write -d results tests/mvp
+robot --exclude requires_write -d results tests/pilot
 ```
 
 What changes in verify-only mode:
@@ -97,7 +97,7 @@ What changes in verify-only mode:
   applies when rows were actually loaded.
 
 To restore clean fixtures: remove `RECON_SKIP_LOAD` and run the suite once —
-the loaders truncate/reload every MVP table.
+the loaders truncate/reload every Pilot table.
 
 **Snowflake/production:** verify-only is the *only* mode — the write paths are
 hard-disabled for Snowflake targets regardless of this flag.
@@ -105,7 +105,7 @@ hard-disabled for Snowflake targets regardless of this flag.
 ## Switching environment / contract
 
 ```bash
-robot -d results -v ENV_FILE:config/environments/test.yaml tests/mvp
+robot -d results -v ENV_FILE:config/environments/test.yaml tests/pilot
 ```
 
 ## Common failures
@@ -254,7 +254,7 @@ Enter the same private-key passphrase. This launches only the live read-only
 Snowflake suite with the `trial_snowflake.yaml` profile, setting connection
 variables inside the child Python process without changing your PowerShell or
 PostgreSQL credentials. Reports go to `results_sf_live`. Never use the generic
-MVP suite to provision Snowflake: the framework's Snowflake write paths stay disabled.
+Pilot suite to provision Snowflake: the framework's Snowflake write paths stay disabled.
 Trial acceptance does not establish access to your organization's production account.
 
 ### Optional Snowflake MCP verification

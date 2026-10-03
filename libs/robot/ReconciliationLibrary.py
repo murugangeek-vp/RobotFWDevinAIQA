@@ -170,7 +170,7 @@ class ReconciliationLibrary:
             host=t["host"], port=t["port"], database=t["database"], schema=t.get("schema", "public")
         )
 
-    # ----- MVP-01: header / metadata ---------------------------------------
+    # ----- Pilot-01: header / metadata ---------------------------------------
 
     @keyword("Get Header Errors")
     def get_header_errors(self, source_file: "str | None" = None, join_index: "str | None" = None):
@@ -186,7 +186,7 @@ class ReconciliationLibrary:
         self.metadata_errors = reconcile.validate_csv_metadata(path, self.contract)
         return self.metadata_errors
 
-    # ----- MVP-02: data quality ---------------------------------------------
+    # ----- Pilot-02: data quality ---------------------------------------------
 
     @keyword("Run Data Quality Rules")
     def run_data_quality_rules(self):
@@ -224,7 +224,7 @@ class ReconciliationLibrary:
             if rule_type is None or f.rule_id.split(":", 1)[0] == rule_type
         ]
 
-    # ----- MVP-08: loader (recon_rw) ----------------------------------------
+    # ----- Pilot-08: loader (recon_rw) ----------------------------------------
 
     @keyword("Load Source Into Target")
     def load_source_into_target(self):
@@ -321,7 +321,7 @@ class ReconciliationLibrary:
         finally:
             conn.close()
 
-    # ----- MVP-03: schema validation -----------------------------------------
+    # ----- Pilot-03: schema validation -----------------------------------------
 
     @keyword("Get Schema Errors")
     def get_schema_errors(self, category: "str | None" = None):
@@ -340,7 +340,7 @@ class ReconciliationLibrary:
             )
         return by_cat[category]
 
-    # ----- MVP-04 / MVP-05: comparison ----------------------------------------
+    # ----- Pilot-04 / Pilot-05: comparison ----------------------------------------
 
     @keyword("Compare Records")
     def compare_records(self, columns: "list | None" = None):
@@ -378,7 +378,7 @@ class ReconciliationLibrary:
 
     @keyword("Get Transform Diffs")
     def get_transform_diffs(self, column: "str | None" = None):
-        """MVP-05: diffs on derived/transformed columns -> transform layer."""
+        """Pilot-05: diffs on derived/transformed columns -> transform layer."""
         transform_cols = set(self.get_transform_columns())
         return [
             {"key": d.key, "column": d.column, "expected": str(d.expected), "actual": str(d.actual)}
@@ -386,7 +386,7 @@ class ReconciliationLibrary:
             if d.column in transform_cols and (column is None or d.column == column)
         ]
 
-    # ----- MVP-07: run summary ------------------------------------------------
+    # ----- Pilot-07: run summary ------------------------------------------------
 
     @keyword("Write Run Summary")
     def write_run_summary(self, status: str, out_dir: str = "results"):

@@ -1,5 +1,5 @@
 *** Settings ***
-Documentation     MVP-01: CSV header names/order/count + encoding, delimiter,
+Documentation     Pilot-01: CSV header names/order/count + encoding, delimiter,
 ...               and row-count metadata validated against the data contract.
 Resource          ../../resources/keywords/reconciliation.resource
 Suite Setup       Recon Suite Setup

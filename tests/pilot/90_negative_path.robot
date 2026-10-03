@@ -11,8 +11,8 @@ ${SOURCE_FILE}         ${ROOT}${/}data${/}samples${/}customer.csv
 ${BAD_HEADER_FILE}     ${ROOT}${/}data${/}samples${/}customer_bad_header.csv
 ${BAD_DQ_FILE}         ${ROOT}${/}data${/}samples${/}customer_bad_dq.csv
 ${SHORT_FILE}          ${ROOT}${/}data${/}samples${/}customer_missing_rows.csv
-${ACCOUNT_CONTRACT}    ${ROOT}${/}config${/}contracts${/}account_mvp.yaml
-${ADDRESS_CONTRACT}    ${ROOT}${/}config${/}contracts${/}address_mvp.yaml
+${ACCOUNT_CONTRACT}    ${ROOT}${/}config${/}contracts${/}account_pilot.yaml
+${ADDRESS_CONTRACT}    ${ROOT}${/}config${/}contracts${/}address_pilot.yaml
 ${DUP_CODES}           ${ROOT}${/}data${/}samples${/}account_codes_bad_dup.csv
 ${MISSING_CODES}       ${ROOT}${/}data${/}samples${/}account_codes_bad_missing.csv
 ${BAD_CODES_HEADER}    ${ROOT}${/}data${/}samples${/}account_codes_bad_header.csv
@@ -109,7 +109,7 @@ Detects Mid-Word Hard Truncation In Target
     Read Source
     Load Source Into Target
     Connect Target Read Only
-    Execute Write Sql    UPDATE public.address_mvp SET address2 = 'Rosewood Enclave Phase Two Near Central Mall Avenue Junction XXX Ka' WHERE address_id = 3
+    Execute Write Sql    UPDATE public.address_pilot SET address2 = 'Rosewood Enclave Phase Two Near Central Mall Avenue Junction XXX Ka' WHERE address_id = 3
     Compare Records
     ${diffs}=    Get Transform Diffs    address2
     Should Not Be Empty    ${diffs}
@@ -126,7 +126,7 @@ Over-Length Address2 Rejected By Target Constraint
     Read Source
     Load Source Into Target
     Connect Target Read Only
-    ${err}=    Run Keyword And Expect Error    *    Execute Write Sql    UPDATE public.address_mvp SET address2 = repeat('X', 70) WHERE address_id = 1
+    ${err}=    Run Keyword And Expect Error    *    Execute Write Sql    UPDATE public.address_pilot SET address2 = repeat('X', 70) WHERE address_id = 1
     Should Match Regexp    ${err}    value too long|permission denied|read-only
     Load Contract
 
