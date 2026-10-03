@@ -50,7 +50,11 @@ and a PostgreSQL stand-in target; it is not bank acceptance.
   _Check:_ ✅ 7 unit tests + E2E hashed pass on clean data + tamper detection/drill
   (9/9 negative tests).
 - [ ] **MIG-P3** Balance proof (opening + transactions = closing) once source fields are known.
-- [ ] **MIG-P4** Control/trailer-file support as independent expected counts/totals.
+- [x] **MIG-P4** Control/trailer-file support: contract `source.control_file` (CSV
+  `name,group,value`, source-domain groups translated through `map()` transforms);
+  every declared control needs a file entry, undeclared file entries flagged,
+  three-way file/source/target comparison. _Check:_ ✅ 5 unit tests + E2E trailer
+  checks on all tables + tampered/missing-entry negative proofs.
 - [ ] **MIG-P5** Delta/incremental extracts and mock-migration run comparison.
 - [ ] **MIG-P6** Parallel execution (`pabot`) per table tier; performance SLA benchmarks.
 - [ ] **MIG-P7** Live S3 → Snowflake run on a bank-approved host with bank-approved data.

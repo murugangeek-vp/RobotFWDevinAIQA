@@ -516,5 +516,60 @@ class FingerprintTests(unittest.TestCase):
             fingerprint.bucket_checksum_sql(self.CONTRACT, "sqlite", "t", 8)
 
 
+class ControlFileTests(unittest.TestCase):
+    """MIG-P4: bank trailer files — source-domain groups translated via map()."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.contract = schema.load_contract(str(ACCOUNT))
+
+    def _ctl_df(self, rows):
+        return pd.DataFrame(rows, columns=["name", "group", "value"])
+
+    def test_file_values_translate_source_codes(self):
+        contract = self.contract
+        ctl = next(c for c in contract.raw["controls"] if c["id"] == "accounts_by_status")
+        df = self._ctl_df([("accounts_by_status", "A", "339"), ("accounts_by_status", "C", "33")])
+        self.assertEqual(
+            controls.file_values(df, contract, ctl), {("ACTIVE",): 339, ("CLOSED",): 33}
+        )
+
+    def test_file_values_ungrouped_and_decimal(self):
+        contract = self.contract
+        ctl = next(c for c in contract.raw["controls"] if c["id"] == "row_count")
+        df = self._ctl_df([("row_count", "", "400")])
+        self.assertEqual(controls.file_values(df, contract, ctl), {(): 400})
+        bal = next(c for c in contract.raw["controls"] if c["id"] == "max_balance")
+        df = self._ctl_df([("max_balance", "", "249998.76")])
+        self.assertEqual(controls.file_values(df, contract, bal), {(): Decimal("249998.76")})
+
+    def test_unmapped_file_group_rejected(self):
+        ctl = next(c for c in self.contract.raw["controls"] if c["id"] == "accounts_by_status")
+        df = self._ctl_df([("accounts_by_status", "X", "1")])
+        with self.assertRaisesRegex(ValueError, "not in mapping"):
+            controls.file_values(df, self.contract, ctl)
+
+    def test_duplicate_and_wrong_group_arity_rejected(self):
+        ctl = next(c for c in self.contract.raw["controls"] if c["id"] == "accounts_by_status")
+        dup = self._ctl_df([("accounts_by_status", "A", "1"), ("accounts_by_status", "A", "2")])
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            controls.file_values(dup, self.contract, ctl)
+        grp = next(
+            c for c in self.contract.raw["controls"] if c["id"] == "balance_by_product_currency"
+        )
+        bad = self._ctl_df([("balance_by_product_currency", "CHK01", "1.00")])
+        with self.assertRaisesRegex(ValueError, "group values"):
+            controls.file_values(bad, self.contract, grp)
+
+    def test_compare_file_detects_mismatch_and_extra(self):
+        ctl = {"id": "row_count"}
+        self.assertEqual(
+            controls.compare_file({(): 400}, {(): 401}, ctl)[0]["control"], "row_count"
+        )
+        self.assertEqual(controls.compare_file({(): 400}, {(): 400}, ctl), [])
+        df = self._ctl_df([("row_count", "", "1"), ("undeclared", "", "9")])
+        self.assertEqual(controls.declared_names(df), {"row_count", "undeclared"})
+
+
 if __name__ == "__main__":
     unittest.main()

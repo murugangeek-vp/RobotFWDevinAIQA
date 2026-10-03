@@ -9,6 +9,7 @@ source:
   type: s3
   prefix: webster/account/
   suffix: .csv
+  control_file: webster/account/_control.ctl
   format: csv
   encoding: utf-8
   delimiter: ","
@@ -31,6 +32,9 @@ mappings:
     "D": DORMANT
 
 controls:
+  - id: row_count
+    type: count
+    file_name: row_count
   - id: accounts_by_status
     type: count
     group_by: [status]

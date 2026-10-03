@@ -24,7 +24,11 @@
         "format": {"type": "string", "enum": ["csv", "json", "jsonl"]},
         "version_id": {"type": "string"},
         "expected_bucket_owner": {"type": "string", "pattern": "^[0-9]{12}$"},
-        "max_objects": {"type": "integer", "minimum": 1}
+        "max_objects": {"type": "integer", "minimum": 1},
+        "control_file": {
+          "type": "string",
+          "description": "Bank trailer file (key or path) with declared totals: CSV columns name,group,value"
+        }
       }
     },
     "mappings": {
@@ -46,7 +50,11 @@
           "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$"},
           "type": {"type": "string", "enum": ["count", "sum", "min", "max", "null_count", "count_distinct"]},
           "column": {"type": "string"},
-          "group_by": {"type": "array", "items": {"type": "string"}, "maxItems": 3}
+          "group_by": {"type": "array", "items": {"type": "string"}, "maxItems": 3},
+          "file_name": {
+            "type": "string",
+            "description": "Name this control has in the bank trailer file (default: id)"
+          }
         }
       }
     },

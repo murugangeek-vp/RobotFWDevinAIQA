@@ -1,0 +1,15 @@
+name,group,value
+row_count,,400
+accounts_by_status,A,339
+accounts_by_status,C,33
+accounts_by_status,D,28
+balance_by_currency,CAD,5079228.06
+balance_by_currency,USD,44985808.89
+balance_by_product_currency,CD12|CAD,2033767.35
+balance_by_product_currency,CD12|USD,13758444.51
+balance_by_product_currency,CHK01|CAD,2272641.99
+balance_by_product_currency,CHK01|USD,17348053.89
+balance_by_product_currency,SAV01|CAD,772818.72
+balance_by_product_currency,SAV01|USD,13879310.49
+max_balance,,249409.31
+distinct_customers,,250

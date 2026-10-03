@@ -58,6 +58,7 @@ class S3Source(SourceAdapter):
         format: str = "csv",
         version_id: "str | None" = None,
         expected_bucket_owner: "str | None" = None,
+        control_file: "str | None" = None,
         max_objects: int = 10000,
         endpoint_url: "str | None" = None,
         region_name: str = "us-east-1",
@@ -85,6 +86,7 @@ class S3Source(SourceAdapter):
             {"ExpectedBucketOwner": str(expected_bucket_owner)} if expected_bucket_owner else {}
         )
         self._lineage: list = []
+        self._control_file = control_file
         self._client = boto3.client(
             "s3", endpoint_url=endpoint_url or None, region_name=region_name
         )
@@ -165,6 +167,34 @@ class S3Source(SourceAdapter):
                     f"s3 part {self._lineage[i]['key']!r} header differs from "
                     f"{self._lineage[0]['key']!r}"
                 )
+
+    def read_control_file(self):
+        """Bank trailer file (name,group,value CSV) — lineage-recorded like data parts."""
+        if not self._control_file:
+            return None
+        resp = self._client.get_object(Bucket=self.bucket, Key=self._control_file, **self._owner)
+        modified = resp.get("LastModified")
+        self._lineage.append(
+            {
+                "bucket": self.bucket,
+                "key": self._control_file,
+                "version_id": resp.get("VersionId"),
+                "etag": (resp.get("ETag") or "").strip('"') or None,
+                "size": resp.get("ContentLength"),
+                "last_modified": modified.isoformat() if modified else None,
+            }
+        )
+        df = pd.read_csv(
+            resp["Body"],
+            dtype=str,
+            keep_default_na=False,
+            encoding=self.encoding,
+        )
+        if not {"name", "value"} <= set(df.columns):
+            raise ValueError(
+                f"control file {self._control_file!r} needs 'name' and 'value' columns"
+            )
+        return df
 
     def lineage(self) -> list:
         """Objects read, in read order: bucket/key/version_id/etag/size/last_modified."""

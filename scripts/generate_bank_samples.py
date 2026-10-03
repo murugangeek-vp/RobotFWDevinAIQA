@@ -34,6 +34,29 @@ def _write(table: str, header: list, rows: list, parts: int) -> None:
             w.writerows(rows[i * size : (i + 1) * size])
 
 
+def _write_ctl(table: str, entries: list) -> None:
+    """Bank trailer file: name,group,value — group values in SOURCE domain."""
+    with open(OUT / table / "_control.ctl", "w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh, lineterminator="\n")
+        w.writerow(["name", "group", "value"])
+        w.writerows(entries)
+
+
+def _counts(rows: list, idx: int) -> dict:
+    out: dict = {}
+    for r in rows:
+        out[r[idx]] = out.get(r[idx], 0) + 1
+    return out
+
+
+def _sums(rows: list, key_idx: tuple, val_idx: int) -> dict:
+    out: dict = {}
+    for r in rows:
+        key = tuple(r[i] for i in key_idx)
+        out[key] = out.get(key, Decimal(0)) + Decimal(str(r[val_idx]))
+    return out
+
+
 def main(customers: int = 250, accounts: int = 400, transactions: int = 2000) -> None:
     rnd = random.Random(20240501)
     cust_rows = []
@@ -68,6 +91,15 @@ def main(customers: int = 250, accounts: int = 400, transactions: int = 2000) ->
         cust_rows,
         parts=1,
     )
+    _write_ctl(
+        "customer",
+        [("row_count", "", customers)]
+        + [("customers_by_segment", seg, n) for seg, n in sorted(_counts(cust_rows, 6).items())]
+        + [
+            ("tax_id_nulls", "", 0),
+            ("earliest_customer", "", min(r[7] for r in cust_rows)),
+        ],
+    )
 
     acct_rows, acct_numbers = [], set()
     while len(acct_numbers) < accounts:
@@ -93,6 +125,23 @@ def main(customers: int = 250, accounts: int = 400, transactions: int = 2000) ->
         acct_rows,
         parts=2,
     )
+    _write_ctl(
+        "account",
+        [("row_count", "", accounts)]
+        + [("accounts_by_status", st, n) for st, n in sorted(_counts(acct_rows, 5).items())]
+        + [
+            ("balance_by_currency", c, f"{v:.2f}")
+            for (c,), v in sorted(_sums(acct_rows, (3,), 6).items())
+        ]
+        + [
+            ("balance_by_product_currency", "|".join(k), f"{v:.2f}")
+            for k, v in sorted(_sums(acct_rows, (2, 3), 6).items())
+        ]
+        + [
+            ("max_balance", "", f"{max(Decimal(r[6]) for r in acct_rows):.2f}"),
+            ("distinct_customers", "", len({r[1] for r in acct_rows})),
+        ],
+    )
 
     accts = [r[0] for r in acct_rows]
     ccy = {r[0]: r[3] for r in acct_rows}
@@ -117,6 +166,18 @@ def main(customers: int = 250, accounts: int = 400, transactions: int = 2000) ->
         ["txn_id", "acct_no", "post_ts", "amt", "dr_cr_ind", "ccy", "narrative"],
         txn_rows,
         parts=2,
+    )
+    _write_ctl(
+        "transaction",
+        [("row_count", "", transactions), ("txn_count", "", transactions)]
+        + [
+            ("amount_by_direction_currency", "|".join(k), f"{v:.2f}")
+            for k, v in sorted(_sums(txn_rows, (4, 5), 3).items())
+        ]
+        + [
+            ("latest_posting", "", max(r[2] for r in txn_rows)),
+            ("earliest_posting", "", min(r[2] for r in txn_rows)),
+        ],
     )
     print(f"wrote synthetic fixtures to {OUT}")
 

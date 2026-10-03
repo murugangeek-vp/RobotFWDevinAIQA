@@ -77,7 +77,8 @@ passing; report overall status `PASS`.
   `RECON_MASK_KEY` (>= 32 chars) is set; keyed mode correlates the same value across
   tables without exposing it. Verified: no raw PII in `output.xml` or the report.
 - **Lineage**: every read is tied to S3 key + ETag + VersionId (versioning required by
-  `require_object_versioning`).
+  `require_object_versioning`) — including the bank trailer file (`control_file`) whose
+  declared totals are a third independent check next to source- and target-computed ones.
 - **Fail closed**: empty prefixes, mismatched part headers, unknown codes, missing env
   vars, row bounds exceeded, bucket-owner mismatch, non-local fixture keywords.
 - **Pushdown only**: target queries are generated aggregates/anti-joins from

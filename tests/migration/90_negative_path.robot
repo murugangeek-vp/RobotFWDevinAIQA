@@ -5,6 +5,7 @@ Documentation     Negative-path proofs for migration verification (local synthet
 ...               then restores the fixture. Refuses to run outside a local environment.
 Resource          ../../resources/keywords/migration.resource
 Library           OperatingSystem
+Library           String
 Suite Setup       Migration Suite Setup    ${MANIFEST}
 Suite Teardown    Migration Suite Teardown    write_report=${FALSE}
 Test Teardown     Restore Fixture
@@ -76,6 +77,26 @@ Unmapped Source Code Fails Data Quality
     Run Keyword And Expect Error    *mapping:status*    Verify Source Data Quality    account
     [Teardown]    Remove Extra Source Part    account    part-9999.csv
 
+Tampered Trailer File Fails Control Totals
+    [Documentation]    Webster's own declared totals disagreeing with the data must fail.
+    ${part}=    Set Variable    ${TEMPDIR}${/}account_ctl_bad.ctl
+    ${orig}=    Get File    ${MIG_ROOT}${/}data${/}samples${/}bank${/}account${/}_control.ctl
+    ${bad}=    Replace String    ${orig}    row_count,,400    row_count,,401
+    Create File    ${part}    ${bad}
+    Put Local Source Object    account    ${part}    _control.ctl
+    Reset Migration Table    account
+    ${err}=    Run Keyword And Expect Error    *row_count*    Verify Control Totals    account
+    [Teardown]    Restore Control File    account
+
+Trailer File Missing Entry Fails Closed
+    [Documentation]    A trailer file missing a declared control is not silently skipped.
+    ${part}=    Set Variable    ${TEMPDIR}${/}account_ctl_short.ctl
+    Create File    ${part}    name,group,value\nrow_count,,400\n
+    Put Local Source Object    account    ${part}    _control.ctl
+    Reset Migration Table    account
+    ${err}=    Run Keyword And Expect Error    *file_missing*    Verify Control Totals    account
+    [Teardown]    Restore Control File    account
+
 Part File With Different Header Fails Closed
     ${part}=    Set Variable    ${TEMPDIR}${/}account_bad_header.csv
     Create File    ${part}    acct_no,cust_id,prod_cd,ccy,open_dt,cur_bal,status_cd\n0000000002,100001,CHK01,USD,2020-01-01,10.00,A\n
@@ -107,6 +128,11 @@ Restore Fixture With Masking Reset
 Restore Fixture Hashed Reset
     Remove Environment Variable    MIGRATION_COMPARE_MODE
     Seed Local Target
+
+Restore Control File
+    [Arguments]    ${table}
+    Put Local Source Object    ${table}    ${MIG_ROOT}${/}data${/}samples${/}bank${/}${table}${/}_control.ctl    _control.ctl
+    Reset Migration Table    ${table}
 
 Remove Extra Source Part
     [Arguments]    ${table}    ${name}

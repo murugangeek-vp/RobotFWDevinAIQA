@@ -9,6 +9,7 @@ source:
   type: s3
   prefix: webster/customer/
   suffix: .csv
+  control_file: webster/customer/_control.ctl
   format: csv
   encoding: utf-8
   delimiter: ","
@@ -26,6 +27,9 @@ mappings:
     "B": BUSINESS
 
 controls:
+  - id: row_count
+    type: count
+    file_name: row_count
   - id: customers_by_segment
     type: count
     group_by: [segment]

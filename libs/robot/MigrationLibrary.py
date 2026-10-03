@@ -46,6 +46,7 @@ class TableContext:
     masker: Masker
     source_df: Any = None  # pd.DataFrame once the extract is read
     expected_df: Any = None
+    control_df: Any = None  # bank trailer file rows, when declared
     source_columns: list = field(default_factory=list)
     lineage: list = field(default_factory=list)
     error: "Exception | None" = None
@@ -135,6 +136,13 @@ class MigrationLibrary:
                 try:
                     ctx.source_df = adapter.read_batch()
                     ctx.source_columns = adapter.schema()
+                    if contract.raw["source"].get("control_file"):
+                        reader = getattr(adapter, "read_control_file", None)
+                        if reader is None:
+                            raise ValueError(
+                                f"source adapter for '{table}' cannot read control files"
+                            )
+                        ctx.control_df = reader()
                     ctx.lineage = adapter.lineage() if hasattr(adapter, "lineage") else []
                 finally:
                     adapter.close()
@@ -273,23 +281,55 @@ class MigrationLibrary:
             problems: list = []
             if not declared and spec.tier == "critical":
                 problems.append("critical table declares no control totals")
+            file_df = ctx.control_df
+            if ctx.contract.raw["source"].get("control_file") and file_df is None:
+                problems.append("contract declares a control file but none was read")
             for ctl in declared:
                 exp = controls.source_values(ctx.expected_df, ctx.contract, ctl)
                 act = controls.target_values(self._target(), ctx.contract, ctl)
+                group_cols = ctl.get("group_by") or []
+                value_col = ctl.get("column") or ""
+
+                def mask_group(g, cols=group_cols):
+                    return [ctx.masker.value(c, v) for c, v in zip(cols, g, strict=True)]
+
+                def mask_v(v, col=value_col):
+                    return ctx.masker.value(col, v)
+
                 for d in controls.compare_control(exp, act, ctl):
-                    group_cols = ctl.get("group_by") or []
-                    value_col = ctl.get("column") or ""
                     problems.append(
                         {
                             "control": d["control"],
-                            "group": [
-                                ctx.masker.value(c, v)
-                                for c, v in zip(group_cols, d["group"], strict=True)
-                            ],
-                            "expected": ctx.masker.value(value_col, d["expected"]),
-                            "actual": ctx.masker.value(value_col, d["actual"]),
+                            "group": mask_group(d["group"]),
+                            "expected": mask_v(d["expected"]),
+                            "actual": mask_v(d["actual"]),
                         }
                     )
+                if file_df is not None:
+                    fm = controls.file_values(file_df, ctx.contract, ctl)
+                    if not fm:
+                        problems.append(
+                            {
+                                "control": ctl["id"],
+                                "file_missing": ctl.get("file_name") or ctl["id"],
+                            }
+                        )
+                        continue
+                    for side, computed in (("source", exp), ("target", act)):
+                        for d in controls.compare_file(fm, computed, ctl):
+                            problems.append(
+                                {
+                                    "control": d["control"],
+                                    "group": mask_group(d["group"]),
+                                    "file": mask_v(d["file"]),
+                                    side: mask_v(d["actual"]),
+                                }
+                            )
+            if file_df is not None:
+                declared_names = {ctl.get("file_name") or ctl["id"] for ctl in declared}
+                extra = controls.declared_names(file_df) - declared_names
+                if extra:
+                    problems.append({"control_file_undeclared": sorted(extra)})
             self._finish(table, "control_totals", problems, {"controls": len(declared)})
 
         self._guard(table, "control_totals", run)
@@ -501,7 +541,9 @@ class MigrationLibrary:
         data_dir = _REPO_ROOT / fixture["data_dir"]
         for name in self.manifest.enabled_tables():
             prefix = self.manifest.tables[name].contract.raw["source"]["prefix"]
-            for part in sorted((data_dir / name).glob("*.csv")):
+            for part in sorted((data_dir / name).glob("*.csv")) + sorted(
+                (data_dir / name).glob("*.ctl")
+            ):
                 s3.put_object(Bucket=bucket, Key=prefix + part.name, Body=part.read_bytes())
         self.seed_local_target()
 
