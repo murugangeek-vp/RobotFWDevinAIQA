@@ -62,6 +62,46 @@ robot -d results_neg -v SOURCE_FILE:data/samples/customer_missing_rows.csv tests
 `tests/mvp/90_negative_path.robot` proves detection end-to-end (it seeds defects
 into the target DB and asserts the exact mismatch counts).
 
+## Verify-only mode — `RECON_SKIP_LOAD` (production semantics)
+
+In normal MVP runs the suite *is* the fixture loader: each test truncates and
+reloads expected rows as `recon_rw` before comparing. That keeps tests
+deterministic, but it also **overwrites whatever the target already holds** —
+a pre-existing defect is erased before it can be seen.
+
+Set `RECON_SKIP_LOAD=true` (shell env or `.env`) to run **verify-only**: every
+load is skipped and the suite validates the target as-is using only `recon_ro`.
+A missing or broken `RECON_RW_*` credential cannot fail verification.
+
+```powershell
+# .env
+RECON_SKIP_LOAD=true
+
+# then a plain run is verify-only:
+robot --exclude requires_write -d results tests/mvp
+```
+
+What changes in verify-only mode:
+
+- `Load Source Into Target` logs `target left untouched` and returns 0 — no
+  write connection is opened.
+- `Execute Write Sql` connects as `recon_ro`, so the engine itself rejects the
+  mutation. This still proves role enforcement (e.g. the Over-Length test now
+  fails with `permission denied` instead of `value too long` — either
+  rejection passes).
+- The 4 negative tests that *seed* defects via target writes are tagged
+  `requires_write` — seeding IS a write, so exclude them from verify-only
+  runs. To test detection in verify-only mode, tamper the target out-of-band
+  (e.g. `UPDATE ... SET city = lower(city)`) and watch the diffs appear.
+- `Run Summary Captures Result` (06) still works: the row-count assert only
+  applies when rows were actually loaded.
+
+To restore clean fixtures: remove `RECON_SKIP_LOAD` and run the suite once —
+the loaders truncate/reload every MVP table.
+
+**Snowflake/production:** verify-only is the *only* mode — the write paths are
+hard-disabled for Snowflake targets regardless of this flag.
+
 ## Switching environment / contract
 
 ```bash
@@ -128,7 +168,7 @@ For an encrypted key, also set `SNOWFLAKE_PRIVATE_KEY_PASSWORD`. The adapter rea
 only the explicitly configured key path; it does not discover keys. For password
 authentication, use `RECON_RO_PASSWORD` instead of key-file settings. Endpoint/key
 variables must be process environment variables; the local `.env` loader only
-loads the existing four `RECON_*` database credentials.
+loads the four `RECON_*` database credentials plus `RECON_SKIP_LOAD`.
 
 The default environment and contract target `PUBLIC.CUSTOMER`. The administrator
 must provision and populate it independently to match the selected source extract.
