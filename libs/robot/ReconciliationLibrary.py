@@ -227,6 +227,14 @@ class ReconciliationLibrary:
 
     @keyword("Load Source Into Target")
     def load_source_into_target(self):
+        # Verify-only mode (RECON_SKIP_LOAD): leave the target untouched so the
+        # suite validates whatever is already there — production semantics.
+        # Verification then needs only the read-only role; a missing/broken
+        # RECON_RW_* credential must not fail it.
+        if os.environ.get("RECON_SKIP_LOAD", "").strip().lower() in ("1", "true", "yes"):
+            logger.warn("RECON_SKIP_LOAD set — target left untouched (verify-only)")
+            self.loaded_count = 0
+            return 0
         if self.env["target"]["type"] == "snowflake":
             raise PermissionError("Snowflake loading is disabled; PROD-05 is verification-only")
         user, pw = self._creds("RW")
