@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
+import pandas as pd
+
 
 class SourceAdapter(ABC):
     """Stable interface for source systems (CSV now; S3/API/Dataiku later)."""
@@ -117,3 +119,23 @@ class TargetAdapter(ABC):
         n = int(samples)
         sample = [r[0] for r in self._bounded(f"SELECT ch.{c} {where} ORDER BY 1 LIMIT {n}")]
         return count, sample
+
+    # ----- MIG-P2: bucketed fingerprint compare -------------------------------
+
+    def bucket_checksums(self, table: str, contract, buckets: int) -> dict:
+        """{bucket: (row_count, fingerprint_sum)} — generated SQL, nothing else runs."""
+        from libs.migration.fingerprint import bucket_checksum_sql
+
+        sql = bucket_checksum_sql(contract, self.dialect, self._qualified(table), buckets)
+        return {int(b): (int(n), int(fp)) for b, n, fp in self._bounded(sql)}
+
+    def bucket_rows(self, table: str, contract, buckets: int, bucket: int):
+        """All contract columns for one bucket — drill-down for a checksum diff."""
+        from libs.engine.schema import ident
+        from libs.migration.fingerprint import bucket_sql
+
+        names = [c["name"] for c in contract.columns]
+        cols = ", ".join(ident(c, self.dialect) for c in names)
+        where = bucket_sql(contract, self.dialect, buckets)
+        sql = f"SELECT {cols} FROM {self._qualified(table)} WHERE {where} = {int(bucket)}"
+        return pd.DataFrame(self._bounded(sql), columns=names)

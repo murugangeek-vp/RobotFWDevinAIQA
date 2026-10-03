@@ -13,7 +13,7 @@ from moto import mock_aws
 from libs.adapters.base import TargetAdapter
 from libs.adapters.s3_source import S3Source
 from libs.engine import reconcile, rules, schema
-from libs.migration import audit, controls
+from libs.migration import audit, controls, fingerprint
 from libs.migration.manifest import REPO_ROOT, load_manifest
 from libs.migration.masking import REDACTED, Masker
 
@@ -395,6 +395,125 @@ class LocalGuardTests(unittest.TestCase):
             env = REPO_ROOT / "config" / "environments" / "migration_local.yaml"
             with self.assertRaisesRegex(PermissionError, "does not allow"):
                 MigrationLibrary().load_migration(str(manifest), str(env))
+
+
+class FingerprintTests(unittest.TestCase):
+    CONTRACT = ContractT = None  # built in setUpClass
+
+    @classmethod
+    def setUpClass(cls):
+        from libs.engine.models import Contract
+
+        cls.CONTRACT = Contract(
+            raw={
+                "contract_name": "fp_test",
+                "version": "1",
+                "source": {"columns": []},
+                "target": {"table": "fp_t"},
+                "keys": ["k"],
+                "columns": [
+                    {"name": "k", "type": "string"},
+                    {"name": "amt", "type": "decimal", "scale": 2},
+                    {"name": "dt", "type": "date"},
+                    {"name": "ts", "type": "timestamp"},
+                    {"name": "flag", "type": "boolean"},
+                    {"name": "note", "type": "string"},
+                ],
+            },
+            path="fp_test",
+        )
+
+    def _df(self, rows):
+        return pd.DataFrame(
+            rows,
+            columns=["k", "amt", "dt", "ts", "flag", "note"],
+        )
+
+    def _row(self, k="001", amt="10.00", note="x"):
+        import datetime as dt
+
+        return [k, amt, dt.date(2024, 1, 5), "2024-01-05 06:07:08", "true", note]
+
+    def test_canonical_value_forms(self):
+        dec = {"name": "amt", "type": "decimal", "scale": 2}
+        self.assertEqual(fingerprint.canonical_value("100.1", dec), "100.10")
+        self.assertEqual(fingerprint.canonical_value("-5", dec), "-5.00")
+        self.assertEqual(
+            fingerprint.canonical_value(None, {"name": "n", "type": "string"}),
+            fingerprint.NULL_SENTINEL,
+        )
+        self.assertEqual(
+            fingerprint.canonical_value("2024-01-05", {"name": "d", "type": "date"}),
+            "2024-01-05",
+        )
+        self.assertEqual(
+            fingerprint.canonical_value("2024-01-05 06:07:08", {"name": "t", "type": "timestamp"}),
+            "2024-01-05 06:07:08.000000",
+        )
+        self.assertEqual(
+            fingerprint.canonical_value("yes", {"name": "b", "type": "boolean"}), "true"
+        )
+
+    def test_bucket_checksums_detect_single_value_change(self):
+        df = self._df([self._row(f"{i:05d}") for i in range(50)])
+        base = fingerprint.source_checksums(df, self.CONTRACT, 32)
+        tampered = df.copy()
+        tampered.loc[0, "amt"] = "10.01"
+        diff = fingerprint.compare_checksums(
+            base, fingerprint.source_checksums(tampered, self.CONTRACT, 32)
+        )
+        self.assertEqual(len(diff), 1)
+        self.assertNotEqual(diff[0]["expected"][1], diff[0]["actual"][1])
+        self.assertEqual(diff[0]["expected"][0], diff[0]["actual"][0])  # count same
+
+    def test_bucket_checksums_detect_deleted_row(self):
+        df = self._df([self._row(f"{i:05d}") for i in range(50)])
+        base = fingerprint.source_checksums(df, self.CONTRACT, 32)
+        diff = fingerprint.compare_checksums(
+            base, fingerprint.source_checksums(df.iloc[1:], self.CONTRACT, 32)
+        )
+        self.assertEqual(len(diff), 1)
+        self.assertEqual(diff[0]["actual"][0], diff[0]["expected"][0] - 1)
+
+    def test_clean_data_produces_no_bucket_diffs(self):
+        df = self._df([self._row(f"{i:05d}") for i in range(50)])
+        sums = fingerprint.source_checksums(df, self.CONTRACT, 256)
+        self.assertEqual(fingerprint.compare_checksums(sums, dict(sums)), [])
+        self.assertEqual(sum(n for n, _ in sums.values()), 50)
+
+    def test_null_and_duplicate_keys_rejected(self):
+        df = self._df([self._row("001"), self._row("001")])
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            fingerprint.source_checksums(df, self.CONTRACT, 32)
+        df2 = self._df([self._row("001"), self._row(None)])
+        with self.assertRaisesRegex(ValueError, "null"):
+            fingerprint.source_checksums(df2, self.CONTRACT, 32)
+
+    def test_source_rows_in_bucket_returns_only_that_bucket(self):
+        df = self._df([self._row(f"{i:05d}") for i in range(50)])
+        sums = fingerprint.source_checksums(df, self.CONTRACT, 8)
+        for bucket, (count, _) in sums.items():
+            rows = fingerprint.source_rows_in_bucket(df, self.CONTRACT, 8, bucket)
+            self.assertEqual(len(rows), count)
+        self.assertEqual(
+            sum(
+                len(r)
+                for r in [fingerprint.source_rows_in_bucket(df, self.CONTRACT, 8, b) for b in sums]
+            ),
+            50,
+        )
+
+    def test_generated_sql_is_dialect_shaped_and_bounded(self):
+        for dialect in ("postgres", "mysql", "snowflake"):
+            sql = fingerprint.bucket_checksum_sql(self.CONTRACT, dialect, "t", 64)
+            self.assertIn("GROUP BY", sql)
+            self.assertIn("MD5(", sql.upper())
+            self.assertIn("COUNT(*)", sql)
+            self.assertNotIn(";", sql)
+        with self.assertRaises(ValueError):
+            fingerprint.canonical_sql({"name": "x", "type": "xml"}, "postgres")
+        with self.assertRaises(ValueError):
+            fingerprint.bucket_checksum_sql(self.CONTRACT, "sqlite", "t", 8)
 
 
 if __name__ == "__main__":

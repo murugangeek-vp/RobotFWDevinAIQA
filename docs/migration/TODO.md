@@ -43,8 +43,12 @@ and a PostgreSQL stand-in target; it is not bank acceptance.
 
 - [ ] **MIG-P1** Contract generator: draft contracts from S3 header + Snowflake
   `INFORMATION_SCHEMA` + mapping spec; human review required.
-- [ ] **MIG-P2** Chunked/streamed comparison with keyed row hashes in buckets
-  (Snowflake `HASH_AGG` vs Python) for tables above `max_rows`; drill-down only on failing buckets.
+- [x] **MIG-P2** Bucketed fingerprint comparison for tables above `max_rows`:
+  engine-independent MD5 key-buckets (256), per-bucket COUNT + row-fingerprint sums as
+  generated pushdown SQL (Postgres/MySQL/Snowflake), drill-down only into mismatched
+  buckets. `compare_mode` per manifest table or `MIGRATION_COMPARE_MODE` per run.
+  _Check:_ ✅ 7 unit tests + E2E hashed pass on clean data + tamper detection/drill
+  (9/9 negative tests).
 - [ ] **MIG-P3** Balance proof (opening + transactions = closing) once source fields are known.
 - [ ] **MIG-P4** Control/trailer-file support as independent expected counts/totals.
 - [ ] **MIG-P5** Delta/incremental extracts and mock-migration run comparison.

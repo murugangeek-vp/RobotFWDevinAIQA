@@ -33,7 +33,12 @@ class TableSpec:
     tier: str = "standard"
     enabled: bool = True
     depends_on: list = field(default_factory=list)
-    full_compare: bool = True
+    # auto = full compare within max_rows bound, hashed bucket compare above it
+    compare_mode: str = "auto"
+
+    @property
+    def full_compare(self) -> bool:
+        return self.compare_mode != "none"
 
 
 @dataclass
@@ -109,6 +114,9 @@ def load_manifest(path) -> Manifest:
                 f"tables {target_tables[target]!r} and {name!r} share target {target!r}"
             )
         target_tables[target] = name
+        compare_mode = entry.get("compare_mode")
+        if compare_mode is None:
+            compare_mode = "auto" if entry.get("full_compare", True) else "none"
         tables[name] = TableSpec(
             name=name,
             contract=contract,
@@ -116,7 +124,7 @@ def load_manifest(path) -> Manifest:
             tier=entry.get("tier", "standard"),
             enabled=entry.get("enabled", True),
             depends_on=list(entry.get("depends_on", [])),
-            full_compare=entry.get("full_compare", True),
+            compare_mode=compare_mode,
         )
     for spec in tables.values():
         unknown = [d for d in spec.depends_on if d not in tables]

@@ -26,6 +26,24 @@ Tampered Balance Fails Control Totals Without Leaking Account Number
     Should Not Contain    ${err}    ${acct}
     Should Contain    ${err}    ***REDACTED***
 
+Hashed Bucket Compare Passes On Clean Data
+    [Documentation]    Forcing hashed mode proves cross-engine checksum parity on clean data.
+    Set Environment Variable    MIGRATION_COMPARE_MODE    hashed
+    Verify Records    account
+    Verify Records    transaction
+    [Teardown]    Remove Environment Variable    MIGRATION_COMPARE_MODE
+
+Tampered Balance Fails Hashed Bucket Compare
+    [Documentation]    Bucket checksums detect a 0.01 change; drill-down finds the key, masked.
+    Set Environment Variable    MIGRATION_COMPARE_MODE    hashed
+    ${acct}=    Get Local Fixture Value    account    account_number    0
+    Execute Local Target Sql
+    ...    UPDATE ${ACCT_TABLE} SET current_balance = current_balance + 0.01 WHERE account_number = '${acct}'
+    ${err}=    Run Keyword And Expect Error    *bucket*    Verify Records    account
+    Should Not Contain    ${err}    ${acct}
+    Should Contain    ${err}    ***REDACTED***
+    [Teardown]    Restore Fixture Hashed Reset
+
 Keyed Masking Emits Correlatable Tokens Only
     [Documentation]    With RECON_MASK_KEY set, PII becomes HMAC tokens, never raw values.
     Set Environment Variable    RECON_MASK_KEY    local-test-only-mask-key-0123456789abcdef
@@ -84,6 +102,10 @@ Restore Fixture
 Restore Fixture With Masking Reset
     Remove Environment Variable    RECON_MASK_KEY
     Reset Migration Table    account
+    Seed Local Target
+
+Restore Fixture Hashed Reset
+    Remove Environment Variable    MIGRATION_COMPARE_MODE
     Seed Local Target
 
 Remove Extra Source Part

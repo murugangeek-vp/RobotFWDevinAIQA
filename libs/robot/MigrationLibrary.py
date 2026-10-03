@@ -29,7 +29,7 @@ from libs.adapters.registry import create_source, create_target, create_writer
 from libs.engine import reconcile, rules, schema
 from libs.engine.models import Contract
 from libs.loader import load_expected_rows
-from libs.migration import controls, integrity
+from libs.migration import controls, fingerprint, integrity
 from libs.migration.audit import MigrationRun
 from libs.migration.manifest import load_manifest
 from libs.migration.masking import Masker
@@ -37,6 +37,7 @@ from libs.robot.ReconciliationLibrary import _expand_env, load_credentials, reso
 
 _LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 _MAX_LISTED = 10
+_DRILL_BUCKETS = 10  # per-bucket drill cap; full bucket list already in the check detail
 
 
 @dataclass
@@ -297,27 +298,32 @@ class MigrationLibrary:
 
     @keyword("Verify Records")
     def verify_records(self, table: str):
-        """Full key-based comparison incl. transforms; bounded, fails closed above it."""
+        """Record comparison: full within max_rows, bucketed fingerprints above it."""
         spec = self.manifest.tables[table]
-        if not spec.full_compare:
-            self._audit.record(table, "records", "SKIPPED", {"reason": "full_compare: false"})
+        mode = os.environ.get("MIGRATION_COMPARE_MODE") or spec.compare_mode
+        if mode == "none":
+            self._audit.record(table, "records", "SKIPPED", {"reason": "compare_mode: none"})
             from robot.libraries.BuiltIn import BuiltIn
 
-            BuiltIn().skip(f"{table}: full compare disabled in manifest; verified at L0-L4 only")
+            BuiltIn().skip(f"{table}: compare disabled in manifest; verified at L0-L4 only")
 
         def run():
             ctx = self._ctx(table)
             target = self._target()
             bound = int(self.env["target"].get("max_rows", 100000))
+            if mode == "hashed" or (mode == "auto" and len(ctx.expected_df) > bound):
+                self._verify_records_hashed(table, ctx, target)
+                return
             rows = target.row_count(ctx.contract.table)
             if rows > bound:
                 self._finish(
                     table,
                     "records",
                     [
-                        f"target has {rows} rows > full-compare bound {bound}; chunked compare required"
+                        f"target has {rows} rows > full-compare bound {bound}; set compare_mode: hashed"
                     ],
                 )
+                return
             names = [c["name"] for c in ctx.contract.columns]
             actual = target.read_table(ctx.contract.table, columns=names)
             result = reconcile.compare(ctx.expected_df, actual, ctx.contract)
@@ -351,6 +357,52 @@ class MigrationLibrary:
             self._finish(table, "records", problems if result.mismatch_count else [], counts)
 
         self._guard(table, "records", run)
+
+    def _verify_records_hashed(self, table: str, ctx: TableContext, target):
+        """Bucketed fingerprint compare — scales past the row bound without pulling rows."""
+        contract, m = ctx.contract, ctx.masker
+        keys = contract.keys
+        nbuckets = int(os.environ.get("MIGRATION_HASH_BUCKETS") or 256)
+        expected = fingerprint.source_checksums(ctx.expected_df, contract, nbuckets)
+        actual = target.bucket_checksums(contract.table, contract, nbuckets)
+        diffs = fingerprint.compare_checksums(expected, actual)
+        problems = [
+            {"bucket": d["bucket"], "expected": d["expected"], "actual": d["actual"]}
+            for d in diffs[:_MAX_LISTED]
+        ]
+        drilled = 0
+        for d in diffs[:_DRILL_BUCKETS]:
+            want = fingerprint.source_rows_in_bucket(
+                ctx.expected_df, contract, nbuckets, d["bucket"]
+            )
+            got = target.bucket_rows(contract.table, contract, nbuckets, d["bucket"])
+            result = reconcile.compare(want, got, contract)
+            drilled += result.mismatch_count
+            problems += [
+                {"bucket": d["bucket"], "missing_in_target": m.key(keys, k)}
+                for k in result.missing_in_target[:_MAX_LISTED]
+            ]
+            problems += [
+                {"bucket": d["bucket"], "extra_in_target": m.key(keys, k)}
+                for k in result.extra_in_target[:_MAX_LISTED]
+            ]
+            problems += [
+                {
+                    "bucket": d["bucket"],
+                    "key": m.key(keys, dd.key),
+                    "column": dd.column,
+                    "expected": m.value(dd.column, dd.expected),
+                    "actual": m.value(dd.column, dd.actual),
+                }
+                for dd in result.diffs[:_MAX_LISTED]
+            ]
+        detail = {
+            "compare_mode": "hashed",
+            "buckets": nbuckets,
+            "mismatched_buckets": len(diffs),
+            "drilled_mismatches": drilled,
+        }
+        self._finish(table, "records", problems, detail)
 
     # ----- L4: referential integrity ----------------------------------------------
 

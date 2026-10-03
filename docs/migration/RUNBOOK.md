@@ -95,8 +95,11 @@ passing; report overall status `PASS`.
 
 ## 5. Known boundaries (Phase 2 items)
 
-- Full record comparison is bounded (`max_rows`, default 100000) — tables above it are
-  verified at L0–L4 until chunked hashing (MIG-P2) lands.
+- `compare_mode: auto` (default) does a full row compare up to `max_rows`, then switches
+  to **bucketed fingerprint compare**: 256 MD5 key-buckets, per-bucket COUNT + row-hash
+  sum pushed down as generated SQL, drill-down only into mismatched buckets. Override
+  per table (`compare_mode: full|hashed|none`) or per run (`MIGRATION_COMPARE_MODE`,
+  `MIGRATION_HASH_BUCKETS`).
 - Multi-file JSON sources and composite foreign keys are not yet supported.
 - Balance proof (opening + transactions = closing) needs source fields — Q6.
 - Trial Snowflake acceptance requires a real account; trial accounts block the managed

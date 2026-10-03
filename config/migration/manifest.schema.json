@@ -27,7 +27,8 @@
           "tier": {"type": "string", "enum": ["critical", "standard"]},
           "enabled": {"type": "boolean"},
           "depends_on": {"type": "array", "items": {"type": "string"}},
-          "full_compare": {"type": "boolean"}
+          "full_compare": {"type": "boolean"},
+          "compare_mode": {"type": "string", "enum": ["auto", "full", "hashed", "none"]}
         }
       }
     },
