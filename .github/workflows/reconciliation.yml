@@ -3,7 +3,28 @@ name: reconciliation
 on:
   push:
   pull_request:
-  workflow_dispatch:      # on-demand runs (e.g. pre-demo verification)
+  workflow_dispatch:      # on-demand runs (e.g. pre-demo verification, single test)
+    inputs:
+      scope:
+        description: "Which stage to run"
+        type: choice
+        options: [all, core, migration]
+        default: all
+      suite:
+        description: "Core robot path (e.g. tests/mvp or one .robot file); empty = all core suites"
+        default: ""
+      test_name:
+        description: "robot --test NAME on the core step (exact name or glob, e.g. '*Header*')"
+        default: ""
+      include_tag:
+        description: "robot --include TAG on the core step"
+        default: ""
+      migration_tables:
+        description: "MIGRATION_TABLES shard for the migration suite (e.g. 'account'); empty = all"
+        default: ""
+      migration_test:
+        description: "robot --test on the migration suite (glob ok, e.g. '*account*')"
+        default: ""
   schedule:
     - cron: "0 2 * * *"   # nightly run against the test database
 
@@ -76,27 +97,51 @@ jobs:
             FLUSH PRIVILEGES;"
 
       - name: Run reconciliation suites (MVP + adapters + api + s3 + mysql)
+        if: inputs.scope != 'migration'
         env:
           RECON_RO_USER: recon_ro
           RECON_RO_PASSWORD: ${{ secrets.RECON_RO_PASSWORD }}
           RECON_RW_USER: recon_rw
           RECON_RW_PASSWORD: ${{ secrets.RECON_RW_PASSWORD }}
-        run: robot -d results tests/mvp tests/adapters tests/api tests/s3 tests/mysql tests/snowflake
+          SUITE: ${{ inputs.suite }}
+          TEST_NAME: ${{ inputs.test_name }}
+          INCLUDE_TAG: ${{ inputs.include_tag }}
+        run: |
+          cmd=(robot -d results)
+          [ -n "$TEST_NAME" ] && cmd+=(--test "$TEST_NAME")
+          [ -n "$INCLUDE_TAG" ] && cmd+=(--include "$INCLUDE_TAG")
+          if [ -n "$SUITE" ]; then
+            cmd+=("$SUITE")
+          else
+            cmd+=(tests/mvp tests/adapters tests/api tests/s3 tests/mysql tests/snowflake)
+          fi
+          "${cmd[@]}"
 
       - name: Migration unit tests
+        if: inputs.scope != 'core'
         run: python -m unittest discover -s tests/migration -p "test_*.py" -v
 
       - name: Migration verification (synthetic, S3 stub -> PostgreSQL stand-in)
+        if: inputs.scope != 'core'
         env:
           RECON_RO_USER: recon_ro
           RECON_RO_PASSWORD: ${{ secrets.RECON_RO_PASSWORD }}
           RECON_RW_USER: recon_rw
           RECON_RW_PASSWORD: ${{ secrets.RECON_RW_PASSWORD }}
+          MIGRATION_TABLES_IN: ${{ inputs.migration_tables }}
+          MIGRATION_TEST: ${{ inputs.migration_test }}
         run: |
-          robot -d results_migration \
-            --prerunmodifier libs/robot/migration_expander.py:config/migration/webster_to_santander.yaml \
-            tests/migration/01_table_verification.robot
-          python -c "from libs.migration.audit import verify_report as v; import sys; sys.exit(0 if v('results_migration/migration_report.json') else 1)"
+          [ -n "$MIGRATION_TABLES_IN" ] && export MIGRATION_TABLES="$MIGRATION_TABLES_IN"
+          cmd=(robot -d results_migration
+            --prerunmodifier libs/robot/migration_expander.py:config/migration/webster_to_santander.yaml)
+          [ -n "$MIGRATION_TEST" ] && cmd+=(--test "$MIGRATION_TEST")
+          cmd+=(tests/migration/01_table_verification.robot)
+          "${cmd[@]}"
+          # audit verification is only meaningful for a complete run — a filtered
+          # run reports INCOMPLETE by design, so skip the gate when filters are set
+          if [ -z "$MIGRATION_TABLES_IN" ] && [ -z "$MIGRATION_TEST" ]; then
+            python -c "from libs.migration.audit import verify_report as v; import sys; sys.exit(0 if v('results_migration/migration_report.json') else 1)"
+          fi
           robot -d results_migration_negative tests/migration/90_negative_path.robot
 
       - uses: actions/upload-artifact@v4
