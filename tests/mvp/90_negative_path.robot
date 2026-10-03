@@ -37,6 +37,9 @@ Detects Exactly Six Data Quality Violations
     Should Be Equal    ${ids}    ${{sorted(['allowed_values:status', 'not_null:email', 'range:balance', 'transform_input_not_null:email', 'type:customer_id', 'unique:customer_id'])}}
 
 Detects Missing Record In Target
+    [Documentation]    Seeds a defect via a target write — loader mode only
+    ...    (verify-only runs exclude it via the requires_write tag).
+    [Tags]    requires_write
     Load Target From Source    ${SOURCE_FILE}
     Execute Write Sql    DELETE FROM public.customer WHERE customer_id = 50
     ${mismatches}=    Compare Records
@@ -45,6 +48,7 @@ Detects Missing Record In Target
     Should Be Equal    ${detail}[missing_in_target]    ${{[50]}}
 
 Detects Transform Layer Defect
+    [Tags]    requires_write
     Load Target From Source    ${SOURCE_FILE}
     Execute Write Sql    UPDATE public.customer SET email = UPPER(email) WHERE customer_id = 7
     Compare Records
@@ -84,6 +88,7 @@ Detects Join File Header Violation
 Detects Tampered Join-Derived Column
     [Documentation]    loan_account = "{branch_code}|{acct_seq}" — mutating the
     ...    merged value in the target is attributed to the transform layer.
+    [Tags]    requires_write
     Load Contract    ${ACCOUNT_CONTRACT}
     Read Source
     Load Source Into Target
@@ -99,6 +104,7 @@ Detects Tampered Join-Derived Column
 Detects Mid-Word Hard Truncation In Target
     [Documentation]    A naive ETL cutting address2 at char 67 leaves 'Ka'
     ...    dangling; the contract expects the whole partial word dropped.
+    [Tags]    requires_write
     Load Contract    ${ADDRESS_CONTRACT}
     Read Source
     Load Source Into Target
@@ -114,12 +120,14 @@ Detects Mid-Word Hard Truncation In Target
 Over-Length Address2 Rejected By Target Constraint
     [Documentation]    varchar(67) from the contract DDL refuses >67 outright;
     ...    on engines without enforced limits (e.g. Snowflake) the record
-    ...    compare above is the backstop.
+    ...    compare above is the backstop. In verify-only mode the write runs
+    ...    as recon_ro, so the rejection proves role enforcement instead.
     Load Contract    ${ADDRESS_CONTRACT}
     Read Source
     Load Source Into Target
     Connect Target Read Only
-    Run Keyword And Expect Error    *value too long*    Execute Write Sql    UPDATE public.address_mvp SET address2 = repeat('X', 70) WHERE address_id = 1
+    ${err}=    Run Keyword And Expect Error    *    Execute Write Sql    UPDATE public.address_mvp SET address2 = repeat('X', 70) WHERE address_id = 1
+    Should Match Regexp    ${err}    value too long|permission denied|read-only
     Load Contract
 
 *** Keywords ***

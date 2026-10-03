@@ -232,7 +232,7 @@ class ReconciliationLibrary:
         # suite validates whatever is already there — production semantics.
         # Verification then needs only the read-only role; a missing/broken
         # RECON_RW_* credential must not fail it.
-        if os.environ.get("RECON_SKIP_LOAD", "").strip().lower() in ("1", "true", "yes"):
+        if self._verify_only():
             logger.warn("RECON_SKIP_LOAD set - target left untouched (verify-only)")
             self.loaded_count = 0
             return 0
@@ -299,12 +299,19 @@ class ReconciliationLibrary:
         finally:
             cur.close()
 
+    def _verify_only(self) -> bool:
+        v = os.environ.get("RECON_SKIP_LOAD", "").strip().lower()
+        return v in ("1", "true", "yes")
+
     @keyword("Execute Write Sql")
     def execute_write_sql(self, sql: str):
-        """Write path for negative-path seeding ONLY — uses recon_rw, never ro."""
+        """Write path for negative-path seeding ONLY — recon_rw in loader mode.
+        In verify-only mode (RECON_SKIP_LOAD) it runs as recon_ro instead, so
+        the engine itself must reject the mutation — no write credential used."""
         if self.env["target"]["type"] == "snowflake":
             raise PermissionError("Snowflake loading is disabled; PROD-05 is verification-only")
-        user, pw = self._creds("RW")
+        role = "RO" if self._verify_only() else "RW"
+        user, pw = self._creds(role)
         conn = create_writer(self.env["target"], user=user, password=pw)
         try:
             cur = conn.cursor()
