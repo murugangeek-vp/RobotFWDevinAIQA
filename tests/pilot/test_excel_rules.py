@@ -11,7 +11,7 @@ from libs.excelrules import parser, runner, validators
 from libs.excelrules.models import Rule
 
 DATA = Path(__file__).resolve().parent.parent.parent / "data" / "rules"
-WB = DATA / "migration_rules.xlsx"
+WB = DATA / "business_rules.xlsx"
 
 
 def _src(rows):

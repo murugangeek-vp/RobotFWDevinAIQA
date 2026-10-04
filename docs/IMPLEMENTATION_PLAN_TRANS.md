@@ -22,13 +22,30 @@ Requirements:
 
 Initial rule types:
 
-- MAX_LENGTH
-- UPPERCASE
-- LOWERCASE
-- CONCAT
-- MAP
-- DIRECT_COMPARE
-- NULL_CHECK
+MAX_LENGTH
+MIN_LENGTH
+UPPERCASE
+LOWERCASE
+TRIM
+CONCAT
+MAP
+DIRECT_COMPARE
+NULL_CHECK
+DATE_FORMAT
+DATE_TRANSFORM
+NUMERIC_ROUND
+DEFAULT_VALUE
+LOOKUP REGEX
+MASK
+HASH
+ENCRYPTION
+DECRYPTION
+SUBSTRING
+PREFIX
+SUFFIX
+CASE_WHEN
+CUSTOM_SQL
+CUSTOM_PYTHON
 
 Excel columns:
 
@@ -52,7 +69,7 @@ Target Value
 
 Create a generic Robot keyword:
 
-Run Migration Validation
+Run Business Rules Validation
 
 It must dynamically select the validator based on Rule Type.
 
@@ -64,7 +81,7 @@ Use environment variables for DB configuration.
 
 Create unit tests for the Python rule engine.
 
-Create sample migration_rules.xlsx with these examples:
+Create sample business_rules.xlsx with these examples:
 
 1. address_extract.address maximum length = 67
 2. address_extract.country target must equal UPPER(source.country)

@@ -1,4 +1,4 @@
-"""Parse migration_rules.xlsx into Rule objects and mapping tables.
+"""Parse business_rules.xlsx into Rule objects and mapping tables.
 
 Fail-closed: an unknown rule type, missing required column, duplicate Test ID,
 or absent sheet aborts the load — a silently skipped rule would look like a

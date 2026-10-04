@@ -132,7 +132,7 @@ fixed size, but the pilot contracts don't use it.
 ## Excel-driven rules — `tests/pilot/07_excel_rules.robot`
 
 A second, workbook-driven validation layer for migration rules delivered as a
-client spreadsheet. `data/rules/migration_rules.xlsx` is the source of truth —
+client spreadsheet. `data/rules/business_rules.xlsx` is the source of truth —
 **no per-rule test code**:
 
 - **Rules sheet** — one row per rule: Test ID, Source Table(s), Source
@@ -167,9 +167,9 @@ client spreadsheet. `data/rules/migration_rules.xlsx` is the source of truth —
 - `Severity` — HIGH/MEDIUM/CRITICAL violations fail; LOW reports only.
 - `Enabled=no` rows are parsed but skipped.
 
-Keywords: `Load Rule Workbook` → `Run Migration Validation` (all rules or one
-Test ID) → `Get Rule Violations` / `Get Rule Summary` → `Write Rules Summary`
-(writes `results/migration_rules_summary.xlsx` — the audit workbook beside the
+Keywords: `Load Rule Workbook` → `Run Business Rules Validation` (all rules
+or one Test ID) → `Get Rule Violations` / `Get Rule Summary` → `Write Rules
+Summary` (writes `results/business_rules_summary.xlsx` — the audit workbook beside the
 Robot reports). Target rows are fetched as `recon_ro` through dynamic,
 identifier-vetted SQL with an optional WHERE fragment. Regenerate the sample
 workbook with `scripts/generate_rules_workbook.py`.

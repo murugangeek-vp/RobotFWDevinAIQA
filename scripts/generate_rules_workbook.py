@@ -1,4 +1,4 @@
-"""Build data/rules/migration_rules.xlsx — the sample workbook that proves
+"""Build data/rules/business_rules.xlsx — the sample workbook that proves
 the Excel-driven layer. Deterministic output so the artifact is auditable and
 regenerable; the committed .xlsx is what the tests read.
 
@@ -11,7 +11,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font
 
 REPO = Path(__file__).resolve().parent.parent
-OUT = REPO / "data" / "rules" / "migration_rules.xlsx"
+OUT = REPO / "data" / "rules" / "business_rules.xlsx"
 
 HEADERS = [
     "Test ID",

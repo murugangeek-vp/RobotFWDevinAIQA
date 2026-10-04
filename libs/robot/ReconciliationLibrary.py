@@ -425,11 +425,11 @@ class ReconciliationLibrary:
                 self.target.close()
             self.target = None
 
-    # ----- Excel-driven rule layer (migration_rules.xlsx) --------------------
+    # ----- Excel-driven rule layer (business_rules.xlsx) --------------------
 
     @keyword("Load Rule Workbook")
     def load_rule_workbook(self, path: str):
-        """Parse migration_rules.xlsx — Rules sheet rows and the Mapping sheet
+        """Parse business_rules.xlsx — Rules sheet rows and the Mapping sheet
         code tables. Fail-closed on unknown rule types / missing columns.
         Returns total rules (enabled+disabled)."""
         self.excel_rules = parser.load_rules(path)
@@ -438,8 +438,8 @@ class ReconciliationLibrary:
         logger.info(f"rule workbook: {enabled}/{len(self.excel_rules)} rules enabled")
         return len(self.excel_rules)
 
-    @keyword("Run Migration Validation")
-    def run_migration_validation(
+    @keyword("Run Business Rules Validation")
+    def run_business_rules_validation(
         self, test_id: "str | None" = None, source_dir: "str | None" = None
     ):
         """Dispatch every enabled rule (or one `test_id`) to its rule-type
@@ -457,7 +457,7 @@ class ReconciliationLibrary:
             rules, self.excel_mappings, src_dir, target.query, schema=schema_name
         )
         logger.info(
-            f"migration validation: {len(self.rule_results)} rules, "
+            f"business rules validation: {len(self.rule_results)} rules, "
             f"{sum(len(r.violations) for r in self.rule_results)} violations"
         )
         return self.rule_results
@@ -499,9 +499,9 @@ class ReconciliationLibrary:
 
     @keyword("Write Rules Summary")
     def write_rules_summary(self, out_path: "str | None" = None):
-        """Write the Excel audit workbook (results/migration_rules_summary.xlsx
+        """Write the Excel audit workbook (results/business_rules_summary.xlsx
         by default)."""
-        path = out_path or str(Path("results") / "migration_rules_summary.xlsx")
+        path = out_path or str(Path("results") / "business_rules_summary.xlsx")
         written = report.write_summary(self.rule_results, path)
         logger.info(f"rules summary written to {written}")
         return str(written)
