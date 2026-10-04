@@ -1,0 +1,11 @@
+lab_id,full_name_raw,card_no,pin_code,ssn,email_addr,prod_ref,qty,pack_size,unit_price,region_code,country,dob_iso,cust_tier,flag_yx,note
+1,"  Arun Kumar  ",4111111111111111,1234,123456789,ARUN.K@Mail.COM,P1001,3,10,25.456,R1,gb,1985-01-10,P,Y,alpha
+2,Meera Iyer,5500005555555559,4321,987654321,meera.iyer@example.org,P2002,5,4,10.999,R2,in,1990-06-15,G,N,beta
+3,Jon Oneil,4111111111111112,8765,111223333,JON.ONEIL@EXAMPLE.COM,P3003,1,12,199.005,,us,1978-12-31,S,Y,gamma
+4,Sara Connor,4000000000000002,2468,444556666,sara.c@example.net,P4004,7,2,0.125,R1,au,2001-03-04,G,N,delta
+5,Hiro Tanaka,3530111333300000,1357,777889999,HIRO.T@MAIL.JP,P5005,2,8,45.670,,jp,1988-08-08,P,Y,epsilon
+6,Lena Braun,5105105105105100,8642,222334444,lena.b@example.de,P6006,9,3,12.345,R3,de,1995-11-20,S,N,zeta
+7,Carlos Ruiz,4012888888881881,9753,555667777,carlos.r@mail.es,P7007,4,5,78.901,,br,1982-04-25,G,Y,eta
+8,Priya Nair,6011000990139424,1122,888990000,PRIYA.N@EXAMPLE.IN,P8008,6,6,33.333,R2,in,1992-09-09,P,N,theta
+9,Tom Baker,3782822463100005,3344,999001111,tom.b@example.uk,P9009,8,1,5.500,,gb,1970-07-07,S,Y,iota
+10,Ana Silva,3530111333300001,5566,112334455,ana.s@mail.pt,P1010,11,9,66.666,R3,nl,1999-12-12,G,N,kappa

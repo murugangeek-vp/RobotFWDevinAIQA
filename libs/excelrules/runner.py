@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .models import Rule, RuleResult
+from .models import Rule, RuleResult, Violation
 from .validators import validate, where_is_safe
 
 _IDENT = re.compile(r"^[A-Za-z_]\w*$")
@@ -42,7 +42,10 @@ def load_source_frame(rule: Rule, source_dir: "str | Path") -> pd.DataFrame:
 
 def target_sql(rule: Rule, schema: str) -> str:
     """Parameterized-shape SELECT for the rule's key + target column, with the
-    optional workbook WHERE fragment appended (vetted read-only)."""
+    optional workbook WHERE fragment appended (vetted read-only). For
+    CUSTOM_SQL the Logic column is a SQL predicate on target columns and rows
+    failing it are the violations — selected server-side as WHERE NOT (logic).
+    """
     _, tgt_key = rule.key_pair()
     cols = []
     for c in ([tgt_key] if tgt_key else []) + [rule.target_column]:
@@ -53,10 +56,17 @@ def target_sql(rule: Rule, schema: str) -> str:
         f"SELECT {', '.join(cols)} FROM "
         f"{_ident(schema, 'schema')}.{_ident(rule.target_table, 'table')}"
     )
+    clauses = []
     if rule.where:
         if not where_is_safe(rule.where):
             raise ValueError(f"{rule.test_id}: unsafe WHERE fragment {rule.where!r}")
-        sql += f" WHERE {rule.where}"
+        clauses.append(f"({rule.where})")
+    if rule.rule_type == "CUSTOM_SQL":
+        if not rule.logic or not where_is_safe(rule.logic):
+            raise ValueError(f"{rule.test_id}: CUSTOM_SQL requires a safe predicate in Logic")
+        clauses.append(f"NOT ({rule.logic})")
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
     return sql
 
 
@@ -72,8 +82,24 @@ def run_rules(
     results = []
     for rule in rules:
         try:
-            src = load_source_frame(rule, source_dir) if rule.source_tables else pd.DataFrame()
             tgt = query_fn(target_sql(rule, schema))
+            if rule.rule_type == "CUSTOM_SQL":
+                # SQL already filtered to failing rows — all fetched = violations
+                _, tgt_key = rule.key_pair()
+                col = rule.target_column
+                vs = [
+                    Violation(
+                        rule.test_id,
+                        col,
+                        rule.logic,
+                        row.get(col),
+                        row.get(tgt_key) if tgt_key else None,
+                    )
+                    for _, row in tgt.iterrows()
+                ]
+                results.append(RuleResult(rule, vs))
+                continue
+            src = load_source_frame(rule, source_dir) if rule.source_tables else pd.DataFrame()
             results.append(RuleResult(rule, validate(rule, src, tgt, mappings)))
         except Exception as e:  # noqa: BLE001 — per-rule isolation by design
             results.append(RuleResult(rule, error=f"{type(e).__name__}: {e}"))

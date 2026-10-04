@@ -4,12 +4,30 @@ from dataclasses import dataclass, field
 
 RULE_TYPES = (
     "MAX_LENGTH",
+    "MIN_LENGTH",
     "UPPERCASE",
     "LOWERCASE",
+    "TRIM",
     "CONCAT",
     "MAP",
     "DIRECT_COMPARE",
     "NULL_CHECK",
+    "DATE_FORMAT",
+    "DATE_TRANSFORM",
+    "NUMERIC_ROUND",
+    "DEFAULT_VALUE",
+    "LOOKUP",
+    "REGEX",
+    "MASK",
+    "HASH",
+    "ENCRYPTION",
+    "DECRYPTION",
+    "SUBSTRING",
+    "PREFIX",
+    "SUFFIX",
+    "CASE_WHEN",
+    "CUSTOM_SQL",
+    "CUSTOM_PYTHON",
 )
 
 # Severity -> whether violations fail the run (LOW/WARN are report-only).
@@ -54,8 +72,12 @@ class Violation:
     key: object = None
 
     def as_dict(self) -> dict:
-        d = {"test_id": self.test_id, "column": self.column,
-             "expected": self.expected, "actual": self.actual}
+        d = {
+            "test_id": self.test_id,
+            "column": self.column,
+            "expected": self.expected,
+            "actual": self.actual,
+        }
         if self.key is not None:
             d["key"] = self.key
         return d

@@ -32,8 +32,11 @@ _RULE_COLS = {
     "enabled": "enabled",
     "key column": "key_column",
 }
-_MAP_COLS = {"mapping name": "mapping_name", "source value": "source_value",
-             "target value": "target_value"}
+_MAP_COLS = {
+    "mapping name": "mapping_name",
+    "source value": "source_value",
+    "target value": "target_value",
+}
 _REQUIRED = ("test_id", "rule_type", "target_table", "target_column")
 
 _TRUE = {"yes", "y", "true", "1", "enabled"}
@@ -41,8 +44,9 @@ _FALSE = {"no", "n", "false", "0", "disabled"}
 
 
 def _norm_headers(df: pd.DataFrame, sheet: str, colmap: dict) -> pd.DataFrame:
-    rename = {c: colmap[str(c).strip().lower()] for c in df.columns
-              if str(c).strip().lower() in colmap}
+    rename = {
+        c: colmap[str(c).strip().lower()] for c in df.columns if str(c).strip().lower() in colmap
+    }
     if not rename:
         raise ValueError(f"{sheet} sheet: no recognizable columns in {list(df.columns)}")
     return df.rename(columns=rename)
@@ -54,11 +58,8 @@ def _split_cell(v) -> list[str]:
 
 def _enabled(v) -> bool:
     s = str(v if v is not None else "").strip().lower()
-    if s in _TRUE or s == "" or s == "nan":
-        return True
-    if s in _FALSE:
-        return False
-    return True  # unrecognized -> on (fail open is safer than silently skipping)
+    # _TRUE / blank / unrecognized -> on (fail open is safer than silently skipping)
+    return s not in _FALSE
 
 
 def load_rules(path: "str | Path") -> list[Rule]:
@@ -70,7 +71,7 @@ def load_rules(path: "str | Path") -> list[Rule]:
             raise ValueError(f"{RULES_SHEET} sheet: missing required column '{req}'")
 
     rules, seen = [], set()
-    for i, row in df.iterrows():
+    for _i, row in df.iterrows():
         if not str(row.get("test_id", "")).strip():
             continue  # blank spacer row
         raw = {f: str(row.get(f, "")).strip() or None for f in df.columns}
@@ -86,20 +87,22 @@ def load_rules(path: "str | Path") -> list[Rule]:
         tt, tc = raw.get("target_table"), raw.get("target_column")
         if not tt or not tc:
             raise ValueError(f"{rid}: Target Table and Target Column are required")
-        rules.append(Rule(
-            test_id=rid,
-            rule_type=rtype,
-            target_table=tt,
-            target_column=tc,
-            source_tables=_split_cell(raw.get("source_table")),
-            source_columns=_split_cell(raw.get("source_columns")),
-            logic=raw.get("logic") or "",
-            expected=raw.get("expected"),
-            severity=(raw.get("severity") or "HIGH").upper(),
-            where=raw.get("where"),
-            key_column=raw.get("key_column"),
-            enabled=_enabled(row.get("enabled")),
-        ))
+        rules.append(
+            Rule(
+                test_id=rid,
+                rule_type=rtype,
+                target_table=tt,
+                target_column=tc,
+                source_tables=_split_cell(raw.get("source_table")),
+                source_columns=_split_cell(raw.get("source_columns")),
+                logic=raw.get("logic") or "",
+                expected=raw.get("expected"),
+                severity=(raw.get("severity") or "HIGH").upper(),
+                where=raw.get("where"),
+                key_column=raw.get("key_column"),
+                enabled=_enabled(row.get("enabled")),
+            )
+        )
     return rules
 
 
@@ -120,5 +123,6 @@ def load_mappings(path: "str | Path") -> dict:
         if not name:
             continue
         mappings.setdefault(name, {})[str(row.get("source_value", "")).strip()] = str(
-            row.get("target_value", "")).strip()
+            row.get("target_value", "")
+        ).strip()
     return mappings

@@ -475,6 +475,12 @@ class ReconciliationLibrary:
             out.extend(v.as_dict() for v in r.violations)
         return out
 
+    @keyword("Get Workbook Rule Types")
+    def get_workbook_rule_types(self):
+        """Sorted unique rule types present in the loaded workbook (enabled
+        or not) — used by the coverage guard test."""
+        return sorted({r.rule_type for r in self.excel_rules})
+
     @keyword("Get Rule Summary")
     def get_rule_summary(self):
         """Per-rule status rows: {test_id, rule_type, severity, status,

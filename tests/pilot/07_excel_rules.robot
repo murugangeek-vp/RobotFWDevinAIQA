@@ -3,13 +3,25 @@ Documentation     Excel-driven validation layer: rules live in
 ...               data/rules/migration_rules.xlsx (the source of truth), not in
 ...               test code. One generic keyword dispatches each rule to its
 ...               type-specific validator; results land in the Excel summary.
+Library           Collections
 Library           OperatingSystem
 Resource          ../../resources/keywords/reconciliation.resource
-Suite Setup       Recon Suite Setup
+Suite Setup       Excel Suite Setup
 Suite Teardown    Recon Suite Teardown
 
 *** Variables ***
 ${RULES_WB}    ${ROOT}${/}data${/}rules${/}migration_rules.xlsx
+${LAB_CONTRACT}    ${ROOT}${/}config${/}contracts${/}transform_lab.yaml
+${LAB_SOURCE}    ${ROOT}${/}data${/}samples${/}transform_lab.csv
+
+*** Keywords ***
+Excel Suite Setup
+    [Documentation]    Default env + contract, then the transform_lab fixture
+    ...    (skipped in verify-only — the table must already exist there).
+    Recon Suite Setup
+    Load Contract    ${LAB_CONTRACT}
+    Read Source    ${LAB_SOURCE}
+    Load Source Into Target
 
 *** Test Cases ***
 Rule Workbook Loads And Parses
@@ -17,10 +29,21 @@ Rule Workbook Loads And Parses
     ${total}=    Load Rule Workbook    ${RULES_WB}
     Should Be True    ${total} > 0
 
+All Rule Types Have A Workbook Example
+    [Documentation]    Coverage guard: the workbook ships one live sample per
+    ...    implemented rule type, so a new type cannot land without a worked
+    ...    example. Compares the engine's RULE_TYPES list to the workbook's.
+    Load Rule Workbook    ${RULES_WB}
+    ${types}=    Get Workbook Rule Types
+    ${expected}=    Evaluate    sorted(__import__("libs.excelrules.models", fromlist=["RULE_TYPES"]).RULE_TYPES)
+    Lists Should Be Equal    ${types}    ${expected}
+    ...    msg=workbook rule-type coverage vs engine: ${types}
+
 All Enabled Rules Pass On Clean Data
-    [Documentation]    The flagship check: every enabled rule — MAX_LENGTH,
-    ...    NULL_CHECK, UPPERCASE, LOWERCASE, CONCAT (two-file join), MAP,
-    ...    DIRECT_COMPARE — produces zero failing-severity violations.
+    [Documentation]    The flagship check: every enabled rule — all 24 types
+    ...    including the two-file CONCAT join, LOOKUP via country_ref,
+    ...    MASK/HASH/ENC/DEC, CASE_WHEN, CUSTOM_SQL and CUSTOM_PYTHON —
+    ...    produces zero failing-severity violations.
     Load Rule Workbook    ${RULES_WB}
     Run Migration Validation
     ${violations}=    Get Rule Violations
@@ -32,7 +55,7 @@ Every Executed Rule Reports A Status
     Load Rule Workbook    ${RULES_WB}
     Run Migration Validation
     ${summary}=    Get Rule Summary
-    Length Should Be    ${summary}    8    msg=expected 8 enabled rules, got ${summary}
+    Length Should Be    ${summary}    32    msg=expected 32 enabled rules, got ${summary}
     FOR    ${r}    IN    @{summary}
         Should Not Be Equal    ${r}[status]    ERROR    msg=${r}[test_id] errored: ${r}[error]
     END

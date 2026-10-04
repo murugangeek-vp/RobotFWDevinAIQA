@@ -33,7 +33,7 @@ class PostgresTarget(TargetAdapter):
         """Read-only SELECT with bound params — the session is already
         readonly=True, so this can never mutate."""
         cur = self.conn.cursor()
-        cur.execute(sql, params)
+        cur.execute(sql, params or None)  # None = no bind parsing (LIKE '%' safe)
         rows = cur.fetchall()
         names = [d.name for d in cur.description]
         cur.close()

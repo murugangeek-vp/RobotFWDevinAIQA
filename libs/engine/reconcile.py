@@ -1,4 +1,6 @@
 import csv
+import hashlib
+import os
 import re
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
@@ -6,6 +8,26 @@ from decimal import ROUND_HALF_UP, Decimal
 import pandas as pd
 
 from libs.engine.models import ColumnDiff, Contract, ReconResult
+
+
+def _demo_cipher(v, key: bytes) -> str:
+    """Deterministic demo-grade cipher (XOR + hex). NOT for production secrets —
+    proves the encrypt/decrypt rule plumbing; swap for AES/Fernet behind a KMS
+    when real data arrives."""
+    data = str(v).encode()
+    return bytes(b ^ key[i % len(key)] for i, b in enumerate(data)).hex()
+
+
+def _demo_decipher(h, key: bytes):
+    try:
+        data = bytes.fromhex(str(h))
+        return bytes(b ^ key[i % len(key)] for i, b in enumerate(data)).decode()
+    except (ValueError, UnicodeDecodeError):
+        return None  # undecryptable ciphertext -> mismatch, not a crash
+
+
+def _key():
+    return os.environ.get("RECON_RULES_KEY", "pilot-demo-key").encode()
 
 
 def _trunc_words(v, limit) -> str:
@@ -27,6 +49,35 @@ def _trunc_words(v, limit) -> str:
     return cut.rstrip()
 
 
+def _substr(v, start, length=None):
+    s = str(v)
+    i = int(start)
+    return s[i:] if length is None else s[i : i + int(length)]
+
+
+def _casewhen(v, *args):
+    """casewhen(col, 'Y', 'YES', 'N', 'NO', 'OTHER') — alternating when/then
+    pairs; a trailing unpaired arg is the else-default."""
+    pairs = list(zip(args[0::2], args[1::2], strict=False))
+    default = args[-1] if len(args) % 2 else None
+    return next((t for w, t in pairs if str(v) == str(w)), default)
+
+
+def _date_fmt(v, out_fmt):
+    """ISO date/timestamp -> strftime'd string ('%d/%m/%Y' etc.)."""
+    s = str(v).strip()[:19]
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(s, fmt).strftime(str(out_fmt))
+        except ValueError:
+            continue
+    return None
+
+
+def _ifnull(v, default):
+    return default if pd.isna(v) or str(v).strip() == "" else v
+
+
 _SAFE_FUNCS: dict = {
     "lower": lambda s: str(s).lower(),
     "upper": lambda s: str(s).upper(),
@@ -34,7 +85,20 @@ _SAFE_FUNCS: dict = {
         Decimal(1).scaleb(-int(nd)), rounding=ROUND_HALF_UP
     ),
     "strip": lambda s: str(s).strip(),
+    "trim": lambda s: str(s).strip(),
     "trunc_words": _trunc_words,
+    "substr": _substr,
+    "prefix": lambda v, p: f"{p}{v}",
+    "suffix": lambda v, s: f"{v}{s}",
+    "mask": lambda v: ("****" + str(v)[-4:]) if not pd.isna(v) else None,
+    "md5": lambda v: hashlib.md5(str(v).encode()).hexdigest(),
+    "sha256": lambda v: hashlib.sha256(str(v).encode()).hexdigest(),
+    "enc": lambda v: _demo_cipher(v, _key()),
+    "dec": lambda v: _demo_decipher(v, _key()),
+    "ifnull": _ifnull,
+    "casewhen": _casewhen,
+    "mul": lambda a, b: Decimal(str(a)) * Decimal(str(b)),
+    "date_fmt": _date_fmt,
 }
 _FUNC_RE = re.compile(r"^(\w+)\((.*)\)$")
 _PLACEHOLDER_RE = re.compile(r"\{(\w+)\}")

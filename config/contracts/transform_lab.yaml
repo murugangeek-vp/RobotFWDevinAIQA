@@ -1,0 +1,170 @@
+contract_name: transform_lab
+version: "1.0"
+description: >-
+  Transform showcase fixture: one target column per derived-value rule type so
+  the Excel-driven rule layer (tests/pilot/07_excel_rules.robot) has real data
+  to check. Joins country_ref.csv for the LOOKUP case. This table only exists
+  to carry rule examples — it is not a business entity.
+
+source:
+  type: csv
+  path: data/samples/transform_lab.csv
+  encoding: utf-8
+  delimiter: ","
+  header: true
+  columns:
+    - lab_id
+    - full_name_raw
+    - card_no
+    - pin_code
+    - ssn
+    - email_addr
+    - prod_ref
+    - qty
+    - pack_size
+    - unit_price
+    - region_code
+    - country
+    - dob_iso
+    - cust_tier
+    - flag_yx
+    - note
+  joins:
+    - path: data/samples/country_ref.csv
+      "on": country
+      how: left
+      require_match: true
+      columns:
+        - country
+        - region
+
+metadata:
+  encoding: utf-8
+  delimiter: ","
+
+target:
+  type: postgres
+  schema: public
+  table: transform_lab
+
+keys:
+  - lab_id
+
+mappings:
+  tiers:
+    P: PLATINUM
+    G: GOLD
+    S: SILVER
+
+columns:
+  - name: lab_id
+    source_name: lab_id
+    type: integer
+    nullable: false
+    unique: true
+
+  - name: name
+    type: string
+    nullable: false
+    max_length: 64
+    transform: "strip({full_name_raw})"        # TRIM
+
+  - name: email
+    type: string
+    nullable: false
+    max_length: 128
+    transform: "lower({email_addr})"           # LOWERCASE
+
+  - name: card_mask
+    type: string
+    nullable: false
+    max_length: 8
+    transform: "mask({card_no})"               # MASK -> ****1111
+
+  - name: card_tail
+    type: string
+    nullable: false
+    max_length: 4
+    transform: "substr({card_no}, 12, 4)"      # SUBSTRING (last 4)
+
+  - name: ssn_hash
+    type: string
+    nullable: false
+    max_length: 64
+    transform: "sha256({ssn})"                 # HASH
+
+  - name: pin_enc
+    type: string
+    nullable: false
+    max_length: 16
+    transform: "enc({pin_code})"               # ENCRYPTION (demo cipher)
+
+  - name: code_pref
+    type: string
+    nullable: false
+    max_length: 16
+    transform: "prefix({prod_ref}, 'AC-')"     # PREFIX -> AC-P1001
+
+  - name: code_suff
+    type: string
+    nullable: false
+    max_length: 16
+    transform: "suffix({prod_ref}, '-ZZ')"     # SUFFIX -> P1001-ZZ
+
+  - name: prod_ref_up
+    type: string
+    nullable: false
+    max_length: 16
+    transform: "upper({prod_ref})"             # UPPERCASE
+
+  - name: label
+    type: string
+    nullable: false
+    max_length: 24
+    transform: "{prod_ref}|{lab_id}"           # CONCAT
+
+  - name: qty
+    source_name: qty
+    type: integer
+    nullable: false                            # DIRECT_COMPARE
+
+  - name: line_total
+    type: integer
+    nullable: false
+    transform: "mul({qty}, {pack_size})"       # mirrored by CUSTOM_PYTHON
+
+  - name: price_rounded
+    type: decimal
+    nullable: false
+    scale: 2
+    transform: "round({unit_price}, 2)"        # NUMERIC_ROUND
+
+  - name: region_default
+    type: string
+    nullable: false
+    max_length: 16
+    transform: "ifnull({region_code}, 'GLOBAL')"  # DEFAULT_VALUE
+
+  - name: region
+    source_name: region                        # LOOKUP via country_ref join
+    type: string
+    nullable: true
+    max_length: 16
+
+  - name: dob_fmt
+    type: string
+    nullable: false
+    max_length: 10
+    transform: "date_fmt({dob_iso}, '%d/%m/%Y')"  # DATE_TRANSFORM / DATE_FORMAT
+
+  - name: tier_label
+    type: string
+    nullable: false
+    max_length: 16
+    transform: "map(cust_tier, tiers)"         # MAP
+
+  - name: flag_label
+    type: string
+    nullable: false
+    max_length: 8
+    transform: "casewhen({flag_yx}, 'Y', 'YES', 'N', 'NO', 'OTHER')"  # CASE_WHEN
