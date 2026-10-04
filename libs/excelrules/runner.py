@@ -18,25 +18,50 @@ def _ident(name: "str | None", what: str) -> str:
     return name
 
 
+_JOIN_SPEC = re.compile(r"^([A-Za-z_]\w*)(?:@([A-Za-z_]\w*)=([A-Za-z_]\w*))?$")
+
+
 def load_source_frame(rule: Rule, source_dir: "str | Path") -> pd.DataFrame:
     """Each entry in source_tables reads data/samples/<stem>.csv; multiple
-    entries left-join on their shared key column (same convention as contract
-    joins). String-typed so key matching is dtype-safe."""
+    entries left-join into one frame. Two forms per added file:
+
+      - `codes`            -> auto-join on the shared column name (contract
+                              convention; errors if no column is shared)
+      - `codes@acc=mine`   -> explicit join: accumulated-frame column `acc`
+                              equals this file's column `mine`, for sources
+                              whose join keys are named differently
+                              (e.g. `lab,region_ref@country=ctry`)
+
+    String-typed so key matching is dtype-safe."""
     frames = []
-    for stem in rule.source_tables:
+    for entry in rule.source_tables:
+        m = _JOIN_SPEC.fullmatch(entry.strip())
+        if not m:
+            raise ValueError(f"{rule.test_id}: bad source table spec {entry!r}")
+        stem, acc_col, file_col = m.groups()
         path = Path(source_dir) / f"{stem}.csv"
         if not path.exists():
             raise FileNotFoundError(f"{rule.test_id}: source file not found: {path}")
-        frames.append(pd.read_csv(path, dtype=str))
-    df = frames[0]
-    for other in frames[1:]:
-        shared = [c for c in df.columns if c in other.columns]
-        if not shared:
-            raise ValueError(
-                f"{rule.test_id}: no shared column to join on "
-                f"({list(df.columns)} vs {list(other.columns)})"
+        frames.append((pd.read_csv(path, dtype=str), acc_col, file_col))
+
+    df = frames[0][0]
+    for other, acc_col, file_col in frames[1:]:
+        if acc_col:
+            for c, where in ((acc_col, "accumulated"), (file_col, "joined")):
+                if c not in (df.columns if where == "accumulated" else other.columns):
+                    raise ValueError(f"{rule.test_id}: join column '{c}' not in {where} columns")
+            df = df.merge(
+                other, left_on=acc_col, right_on=file_col, how="left", suffixes=("", "_j")
             )
-        df = df.merge(other, on=shared[0], how="left", suffixes=("", "_j"))
+        else:
+            shared = [c for c in df.columns if c in other.columns]
+            if not shared:
+                raise ValueError(
+                    f"{rule.test_id}: no shared column to join on — use "
+                    f"'file@acc_col=file_col' ({list(df.columns)} vs "
+                    f"{list(other.columns)})"
+                )
+            df = df.merge(other, on=shared[0], how="left", suffixes=("", "_j"))
     return df
 
 

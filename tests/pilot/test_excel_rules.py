@@ -35,7 +35,7 @@ def _rule(**kw):
 class ParserTests(unittest.TestCase):
     def test_loads_all_rows(self):
         rules = parser.load_rules(WB)
-        self.assertEqual(len(rules), 33)
+        self.assertEqual(len(rules), 34)
 
     def test_all_rule_types_covered(self):
         from libs.excelrules.models import RULE_TYPES
@@ -45,7 +45,7 @@ class ParserTests(unittest.TestCase):
 
     def test_enabled_excludes_disabled(self):
         enabled = parser.enabled_rules(WB)
-        self.assertEqual(len(enabled), 32)
+        self.assertEqual(len(enabled), 33)
         self.assertNotIn("ER-008", [r.test_id for r in enabled])
 
     def test_mappings(self):
@@ -333,6 +333,24 @@ class SafetyTests(unittest.TestCase):
         df = runner.load_source_frame(r, DATA.parent / "samples")
         self.assertIn("branch_code", df.columns)
         self.assertIn("prod_code", df.columns)
+
+    def test_source_join_explicit_different_colnames(self):
+        r = _rule(source_tables=["transform_lab", "region_ref@country=ctry"])
+        df = runner.load_source_frame(r, DATA.parent / "samples")
+        self.assertIn("region", df.columns)
+        self.assertIn("ctry", df.columns)
+        self.assertEqual(len(df), 10)
+        self.assertTrue((df["country"].notna() == df["region"].notna()).all())
+
+    def test_source_join_explicit_bad_col_fails(self):
+        r = _rule(source_tables=["transform_lab", "region_ref@nope=ctry"])
+        with self.assertRaises(ValueError):
+            runner.load_source_frame(r, DATA.parent / "samples")
+
+    def test_source_join_no_shared_col_tells_fix(self):
+        r = _rule(source_tables=["transform_lab", "region_ref"])
+        with self.assertRaisesRegex(ValueError, "@"):
+            runner.load_source_frame(r, DATA.parent / "samples")
 
 
 if __name__ == "__main__":

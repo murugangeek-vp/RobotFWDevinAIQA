@@ -55,7 +55,7 @@ Every Executed Rule Reports A Status
     Load Rule Workbook    ${RULES_WB}
     Run Migration Validation
     ${summary}=    Get Rule Summary
-    Length Should Be    ${summary}    32    msg=expected 32 enabled rules, got ${summary}
+    Length Should Be    ${summary}    33    msg=expected 33 enabled rules, got ${summary}
     FOR    ${r}    IN    @{summary}
         Should Not Be Equal    ${r}[status]    ERROR    msg=${r}[test_id] errored: ${r}[error]
     END

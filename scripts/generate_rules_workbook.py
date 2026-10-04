@@ -497,6 +497,22 @@ RULES = [
         "lab_id",
         "yes",
     ],
+    # Explicit join: transform_lab.country = region_ref.ctry — the two files
+    # name the same key differently, so shared-column auto-join cannot be used.
+    [
+        "ER-125",
+        "transform_lab,region_ref@country=ctry",
+        "country",
+        "transform_lab",
+        "region",
+        "LOOKUP",
+        "lookup(region)",
+        "",
+        "HIGH",
+        "",
+        "lab_id",
+        "yes",
+    ],
 ]
 
 MAPPINGS = [
