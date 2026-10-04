@@ -28,6 +28,8 @@ from robot.api.deco import keyword
 from libs.adapters.base import TargetAdapter
 from libs.adapters.registry import create_source, create_target, create_writer
 from libs.engine import reconcile, rules, schema
+from libs.excelrules import parser, report, runner
+from libs.excelrules.models import FAILING_SEVERITIES
 from libs.loader import load_expected_rows
 
 
@@ -110,6 +112,9 @@ class ReconciliationLibrary:
         self.recon_result = None
         self.loaded_count = 0
         self.run_status = "UNKNOWN"
+        self.excel_rules = []  # parsed workbook rules (enabled + disabled)
+        self.excel_mappings = {}  # Mapping sheet code tables
+        self.rule_results = []  # RuleResult list from the last validation run
 
     # ----- setup -----------------------------------------------------------
 
@@ -419,3 +424,78 @@ class ReconciliationLibrary:
             if not self.target.is_closed():
                 self.target.close()
             self.target = None
+
+    # ----- Excel-driven rule layer (migration_rules.xlsx) --------------------
+
+    @keyword("Load Rule Workbook")
+    def load_rule_workbook(self, path: str):
+        """Parse migration_rules.xlsx — Rules sheet rows and the Mapping sheet
+        code tables. Fail-closed on unknown rule types / missing columns.
+        Returns total rules (enabled+disabled)."""
+        self.excel_rules = parser.load_rules(path)
+        self.excel_mappings = parser.load_mappings(path)
+        enabled = sum(1 for r in self.excel_rules if r.enabled)
+        logger.info(f"rule workbook: {enabled}/{len(self.excel_rules)} rules enabled")
+        return len(self.excel_rules)
+
+    @keyword("Run Migration Validation")
+    def run_migration_validation(
+        self, test_id: "str | None" = None, source_dir: "str | None" = None
+    ):
+        """Dispatch every enabled rule (or one `test_id`) to its rule-type
+        validator. Target rows are fetched via dynamic read-only SQL; source
+        tables resolve to <source_dir>/<table>.csv. Returns RuleResult list."""
+        rules = [r for r in self.excel_rules if r.enabled]
+        if test_id:
+            rules = [r for r in rules if r.test_id == test_id]
+            if not rules:
+                raise ValueError(f"no enabled rule with Test ID {test_id!r}")
+        src_dir = Path(source_dir) if source_dir else Path(_REPO_ROOT) / "data" / "samples"
+        schema_name = (self.env or {}).get("target", {}).get("schema", "public")
+        target = self._ensure_target()
+        self.rule_results = runner.run_rules(
+            rules, self.excel_mappings, src_dir, target.query, schema=schema_name
+        )
+        logger.info(
+            f"migration validation: {len(self.rule_results)} rules, "
+            f"{sum(len(r.violations) for r in self.rule_results)} violations"
+        )
+        return self.rule_results
+
+    @keyword("Get Rule Violations")
+    def get_rule_violations(self, test_id: "str | None" = None):
+        """Violation dicts {test_id, column, key, expected, actual} — filtered
+        to one rule or all failing-severity rules (LOW/WARN stay report-only)."""
+        out: list = []
+        for r in self.rule_results:
+            if test_id and r.rule.test_id != test_id:
+                continue
+            if not test_id and r.rule.severity.upper() not in FAILING_SEVERITIES:
+                continue
+            out.extend(v.as_dict() for v in r.violations)
+        return out
+
+    @keyword("Get Rule Summary")
+    def get_rule_summary(self):
+        """Per-rule status rows: {test_id, rule_type, severity, status,
+        violations, error}."""
+        return [
+            {
+                "test_id": r.rule.test_id,
+                "rule_type": r.rule.rule_type,
+                "severity": r.rule.severity,
+                "status": r.status,
+                "violations": len(r.violations),
+                "error": r.error,
+            }
+            for r in self.rule_results
+        ]
+
+    @keyword("Write Rules Summary")
+    def write_rules_summary(self, out_path: "str | None" = None):
+        """Write the Excel audit workbook (results/migration_rules_summary.xlsx
+        by default)."""
+        path = out_path or str(Path("results") / "migration_rules_summary.xlsx")
+        written = report.write_summary(self.rule_results, path)
+        logger.info(f"rules summary written to {written}")
+        return str(written)

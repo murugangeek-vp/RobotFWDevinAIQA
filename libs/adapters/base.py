@@ -39,6 +39,11 @@ class TargetAdapter(ABC):
         """Return a pandas DataFrame of target rows."""
 
     @abstractmethod
+    def query(self, sql: str, params: tuple = ()):
+        """Run a read-only SELECT and return a pandas DataFrame — for dynamic
+        rule-driven fetches (Excel WHERE clauses, per-rule column sets)."""
+
+    @abstractmethod
     def row_count(self, table: str) -> int:
         """Number of records in the target table."""
 

@@ -100,3 +100,4 @@ jobs:
             results/log.html
             results/output.xml
             results/run_summary.json
+            results/migration_rules_summary.xlsx

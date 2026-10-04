@@ -29,6 +29,16 @@ class PostgresTarget(TargetAdapter):
         cur.close()
         return pd.DataFrame(rows, columns=names)
 
+    def query(self, sql: str, params: tuple = ()):
+        """Read-only SELECT with bound params — the session is already
+        readonly=True, so this can never mutate."""
+        cur = self.conn.cursor()
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+        names = [d.name for d in cur.description]
+        cur.close()
+        return pd.DataFrame(rows, columns=names)
+
     def row_count(self, table: str) -> int:
         cur = self.conn.cursor()
         cur.execute(f"SELECT count(*) FROM {self.schema_name}.{table}")
