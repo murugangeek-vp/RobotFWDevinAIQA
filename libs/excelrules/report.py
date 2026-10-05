@@ -19,6 +19,21 @@ def _bold_header(ws) -> None:
         c.font = Font(bold=True)
 
 
+def _source_spec(rule) -> str:
+    """Source-side equivalent of the Query column: the CSV files (+ join spec),
+    source columns, and the logic/expected the rule validated against."""
+    parts = []
+    if rule.source_tables:
+        parts.append("files: " + ", ".join(f"{t}.csv" for t in rule.source_tables))
+    if rule.source_columns:
+        parts.append("cols: " + ", ".join(rule.source_columns))
+    if rule.logic:
+        parts.append(f"logic: {rule.logic}")
+    if rule.expected:
+        parts.append(f"expected: {rule.expected}")
+    return " | ".join(parts) or "-"
+
+
 def write_summary(
     results: list[RuleResult], out_path: "str | Path", meta: "dict | None" = None
 ) -> Path:
@@ -58,7 +73,18 @@ def write_summary(
 
     ws = wb.create_sheet("Summary")
     ws.append(
-        ["Test ID", "Rule Type", "Target", "Severity", "Status", "Violations", "Sample", "Error"]
+        [
+            "Test ID",
+            "Rule Type",
+            "Source",
+            "Target",
+            "Query",
+            "Severity",
+            "Status",
+            "Violations",
+            "Sample",
+            "Error",
+        ]
     )
     _bold_header(ws)
 
@@ -72,7 +98,9 @@ def write_summary(
             [
                 rule.test_id,
                 rule.rule_type,
+                _source_spec(rule),
                 f"{rule.target_table}.{rule.target_column}",
+                r.sql or "",
                 rule.severity,
                 r.status,
                 len(r.violations),
@@ -80,10 +108,10 @@ def write_summary(
                 r.error or "",
             ]
         )
-        status_cell = ws.cell(row=ws.max_row, column=5)
+        status_cell = ws.cell(row=ws.max_row, column=7)
         status_cell.fill = PatternFill("solid", fgColor=_FILL.get(r.status, "FFFFFF"))
 
-    for i, width in enumerate([10, 16, 34, 10, 8, 11, 80, 40], start=1):
+    for i, width in enumerate([10, 16, 50, 30, 60, 10, 8, 11, 70, 40], start=1):
         ws.column_dimensions[get_column_letter(i)].width = width
     ws.freeze_panes = "A2"
 

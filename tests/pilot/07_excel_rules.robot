@@ -97,3 +97,9 @@ Rules Summary Workbook Written
     Should Not Be Empty    ${meta}[Run Timestamp]
     Should Not Be Empty    ${meta}[Environment]
     Should Be Equal    ${meta}[Overall Status]    PASS
+    ${summary}=    Evaluate
+    ...    list(__import__("openpyxl").load_workbook(r"${path}")["Summary"].iter_rows(values_only=True))
+    Should Be Equal    ${summary}[0][2]    Source
+    Should Be Equal    ${summary}[0][4]    Query
+    Should Match Regexp    ${summary}[1][4]    SELECT .* FROM public\\.
+    Should Contain    ${summary}[1][2]    expected:

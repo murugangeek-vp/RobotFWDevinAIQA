@@ -88,6 +88,7 @@ class RuleResult:
     rule: Rule
     violations: list[Violation] = field(default_factory=list)
     error: "str | None" = None  # rule couldn't evaluate (missing column, bad expr)
+    sql: "str | None" = None  # target SELECT issued for this rule (audit trail)
 
     @property
     def status(self) -> str:

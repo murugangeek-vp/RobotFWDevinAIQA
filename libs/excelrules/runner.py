@@ -106,8 +106,10 @@ def run_rules(
     one bad Excel row must not hide the other 999 results."""
     results = []
     for rule in rules:
+        sql = None
         try:
-            tgt = query_fn(target_sql(rule, schema))
+            sql = target_sql(rule, schema)
+            tgt = query_fn(sql)
             if rule.rule_type == "CUSTOM_SQL":
                 # SQL already filtered to failing rows — all fetched = violations
                 _, tgt_key = rule.key_pair()
@@ -122,10 +124,10 @@ def run_rules(
                     )
                     for _, row in tgt.iterrows()
                 ]
-                results.append(RuleResult(rule, vs))
+                results.append(RuleResult(rule, vs, sql=sql))
                 continue
             src = load_source_frame(rule, source_dir) if rule.source_tables else pd.DataFrame()
-            results.append(RuleResult(rule, validate(rule, src, tgt, mappings)))
+            results.append(RuleResult(rule, validate(rule, src, tgt, mappings), sql=sql))
         except Exception as e:  # noqa: BLE001 — per-rule isolation by design
-            results.append(RuleResult(rule, error=f"{type(e).__name__}: {e}"))
+            results.append(RuleResult(rule, sql=sql, error=f"{type(e).__name__}: {e}"))
     return results
