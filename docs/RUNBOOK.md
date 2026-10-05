@@ -170,7 +170,9 @@ client spreadsheet. `data/rules/business_rules.xlsx` is the source of truth —
 Keywords: `Load Rule Workbook` → `Run Business Rules Validation` (all rules
 or one Test ID) → `Get Rule Violations` / `Get Rule Summary` → `Write Rules
 Summary` (writes `results/business_rules_summary.xlsx` — the audit workbook beside the
-Robot reports). Target rows are fetched as `recon_ro` through dynamic,
+Robot reports; the `Run Info` sheet records timestamp, environment, contract
+version, executor, commit, and the verdict, `Summary` has one row per rule,
+and `Violations` lists every breach in full). Target rows are fetched as `recon_ro` through dynamic,
 identifier-vetted SQL with an optional WHERE fragment. Regenerate the sample
 workbook with `scripts/generate_rules_workbook.py`.
 

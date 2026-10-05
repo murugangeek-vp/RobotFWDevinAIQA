@@ -82,10 +82,18 @@ Unknown Test Id Fails Closed
 
 Rules Summary Workbook Written
     [Documentation]    Audit artifact: the Excel summary lands next to the
-    ...    Robot HTML reports with per-rule status and diff samples.
+    ...    Robot HTML reports with a Run Info audit sheet (timestamp, env,
+    ...    contract, commit, verdict), per-rule status, and violation detail.
     Load Rule Workbook    ${RULES_WB}
     Run Business Rules Validation
     ${path}=    Write Rules Summary
     File Should Exist    ${path}
     ${size}=    Get File Size    ${path}
     Should Be True    ${size} > 0
+    ${wb}=    Evaluate    __import__("openpyxl").load_workbook(r"${path}")
+    Should Be Equal    ${wb.sheetnames}    ${{["Run Info", "Summary", "Violations"]}}
+    ${meta}=    Evaluate
+    ...    {r[0]: r[1] for r in __import__("openpyxl").load_workbook(r"${path}")["Run Info"].iter_rows(min_row=2, values_only=True)}
+    Should Not Be Empty    ${meta}[Run Timestamp]
+    Should Not Be Empty    ${meta}[Environment]
+    Should Be Equal    ${meta}[Overall Status]    PASS

@@ -13,6 +13,7 @@ Credentials come from environment variables, falling back to a git-ignored
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -114,6 +115,7 @@ class ReconciliationLibrary:
         self.run_status = "UNKNOWN"
         self.excel_rules = []  # parsed workbook rules (enabled + disabled)
         self.excel_mappings = {}  # Mapping sheet code tables
+        self.rules_workbook_path = None  # workbook file, for audit metadata
         self.rule_results = []  # RuleResult list from the last validation run
 
     # ----- setup -----------------------------------------------------------
@@ -434,6 +436,7 @@ class ReconciliationLibrary:
         Returns total rules (enabled+disabled)."""
         self.excel_rules = parser.load_rules(path)
         self.excel_mappings = parser.load_mappings(path)
+        self.rules_workbook_path = str(Path(path).resolve())
         enabled = sum(1 for r in self.excel_rules if r.enabled)
         logger.info(f"rule workbook: {enabled}/{len(self.excel_rules)} rules enabled")
         return len(self.excel_rules)
@@ -497,11 +500,42 @@ class ReconciliationLibrary:
             for r in self.rule_results
         ]
 
+    @staticmethod
+    def _git_head() -> str:
+        """Short commit SHA for audit traceability; empty outside a repo."""
+        try:
+            out = subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                cwd=_REPO_ROOT,
+            )
+            return out.stdout.strip() if out.returncode == 0 else ""
+        except Exception:  # noqa: BLE001 — audit metadata must never break a run
+            return ""
+
     @keyword("Write Rules Summary")
     def write_rules_summary(self, out_path: "str | None" = None):
         """Write the Excel audit workbook (results/business_rules_summary.xlsx
-        by default)."""
+        by default): Run Info sheet carries the audit trail — timestamp,
+        environment, contract version, executor, commit — plus Summary and a
+        full Violations detail sheet."""
         path = out_path or str(Path("results") / "business_rules_summary.xlsx")
-        written = report.write_summary(self.rule_results, path)
+        meta = {
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "environment": self.env_name or "",
+            "contract": self.contract.name if self.contract else "",
+            "contract_version": self.contract.version if self.contract else "",
+            "rules_workbook": self.rules_workbook_path or "",
+            "executed_by": (
+                os.environ.get("GITHUB_ACTOR")
+                or os.environ.get("USERNAME")
+                or os.environ.get("USER")
+                or ""
+            ),
+            "git_commit": os.environ.get("GITHUB_SHA", "") or self._git_head(),
+        }
+        written = report.write_summary(self.rule_results, path, meta=meta)
         logger.info(f"rules summary written to {written}")
         return str(written)
