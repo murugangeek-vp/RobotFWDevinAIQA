@@ -63,10 +63,15 @@ def _casewhen(v, *args):
     return next((t for w, t in pairs if str(v) == str(w)), default)
 
 
-def _date_fmt(v, out_fmt):
-    """ISO date/timestamp -> strftime'd string ('%d/%m/%Y' etc.)."""
+def _date_fmt(v, out_fmt, in_fmt=None):
+    """Date/timestamp -> strftime'd string ('%d/%m/%Y' etc.).
+
+    `in_fmt` optionally declares the input format (e.g. '%m/%d/%Y' for legacy
+    varchar dates); without it ISO inputs are tried."""
     s = str(v).strip()[:19]
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+    fmts = [str(in_fmt)] if in_fmt else []
+    fmts += ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d"]
+    for fmt in fmts:
         try:
             return datetime.strptime(s, fmt).strftime(str(out_fmt))
         except ValueError:
@@ -319,6 +324,8 @@ def expected_target_rows(source_df: pd.DataFrame, contract: Contract) -> pd.Data
 
 def normalize(v, col: dict):
     """Normalize a value for comparison (whitespace, numeric scale, dates)."""
+    if col.get("exact") and isinstance(v, str) and col["type"] == "string":
+        return v
     if _isna(v):
         return None
     ctype = col["type"]
@@ -401,3 +408,88 @@ def compare(
             if e != a:
                 result.diffs.append(ColumnDiff(key=k, column=cname, expected=e, actual=a))
     return result
+
+
+def canonical_key(row, contract: Contract) -> str:
+    import json
+
+    values = [normalize(row[k], contract.column(k)) for k in contract.keys]
+    if any(v is None for v in values):
+        raise ValueError("null reconciliation keys")
+    return json.dumps(values, default=str, ensure_ascii=True, separators=(",", ":"))
+
+
+def _row_hash(row, keys: list, colspec: dict) -> str:
+    import json
+
+    values = [normalize(row[c], spec) for c, spec in colspec.items() if c not in keys]
+    payload = json.dumps(values, default=str, ensure_ascii=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def compare_chunked(
+    expected_iter, target_iter, contract: Contract, sample_limit: int = 100, mode: str = "full"
+) -> ReconResult:
+    """Merge canonical-key-ordered streams with bounded samples and exact totals.
+
+    Adapters must provide globally sorted streams, not independently sorted
+    batches. Duplicate/null keys and ordering violations fail closed.
+    """
+    if sample_limit < 0 or mode not in ("full", "hash"):
+        raise ValueError("invalid comparison settings")
+    result = ReconResult()
+    colspec = {c["name"]: c for c in contract.columns}
+
+    def records(chunks, side):
+        previous = None
+        for chunk in chunks:
+            for values in chunk.itertuples(index=False, name=None):
+                row = dict(zip(chunk.columns, values, strict=True))
+                key = canonical_key(row, contract)
+                if previous is not None and key <= previous:
+                    problem = "duplicate" if key == previous else "out of order"
+                    raise ValueError(f"{side} contains {problem} reconciliation keys")
+                previous = key
+                if side == "source":
+                    result.source_count += 1
+                else:
+                    result.target_count += 1
+                yield key, row
+
+    def display_key(row):
+        values = tuple(normalize(row[k], colspec[k]) for k in contract.keys)
+        return values[0] if len(values) == 1 else values
+
+    expected, actual = records(expected_iter, "source"), records(target_iter, "target")
+    er, ar = next(expected, None), next(actual, None)
+    try:
+        while er is not None or ar is not None:
+            if ar is None or (er is not None and er[0] < ar[0]):
+                assert er is not None
+                result.record("missing_in_target", display_key(er[1]), sample_limit)
+                er = next(expected, None)
+            elif er is None or ar[0] < er[0]:
+                result.record("extra_in_target", display_key(ar[1]), sample_limit)
+                ar = next(actual, None)
+            else:
+                key = display_key(er[1])
+                equal_hash = mode == "hash" and _row_hash(
+                    er[1], contract.keys, colspec
+                ) == _row_hash(ar[1], contract.keys, colspec)
+                if not equal_hash:
+                    for name, spec in colspec.items():
+                        if name in contract.keys:
+                            continue
+                        e, a = normalize(er[1][name], spec), normalize(ar[1][name], spec)
+                        if e != a:
+                            result.record("diffs", ColumnDiff(key, name, e, a), sample_limit)
+                er, ar = next(expected, None), next(actual, None)
+    finally:
+        expected.close()
+        actual.close()
+    return result
+
+
+def hash_compare(expected_iter, target_iter, contract: Contract, sample_limit: int = 100):
+    """Client-side SHA-256 comparison; differing rows retain column-level evidence."""
+    return compare_chunked(expected_iter, target_iter, contract, sample_limit, mode="hash")

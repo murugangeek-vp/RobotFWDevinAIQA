@@ -3,6 +3,7 @@ import psycopg2
 
 from libs.adapters.base import TargetAdapter
 from libs.adapters.registry import register_target, register_writer
+from libs.engine.schema import ident
 
 
 @register_target("postgres")
@@ -28,6 +29,24 @@ class PostgresTarget(TargetAdapter):
         names = [d.name for d in cur.description]
         cur.close()
         return pd.DataFrame(rows, columns=names)
+
+    def read_chunks(self, table, columns=None, keys=None, size=50000):
+        if size < 1:
+            raise ValueError("batch size must be positive")
+        conn = psycopg2.connect(self.conn.dsn)
+        conn.set_session(readonly=True, autocommit=False, isolation_level="REPEATABLE READ")
+        cur = conn.cursor(name="recon_target")
+        try:
+            cols = ", ".join(ident(c) for c in columns) if columns else "*"
+            order = ", ".join(ident(k) for k in keys) if keys else "1"
+            cur.execute(
+                f"SELECT {cols} FROM {ident(self.schema_name)}.{ident(table)} ORDER BY {order}"
+            )
+            while rows := cur.fetchmany(size):
+                yield pd.DataFrame(rows, columns=[d.name for d in cur.description], dtype=object)
+        finally:
+            cur.close()
+            conn.close()
 
     def query(self, sql: str, params: tuple = ()):
         """Read-only SELECT with bound params — the session is already

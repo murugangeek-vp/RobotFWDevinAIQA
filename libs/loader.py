@@ -58,12 +58,14 @@ def _coerce(v, coltype: str):
     return str(v)
 
 
-def load_expected_rows(conn, contract, expected_df, dialect: str = "postgres") -> int:
+def load_expected_rows(
+    conn, contract, expected_df, dialect: str = "postgres", batch_size: int = 50000
+) -> int:
     """Create target table per contract, truncate, bulk-insert expected rows.
 
     Raises PermissionError if the session is read-only (e.g. recon_ro creds).
     """
-    if dialect != "postgres":
+    if dialect not in ("postgres", "snowflake"):
         raise ValueError(f"Unsupported loader dialect: {dialect}")
     cur = conn.cursor()
     if dialect == "postgres":
@@ -82,6 +84,36 @@ def load_expected_rows(conn, contract, expected_df, dialect: str = "postgres") -
 
     colnames = [c["name"] for c in contract.columns]
     coltypes = {c["name"]: c["type"] for c in contract.columns}
+    if dialect == "snowflake":
+        # write_pandas is the connector's bulk path (stage + COPY INTO) — also
+        # what fakesnow implements via a single DataFrame insert; per-row
+        # executemany is O(rows) round-trips and unusable at volume.
+        clean = expected_df.copy()
+        for c in colnames:
+            clean[c] = clean[c].map(lambda v, t=coltypes[c]: _coerce(v, t))
+        mod = type(conn).__module__
+        from importlib import import_module
+
+        pandas_tools = import_module(
+            "fakesnow.pandas_tools"
+            if mod.startswith("fakesnow")
+            else "snowflake.connector.pandas_tools"
+        )
+        _ok, _chunks, nrows, _res = pandas_tools.write_pandas(
+            conn,
+            clean[colnames],
+            table_name=contract.table,
+            schema=contract.schema,
+            quote_identifiers=True,
+            chunk_size=batch_size,
+            use_logical_type=True,
+        )
+        if not _ok or nrows != len(clean):
+            raise RuntimeError("Bulk load did not load every expected row")
+        conn.commit()
+        cur.close()
+        return nrows
+
     rows = [
         tuple(_coerce(row[c], coltypes[c]) for c in colnames) for _, row in expected_df.iterrows()
     ]

@@ -72,6 +72,17 @@ class ReconResult:
     extra_in_target: list = field(default_factory=list)
     diffs: list = field(default_factory=list)  # list[ColumnDiff]
 
+    totals: dict = field(default_factory=dict)
+
     @property
     def mismatch_count(self) -> int:
-        return len(self.missing_in_target) + len(self.extra_in_target) + len(self.diffs)
+        return sum(self.count(kind) for kind in ("missing_in_target", "extra_in_target", "diffs"))
+
+    def count(self, kind: str) -> int:
+        return self.totals.get(kind, len(getattr(self, kind)))
+
+    def record(self, kind: str, value, sample_limit: int):
+        self.totals[kind] = self.count(kind) + 1
+        samples = getattr(self, kind)
+        if len(samples) < sample_limit:
+            samples.append(value)

@@ -176,6 +176,62 @@ and `Violations` lists every breach in full). Target rows are fetched as `recon_
 identifier-vetted SQL with an optional WHERE fragment. Regenerate the sample
 workbook with `scripts/generate_rules_workbook.py`.
 
+## Bank migration suite — `tests/migration/` (Postgres → Snowflake)
+
+Verify-only, workbook-driven bank-to-bank migration validation. The shipped
+scenario is **Webster Bank** (local Postgres `webster` schema, synthetic
+data) → **Santander Bank** (Snowflake `SANTANDER.PUBLIC`, emulated locally by
+fakesnow). **No loader runs in this suite** — it validates the target as-is.
+
+### One-time setup
+
+```bash
+.venv/Scripts/python scripts/generate_mapping_workbook.py        # data/mapping/bank_mapping.xlsx
+.venv/Scripts/python scripts/generate_bank_source.py --rows 10000  # webster.* synthetic tables
+```
+
+The seeder **refuses to run if `webster` already exists** and requires the
+`RECON_RW_*` admin credentials — reseeding a live schema must be a deliberate
+act. `--rows N` scales customer volume (accounts/txns/loans scale with it).
+
+### Run
+
+```bash
+.venv/Scripts/robot -d results/migration tests/migration          # all 5 mappings, all stages
+.venv/Scripts/robot -d results/m1 -v MAPPING_ID:account_migration tests/migration   # one mapping
+.venv/Scripts/robot -d results/r  --include recon tests/migration                   # compare+transform only
+.venv/Scripts/robot -d results/n  tests/migration/90_negative_path.robot            # defect-detection proof
+```
+
+Config: `config/environments/webster_santander.yaml` (`${MIGRATION_ENV}` and
+`${MAPPING_WORKBOOK}` variables override it). Evidence per run:
+`migration_summary.xlsx`, `migration_report.md`, `run_summary.json` inside
+the output dir — `run_summary.json` records `production_signoff: false`
+always; a green **emulated** run is not sign-off.
+
+### Fake vs real Snowflake
+
+`target.fake: true` runs the real `snowflake-connector-python` code path on
+fakesnow/DuckDB (state in `results/fakesnow/`). For a real account use
+`config/environments/webster_santander_live.yaml`: set `fake: false`,
+`SNOWFLAKE_*` env vars, and — mandatory for real runs — `run.snapshot_id`
+(an agreed frozen migration cut; the library refuses real-database runs
+without it). Known emulator gap: VARCHAR declared lengths are not in
+fakesnow's `information_schema`, so length checks report "not validated"
+locally and stay enforced on real Snowflake.
+
+### Scale notes
+
+Both sides stream in `run.batch_size` chunks through a canonical external
+sort (temp SQLite, auto-deleted) — RAM stays flat at million-row volumes;
+reserve temp disk ~projected row payload. `Recon Mode: hash` in the workbook
+switches a mapping to per-key SHA-256 comparison (client-side — it does not
+reduce transfer). Production runs need SELECT-only roles; writers are never
+opened by this suite.
+
+See `docs/EXCEL_MAPPING.md` (workbook spec) and `docs/ADAPTERS.md`
+(any-database extension points).
+
 ## Switching environment / contract
 
 `config/environments/dev.yaml` points at the local Docker database. For another

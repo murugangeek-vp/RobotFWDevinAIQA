@@ -1,0 +1,25 @@
+environment: webster_santander_live
+run:
+  batch_size: 5000
+  sample_limit: 20
+  allow_empty: false
+  snapshot_id: ${MIGRATION_SNAPSHOT_ID}
+source:
+  type: postgres
+  host: ${SOURCE_PG_HOST}
+  port: 5432
+  database: ${SOURCE_PG_DATABASE}
+  user: ${RECON_RO_USER}
+  password: ${RECON_RO_PASSWORD}
+  sslmode: verify-full
+  sslrootcert: ${SOURCE_PG_CA_FILE}
+target:
+  type: snowflake
+  fake: false
+  account: ${SNOWFLAKE_ACCOUNT}
+  user: ${SNOWFLAKE_USER}
+  password: ${SNOWFLAKE_PASSWORD}
+  warehouse: ${SNOWFLAKE_WAREHOUSE}
+  database: ${SNOWFLAKE_DATABASE}
+  schema: ${SNOWFLAKE_SCHEMA}
+  role: ${SNOWFLAKE_ROLE}

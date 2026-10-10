@@ -10,6 +10,13 @@ class SourceAdapter(ABC):
     def read_batch(self, **kwargs):
         """Return a pandas DataFrame of source rows."""
 
+    def read_chunks(self, size: int = 50000):
+        """Yield DataFrames of at most `size` rows. Default wraps read_batch;
+        adapters with server-side cursors override this to stream big tables."""
+        df = self.read_batch()
+        for i in range(0, len(df), size):
+            yield df.iloc[i : i + size]
+
     @abstractmethod
     def row_count(self) -> int:
         """Number of source records."""
@@ -37,6 +44,20 @@ class TargetAdapter(ABC):
     @abstractmethod
     def read_table(self, table: str, columns: "list | None" = None):
         """Return a pandas DataFrame of target rows."""
+
+    def read_chunks(
+        self,
+        table: str,
+        columns: "list | None" = None,
+        keys: "list | None" = None,
+        size: int = 50000,
+    ):
+        """Yield DataFrames of at most `size` target rows, ordered by `keys`
+        so callers can merge-compare streams. Default wraps read_table;
+        adapters with server-side cursors override this to stream."""
+        df = self.read_table(table, columns=columns)
+        for i in range(0, len(df), size):
+            yield df.iloc[i : i + size]
 
     @abstractmethod
     def query(self, sql: str, params: tuple = ()):

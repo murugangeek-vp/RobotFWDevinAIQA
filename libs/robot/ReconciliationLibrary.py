@@ -52,6 +52,13 @@ def load_credentials(path: Path) -> None:
                 "RECON_RW_USER",
                 "RECON_RW_PASSWORD",
                 "RECON_SKIP_LOAD",
+                "SNOWFLAKE_ACCOUNT",
+                "SNOWFLAKE_USER",
+                "SNOWFLAKE_PASSWORD",
+                "SNOWFLAKE_WAREHOUSE",
+                "SNOWFLAKE_DATABASE",
+                "SNOWFLAKE_SCHEMA",
+                "SNOWFLAKE_ROLE",
             }
             or key in os.environ
         ):
@@ -117,6 +124,11 @@ class ReconciliationLibrary:
         self.excel_mappings = {}  # Mapping sheet code tables
         self.rules_workbook_path = None  # workbook file, for audit metadata
         self.rule_results = []  # RuleResult list from the last validation run
+        self.mapping_workbook = None  # Excel mapping workbook (migration mode)
+        self.table_mappings = None  # parsed TableMapping list
+        self.code_mappings = {}  # Mapping sheet code tables
+        self.table_mapping = None  # the selected TableMapping
+        self.stage_results = []  # per-stage evidence rows for the report
 
     # ----- setup -----------------------------------------------------------
 
@@ -136,6 +148,76 @@ class ReconciliationLibrary:
         logger.info(f"contract: {self.contract.name} v{self.contract.version}")
         return self.contract.name
 
+    @keyword("Load Mapping Workbook")
+    def load_mapping_workbook(self, path: str, mapping_id: "str | None" = None):
+        """Parse the Excel mapping workbook (Tables + FieldMap + Mapping
+        sheets), select a Mapping ID (first enabled when omitted), and compile
+        it into a validated contract — the dynamic alternative to Load Contract."""
+        from libs.mapping import builder, parser
+
+        self.mapping_workbook = str(Path(path).resolve())
+        self.table_mappings, self.code_mappings = parser.load_workbook(path)
+        enabled = [t for t in self.table_mappings if t.enabled]
+        if not enabled:
+            raise ValueError(f"{path}: no enabled mappings on the Tables sheet")
+        if mapping_id:
+            sel = [t for t in enabled if t.mapping_id == mapping_id]
+            if not sel:
+                raise ValueError(
+                    f"no enabled mapping {mapping_id!r} in {path}; enabled: "
+                    f"{[t.mapping_id for t in enabled]}"
+                )
+            tm = sel[0]
+        else:
+            tm = enabled[0]
+        self.table_mapping = tm
+        self.contract = builder.build_contract(
+            tm,
+            self.code_mappings,
+            self.env["source"],
+            self.env["target"],
+            self.mapping_workbook,
+        )
+        logger.info(
+            f"mapping {tm.mapping_id!r}: {tm.source_schema}.{tm.source_table} -> "
+            f"{tm.target_schema}.{tm.target_table} ({len(tm.fields)} fields)"
+        )
+        return tm.mapping_id
+
+    @keyword("List Mapping Ids")
+    def list_mapping_ids(self, path: "str | None" = None, enabled_only: bool = True):
+        """All Mapping IDs in the workbook (enabled ones by default) — for
+        coverage tests and per-table iteration."""
+        from libs.mapping import parser
+
+        if path:
+            self.mapping_workbook = str(Path(path).resolve())
+            self.table_mappings, self.code_mappings = parser.load_workbook(path)
+        if self.table_mappings is None:
+            raise RuntimeError("Load Mapping Workbook must run first (or pass a path)")
+        return [t.mapping_id for t in self.table_mappings if t.enabled or not enabled_only]
+
+    @keyword("Select Mapping")
+    def select_mapping(self, mapping_id: str):
+        """Recompile the contract for another Mapping ID in the loaded
+        workbook — lets one suite reconcile every table."""
+        if self.table_mappings is None:
+            raise RuntimeError("Load Mapping Workbook must run first")
+        from libs.mapping import builder
+
+        sel = [t for t in self.table_mappings if t.mapping_id == mapping_id]
+        if not sel:
+            raise ValueError(f"unknown Mapping ID {mapping_id!r}")
+        self.table_mapping = sel[0]
+        self.contract = builder.build_contract(
+            self.table_mapping,
+            self.code_mappings,
+            self.env["source"],
+            self.env["target"],
+            self.mapping_workbook or "",
+        )
+        return self.table_mapping.mapping_id
+
     @keyword("Read Source")
     def read_source(self, source_file: "str | None" = None, join_path: "str | None" = None):
         cfg = dict(self.contract.raw["source"])
@@ -148,7 +230,7 @@ class ReconciliationLibrary:
             joins = [dict(j) for j in joins]
             joins[0]["path"] = join_path
             cfg["joins"] = joins
-        adapter = create_source(cfg)
+        adapter = create_source(_expand_env(cfg))
         try:
             self.source_df = adapter.read_batch()
         finally:
@@ -162,10 +244,26 @@ class ReconciliationLibrary:
     def _creds(self, role: str):
         return resolve_credentials(role, (self.env or {}).get("target", {}))
 
+    def _target_auth(self, role: str):
+        """(user, password) — explicit user/password in the env target block
+        win (snowflake-style config); otherwise RECON_<role>_* env vars."""
+        t = (self.env or {}).get("target", {})
+        user = t.get("user") or os.environ.get(f"RECON_{role}_USER")
+        pw = t.get("password") or os.environ.get(f"RECON_{role}_PASSWORD")
+        if not user or not pw:
+            raise RuntimeError(
+                "Set user/password in the env target block or "
+                f"RECON_{role}_USER / RECON_{role}_PASSWORD"
+            )
+        return user, pw
+
     def _target_kwargs(self):
         t = self.env["target"]
         return dict(
-            host=t["host"], port=t["port"], database=t["database"], schema=t.get("schema", "public")
+            host=t.get("host"),
+            port=t.get("port"),
+            database=t.get("database"),
+            schema=t.get("schema", "public"),
         )
 
     # ----- Pilot-01: header / metadata ---------------------------------------
@@ -234,7 +332,7 @@ class ReconciliationLibrary:
             logger.warn("RECON_SKIP_LOAD set - target left untouched (verify-only)")
             self.loaded_count = 0
             return 0
-        user, pw = self._creds("RW")
+        user, pw = self._target_auth("RW")
         t = self._target_kwargs()
         conn = create_writer(self.env["target"], user=user, password=pw)
         try:
@@ -254,7 +352,7 @@ class ReconciliationLibrary:
     @keyword("Connect Target Read Only")
     def connect_target_read_only(self):
         self.close_target()
-        user, pw = self._creds("RO")
+        user, pw = self._target_auth("RO")
         self.target = create_target(self.env["target"], user=user, password=pw)
         return True
 
@@ -295,6 +393,8 @@ class ReconciliationLibrary:
             cur.close()
 
     def _verify_only(self) -> bool:
+        if self.contract and self.contract.raw["source"].get("type") in ("postgres", "snowflake"):
+            return True
         v = os.environ.get("RECON_SKIP_LOAD", "").strip().lower()
         return v in ("1", "true", "yes")
 
@@ -308,13 +408,87 @@ class ReconciliationLibrary:
                 "requires loader mode: unset RECON_SKIP_LOAD to run defect-seeding tests"
             )
 
+    @keyword("Seed Target Defect")
+    def seed_target_defect(self, kind: str):
+        """Seed one defect into the target so negative tests can prove
+        detection (loader mode only). kind: missing | extra | tamper.
+        Returns {key, column} identifying what was broken — assertions check
+        the engine reports exactly that."""
+        if self._verify_only():
+            raise SkipExecution("requires loader mode: defect seeding needs target writes")
+        keys = self.contract.keys
+        if len(keys) != 1:
+            raise ValueError("defect seeding supports single-key tables")
+        dialect = self.env["target"].get("type", "postgres")
+        qname = (
+            f"{schema.ident(self.contract.schema, dialect)}."
+            f"{schema.ident(self.contract.table, dialect)}"
+        )
+        kq = schema.ident(keys[0], dialect)
+        user, pw = self._target_auth("RW")
+        conn = create_writer(self.env["target"], user=user, password=pw)
+        try:
+            cur = conn.cursor()
+            cur.execute(f"SELECT MIN({kq}), MAX({kq}) FROM {qname}")
+            mn, mx = cur.fetchone()
+            if kind == "missing":
+                cur.execute(f"DELETE FROM {qname} WHERE {kq} = (SELECT MIN({kq}) FROM {qname})")
+                detail = {"kind": kind, "key": mn, "column": keys[0]}
+            elif kind == "extra":
+                cols = [c["name"] for c in self.contract.columns]
+                key_spec = self.contract.column(keys[0])
+                bump = (
+                    f"(SELECT MAX({kq}) FROM {qname}) + 900000001"
+                    if key_spec["type"] == "integer"
+                    else f"(SELECT MAX({kq}) FROM {qname}) || '_EXTRA'"
+                )
+                sel = ", ".join(bump if c == keys[0] else schema.ident(c, dialect) for c in cols)
+                cols_sql = ", ".join(schema.ident(c, dialect) for c in cols)
+                cur.execute(
+                    f"INSERT INTO {qname} ({cols_sql}) SELECT {sel} FROM {qname} "
+                    f"WHERE {kq} = (SELECT MAX({kq}) FROM {qname})"
+                )
+                detail = {"kind": kind, "key": mx, "column": keys[0]}
+            elif kind == "tamper":
+                col = next((c for c in self.contract.columns if "transform" in c), None)
+                if col is None:
+                    raise ValueError("contract has no transformed column to tamper")
+                wrong = {
+                    "integer": "-999999",
+                    "decimal": "-999999.99",
+                    "date": "'1900-01-01'",
+                    "timestamp": "'1900-01-01 00:00:00'",
+                    "boolean": "false",
+                }.get(col["type"], "'ZZZ_TAMPERED'")
+                cur.execute(
+                    f"UPDATE {qname} SET {schema.ident(col['name'], dialect)} = {wrong} "
+                    f"WHERE {kq} = (SELECT MIN({kq}) FROM {qname})"
+                )
+                detail = {"kind": kind, "key": mn, "column": col["name"]}
+            else:
+                raise ValueError(f"unknown defect kind {kind!r} (missing|extra|tamper)")
+            conn.commit()
+            cur.close()
+        finally:
+            conn.close()
+        return detail
+
+    @keyword("Check Where Safety")
+    def check_where_safety(self, fragment: str):
+        """Vet a workbook WHERE fragment: single-statement read-only only."""
+        from libs.excelrules.validators import where_is_safe
+
+        if not where_is_safe(fragment):
+            raise ValueError(f"unsafe WHERE fragment {fragment!r}")
+        return True
+
     @keyword("Execute Write Sql")
     def execute_write_sql(self, sql: str):
         """Write path for negative-path seeding ONLY — recon_rw in loader mode.
         In verify-only mode (RECON_SKIP_LOAD) it runs as recon_ro instead, so
         the engine itself must reject the mutation — no write credential used."""
         role = "RO" if self._verify_only() else "RW"
-        user, pw = self._creds(role)
+        user, pw = self._target_auth(role)
         conn = create_writer(self.env["target"], user=user, password=pw)
         try:
             cur = conn.cursor()
@@ -345,14 +519,46 @@ class ReconciliationLibrary:
 
     # ----- Pilot-04 / Pilot-05: comparison ----------------------------------------
 
+    def _expected_chunks(self, batch_size: int):
+        """Yield expected-target frames one source chunk at a time — the
+        streaming side of chunked/hash comparison for big tables."""
+        cfg = _expand_env(dict(self.contract.raw["source"]))
+        adapter = create_source(cfg)
+        try:
+            for chunk in adapter.read_chunks(batch_size):
+                yield reconcile.expected_target_rows(chunk, self.contract)
+        finally:
+            adapter.close()
+
     @keyword("Compare Records")
     def compare_records(self, columns: "list | None" = None):
-        actual = self._ensure_target().read_table(
-            self.contract.table, columns=[c["name"] for c in self.contract.columns]
-        )
-        self.recon_result = reconcile.compare(
-            self.expected_df, actual, self.contract, columns=columns
-        )
+        """Key-based comparison. Small tables compare in memory; when the
+        contract recon block sets mode=hash or batch_size is exceeded, the
+        engine streams chunks — target-side memory stays bounded."""
+        recon_cfg = self.contract.raw.get("recon") or {}
+        mode = recon_cfg.get("mode", "full")
+        batch = int(recon_cfg.get("batch_size") or 50000)
+        cols = columns or [c["name"] for c in self.contract.columns]
+        target = self._ensure_target()
+        expected_n = 0 if self.expected_df is None else len(self.expected_df)
+        if (mode == "hash" or expected_n > batch) and columns is None:
+            from contextlib import closing
+
+            from libs.adapters.staging import ordered_chunks
+
+            expected = ordered_chunks(self._expected_chunks(batch), self.contract, batch)
+            actual_chunks = target.read_chunks(
+                self.contract.table, columns=cols, keys=self.contract.keys, size=batch
+            )
+            actual = ordered_chunks(actual_chunks, self.contract, batch)
+            with closing(expected), closing(actual):
+                fn = reconcile.hash_compare if mode == "hash" else reconcile.compare_chunked
+                self.recon_result = fn(expected, actual, self.contract)
+        else:
+            actual = target.read_table(self.contract.table, columns=cols)
+            self.recon_result = reconcile.compare(
+                self.expected_df, actual, self.contract, columns=columns
+            )
         return self.recon_result.mismatch_count
 
     @keyword("Get Mismatch Detail")
@@ -419,6 +625,54 @@ class ReconciliationLibrary:
         """Read back the run_summary.json audit artifact."""
         path = Path(out_dir) / "run_summary.json"
         return json.loads(path.read_text(encoding="utf-8"))
+
+    # ----- migration evidence report -----------------------------------------
+
+    @keyword("Record Stage")
+    def record_stage(self, stage: str, status: str, detail: str = ""):
+        """Append one stage-result row for the migration evidence report."""
+        self.stage_results.append(
+            {
+                "stage": stage,
+                "status": status,
+                "detail": detail,
+                "mapping": self.contract.name if self.contract else "",
+                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            }
+        )
+        return len(self.stage_results)
+
+    @keyword("Write Migration Report")
+    def write_migration_report(self, out_dir: str = "results"):
+        """Write the migration evidence artifacts: migration_summary.xlsx
+        (Run Info / Stage Results / Diffs / Schema Errors / Insights) plus
+        migration_report.md with improvement suggestions."""
+        from libs.reporting import report as mig_report
+
+        meta = {
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "environment": self.env_name or "",
+            "contract": self.contract.name if self.contract else "",
+            "contract_version": self.contract.version if self.contract else "",
+            "mapping_workbook": self.mapping_workbook or "",
+            "executed_by": (
+                os.environ.get("GITHUB_ACTOR")
+                or os.environ.get("USERNAME")
+                or os.environ.get("USER")
+                or ""
+            ),
+            "git_commit": os.environ.get("GITHUB_SHA", "") or self._git_head(),
+        }
+        paths = mig_report.write_migration_report(
+            stage_results=self.stage_results,
+            recon_result=self.recon_result,
+            schema_errors=self.schema_errors,
+            rule_failures=self.rule_failures,
+            meta=meta,
+            out_dir=out_dir,
+        )
+        logger.info(f"migration report written: {paths}")
+        return paths
 
     @keyword("Close Target")
     def close_target(self):

@@ -11,12 +11,21 @@
       "type": "object",
       "required": ["type"],
       "properties": {
-        "type": {"type": "string", "enum": ["csv", "s3", "api", "dataiku"]},
+        "type": {"type": "string", "enum": ["csv", "s3", "api", "dataiku", "postgres", "snowflake"]},
         "path": {"type": "string"},
         "encoding": {"type": "string"},
         "delimiter": {"type": "string"},
         "header": {"type": "boolean"},
         "columns": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "host": {"type": "string", "description": "DB source: server host (postgres)"},
+        "port": {"type": "integer"},
+        "database": {"type": "string", "description": "DB source: database name"},
+        "schema": {"type": "string", "description": "DB source: schema of the source table"},
+        "table": {"type": "string", "description": "DB source: source table name"},
+        "user": {"type": "string", "description": "DB source: user — use ${ENV_VAR} refs, never literals"},
+        "password": {"type": "string", "description": "DB source: password — use ${ENV_VAR} refs, never literals"},
+        "where": {"type": "string", "description": "DB source: optional WHERE fragment (vetted read-only)"},
+        "batch_size": {"type": "integer", "minimum": 1, "description": "DB source: server-side cursor fetch size for chunked reads"},
         "bucket": {"type": "string", "minLength": 3},
         "key": {"type": "string", "minLength": 1},
         "prefix": {"type": "string"},
@@ -107,9 +116,17 @@
       "type": "object",
       "required": ["type", "table"],
       "properties": {
-        "type": {"type": "string", "enum": ["postgres"]},
+        "type": {"type": "string", "enum": ["postgres", "snowflake"]},
         "schema": {"type": "string"},
         "table": {"type": "string", "minLength": 1}
+      }
+    },
+    "recon": {
+      "type": "object",
+      "description": "Comparison tuning. mode=hash: million-row fast path — compare key->rowhash maps, fetch rows only for differing keys. batch_size bounds memory per fetch.",
+      "properties": {
+        "mode": {"type": "string", "enum": ["full", "hash"]},
+        "batch_size": {"type": "integer", "minimum": 100}
       }
     },
     "keys": {"type": "array", "items": {"type": "string"}, "minItems": 1},

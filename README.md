@@ -13,6 +13,11 @@ target database — no manual spreadsheet comparison.
   MCP servers, delivery phases, success criteria.
 - **Checklist:** [docs/TODO.md](docs/TODO.md) — stage-gated delivery checklist.
 - **Runbook:** [docs/RUNBOOK.md](docs/RUNBOOK.md) — setup, credentials, troubleshooting.
+- **Bank migration (Webster → Santander):** config-driven any-database
+  reconciliation — Excel-mapped Postgres → Snowflake validation in
+  `tests/migration/`. Specs: [docs/EXCEL_MAPPING.md](docs/EXCEL_MAPPING.md),
+  [docs/ADAPTERS.md](docs/ADAPTERS.md).
 
 POC scope: CSV source → PostgreSQL 16 target, authored via the Robot Framework MCP
 server (`rf-mcp`) with read-only verification through the PostgreSQL MCP server.
+Phase 2 adds database→database migration verification with pluggable adapters.

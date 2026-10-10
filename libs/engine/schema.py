@@ -29,12 +29,50 @@ PG_TYPE_ALIASES = {
     "boolean": {"boolean"},
 }
 
-_TYPE_MAPS = {"postgres": PG_TYPE_MAP}
-TYPE_ALIASES = {"postgres": PG_TYPE_ALIASES}
+# contract type -> Snowflake DDL type (decimal gets per-column scale in
+# ddl_for_contract; string gets per-column VARCHAR(n))
+SF_TYPE_MAP = {
+    "integer": "NUMBER(38,0)",
+    "decimal": "NUMBER",
+    "string": "VARCHAR",
+    "date": "DATE",
+    "timestamp": "TIMESTAMP_NTZ",
+    "boolean": "BOOLEAN",
+}
+
+# contract type -> acceptable Snowflake information_schema data_type values.
+# NUMBER scale>0 is normalized to DECIMAL by _sf_dtype; the DuckDB-emitted
+# names are included so fakesnow runs validate identically.
+SF_TYPE_ALIASES = {
+    "integer": {"NUMBER", "INTEGER", "INT", "BIGINT", "SMALLINT", "TINYINT", "BYTEINT"},
+    "decimal": {"DECIMAL", "NUMERIC", "DEC", "FLOAT", "FLOAT4", "FLOAT8", "DOUBLE", "REAL"},
+    "string": {"TEXT", "VARCHAR", "STRING", "CHAR", "CHARACTER"},
+    "date": {"DATE"},
+    "timestamp": {
+        "TIMESTAMP",
+        "TIMESTAMP_NTZ",
+        "TIMESTAMP_LTZ",
+        "TIMESTAMP_TZ",
+        "DATETIME",
+    },
+    "boolean": {"BOOLEAN"},
+}
+
+_TYPE_MAPS = {"postgres": PG_TYPE_MAP, "snowflake": SF_TYPE_MAP}
+TYPE_ALIASES = {"postgres": PG_TYPE_ALIASES, "snowflake": SF_TYPE_ALIASES}
+
+
+def _sf_dtype(data_type, numeric_scale) -> str:
+    """Normalize a Snowflake information_schema data_type for alias matching:
+    base name uppercased, NUMBER promoted to DECIMAL when numeric_scale > 0."""
+    base = (data_type or "").split("(")[0].strip().upper()
+    if base == "NUMBER":
+        return "DECIMAL" if numeric_scale not in (None, 0) else "NUMBER"
+    return base
 
 
 def ident(name: str, dialect: str = "postgres") -> str:
-    """Quote an identifier for the configured SQL dialect (postgres only)."""
+    """Quote an identifier for the configured SQL dialect."""
     if dialect not in TYPE_ALIASES:
         raise ValueError(f"Unsupported SQL dialect: {dialect}")
     if not isinstance(name, str) or not name:
@@ -42,14 +80,20 @@ def ident(name: str, dialect: str = "postgres") -> str:
     return '"' + name.replace('"', '""') + '"'
 
 
+def contract_from_dict(raw: dict, path: str = "<memory>") -> Contract:
+    """Validate a raw contract dict — e.g. one built from an Excel mapping
+    workbook — against the contract JSON schema + cross-field semantics."""
+    schema = json.loads(_CONTRACT_SCHEMA_PATH.read_text(encoding="utf-8"))
+    js_validate(instance=raw, schema=schema)
+    _check_semantics(raw)
+    return Contract(raw=raw, path=path)
+
+
 def load_contract(path: str) -> Contract:
     """Load a YAML contract and validate it against the contract JSON schema."""
     contract_path = Path(path)
     raw = yaml.safe_load(contract_path.read_text(encoding="utf-8"))
-    schema = json.loads(_CONTRACT_SCHEMA_PATH.read_text(encoding="utf-8"))
-    js_validate(instance=raw, schema=schema)
-    _check_semantics(raw)
-    return Contract(raw=raw, path=str(contract_path))
+    return contract_from_dict(raw, str(contract_path))
 
 
 _NUMERIC = ("integer", "decimal")
@@ -116,6 +160,8 @@ def ddl_for_contract(contract: Contract, dialect: str = "postgres") -> str:
         col_type = type_map[col["type"]]
         if col["type"] == "string":
             col_type = f"{type_map['string']}({col.get('max_length', 255)})"
+        elif col["type"] == "decimal" and dialect == "snowflake":
+            col_type = f"NUMBER(38,{col.get('scale', 2)})"
         null = "" if col["nullable"] else " NOT NULL"
         parts.append(f"{ident(col['name'], dialect)} {col_type}{null}")
     keys = ", ".join(ident(k, dialect) for k in contract.keys)
@@ -125,25 +171,104 @@ def ddl_for_contract(contract: Contract, dialect: str = "postgres") -> str:
     return f"CREATE TABLE IF NOT EXISTS {qualified} ({cols})"
 
 
-def fetch_db_schema(conn, schema: str, table: str) -> list:
-    """Live schema from information_schema: [(name, data_type, nullable), ...]."""
+def _truthy(v) -> bool:
+    return str(v).strip().upper() in ("YES", "Y", "TRUE", "1", "PRI")
+
+
+def _describe_fallback(conn, qualified: str, rows_to_schema: bool):
+    """DESCRIBE TABLE fallback for engines whose information_schema is thin
+    (e.g. fakesnow). Column layouts differ — Snowflake: name, type, kind,
+    null?, ..., primary key; DuckDB: column_name, column_type, null, key —
+    so fields are resolved by header name."""
     cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT column_name, data_type, is_nullable
-        FROM information_schema.columns
-        WHERE table_schema = %s AND table_name = %s
-        ORDER BY ordinal_position
-        """,
-        (schema, table),
-    )
-    rows = [(r[0], r[1], r[2] == "YES") for r in cur.fetchall()]
+    cur.execute(f"DESCRIBE TABLE {qualified}")
+    names = [d[0].lower() for d in cur.description]
+    desc = cur.fetchall()
     cur.close()
-    return rows
+    name_i = next((i for i, n in enumerate(names) if n in ("name", "column_name")), 0)
+    type_i = next((i for i, n in enumerate(names) if n in ("type", "column_type")), 1)
+    null_i = next((i for i, n in enumerate(names) if n in ("null?", "null", "is_nullable")), 3)
+    key_i = next((i for i, n in enumerate(names) if n in ("primary key", "key")), None)
+    schema_rows = [(r[name_i], _sf_dtype(r[type_i], None), _truthy(r[null_i])) for r in desc]
+    pk = (
+        [r[name_i] for r in desc if key_i is not None and _truthy(r[key_i])]
+        if key_i is not None
+        else []
+    )
+    return schema_rows if rows_to_schema else pk
 
 
-def fetch_primary_key(conn, schema: str, table: str) -> list:
+def fetch_db_schema(conn, schema: str, table: str, dialect: str = "postgres") -> list:
+    """Live schema from information_schema: [(name, data_type, nullable), ...].
+    For snowflake the dtype is normalized via _sf_dtype; a DESCRIBE TABLE
+    fallback covers engines with thin information_schema support."""
+    if dialect not in TYPE_ALIASES:
+        raise ValueError(f"Unsupported SQL dialect: {dialect}")
     cur = conn.cursor()
+    if dialect == "postgres":
+        cur.execute(
+            """
+            SELECT column_name, data_type, is_nullable
+            FROM information_schema.columns
+            WHERE table_schema = %s AND table_name = %s
+            ORDER BY ordinal_position
+            """,
+            (schema, table),
+        )
+        rows = [(r[0], r[1], _truthy(r[2])) for r in cur.fetchall()]
+        cur.close()
+        return rows
+    qualified = f"{ident(schema, dialect)}.{ident(table, dialect)}"
+    try:
+        cur.execute(
+            """
+            SELECT column_name, data_type, is_nullable, numeric_scale
+            FROM information_schema.columns
+            WHERE table_schema = %s AND table_name = %s
+            ORDER BY ordinal_position
+            """,
+            (schema, table),
+        )
+        rows = [(r[0], _sf_dtype(r[1], r[3]), _truthy(r[2])) for r in cur.fetchall()]
+        cur.close()
+        if rows:
+            return rows
+    except Exception:  # noqa: BLE001 — fall through to DESCRIBE
+        cur.close()
+    try:
+        return _describe_fallback(conn, qualified, rows_to_schema=True)
+    except Exception:  # noqa: BLE001 — table missing => empty schema, not a crash
+        raise
+
+
+def fetch_primary_key(conn, schema: str, table: str, dialect: str = "postgres") -> list:
+    cur = conn.cursor()
+    if dialect == "snowflake":
+        qualified = f"{ident(schema, dialect)}.{ident(table, dialect)}"
+        try:
+            cur.execute(
+                """
+                SELECT kcu.column_name
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu
+                  ON tc.constraint_schema = kcu.constraint_schema
+                 AND tc.constraint_name = kcu.constraint_name
+                WHERE tc.constraint_type = 'PRIMARY KEY'
+                  AND tc.table_schema = %s AND tc.table_name = %s
+                ORDER BY kcu.ordinal_position
+                """,
+                (schema, table),
+            )
+            rows = [r[0] for r in cur.fetchall()]
+            cur.close()
+            if rows:
+                return rows
+        except Exception:  # noqa: BLE001 — fall through to DESCRIBE
+            cur.close()
+        try:
+            return _describe_fallback(conn, qualified, rows_to_schema=False)
+        except Exception:  # noqa: BLE001 — no PK info available
+            raise
     # pg_catalog is used rather than information_schema.key_column_usage, which
     # hides constraints from non-owner roles (recon_ro).
     cur.execute(
