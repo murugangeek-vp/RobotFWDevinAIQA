@@ -121,8 +121,12 @@ def main():
         import pymysql
 
         conn = pymysql.connect(
-            host=HOST, port=PORT, user=RO_USER, password=RO_PASSWORD,
-            database=DATABASE, autocommit=True,
+            host=HOST,
+            port=PORT,
+            user=RO_USER,
+            password=RO_PASSWORD,
+            database=DATABASE,
+            autocommit=True,
         )
         conn.cursor().execute("INSERT INTO recon_smoke VALUES (9, 9, '2026-01-09')")
     except Exception as exc:  # noqa: BLE001 — any driver error proves denial

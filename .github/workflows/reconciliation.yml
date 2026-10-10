@@ -41,6 +41,20 @@ jobs:
         options: >-
           --health-cmd "mysqladmin ping -h 127.0.0.1 -proot_ci"
           --health-interval 5s --health-timeout 5s --health-retries 20
+      oracle:
+        image: gvenzl/oracle-free:23-slim-faststart
+        env:
+          ORACLE_PASSWORD: sys_ci_pwd
+        ports: ["1521:1521"]
+        options: >-
+          --health-cmd "healthcheck.sh"
+          --health-interval 10s --health-timeout 10s --health-retries 30
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: "Str0ng!Passw0rd"
+        ports: ["1433:1433"]
 
     steps:
       - uses: actions/checkout@v4
@@ -127,6 +141,27 @@ jobs:
         run: |
           pip install pymysql==1.1.1
           python scripts/mysql_adapter_smoke.py
+
+      - name: Oracle adapter smoke (real Oracle XE)
+        env:
+          ORACLE_RO_PASSWORD: ${{ secrets.RECON_RO_PASSWORD }}
+        run: |
+          pip install oracledb==2.5.1
+          python scripts/oracle_adapter_smoke.py
+
+      - name: Install msodbcsql18 (host ODBC driver)
+        run: |
+          curl -sSL https://packages.microsoft.com/keys/microsoft.asc | sudo tee /etc/apt/trusted.gpg.d/microsoft.asc
+          curl -sSL https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
+          sudo apt-get update -qq
+          sudo ACCEPT_EULA=Y apt-get install -y -qq msodbcsql18 unixodbc-dev
+
+      - name: MSSQL adapter smoke (real SQL Server)
+        env:
+          MSSQL_RO_PASSWORD: ${{ secrets.RECON_RO_PASSWORD }}
+        run: |
+          pip install pyodbc==5.1.0
+          python scripts/mssql_adapter_smoke.py
 
       - uses: actions/upload-artifact@v4
         if: always()
