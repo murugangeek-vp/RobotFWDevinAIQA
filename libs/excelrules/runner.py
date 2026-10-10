@@ -21,7 +21,7 @@ def _ident(name: "str | None", what: str) -> str:
 _JOIN_SPEC = re.compile(r"^([A-Za-z_]\w*)(?:@([A-Za-z_]\w*)=([A-Za-z_]\w*))?$")
 
 
-def load_source_frame(rule: Rule, source_dir: "str | Path") -> pd.DataFrame:
+def load_source_frame(rule: Rule, source_dir: "str | Path", source_loader=None) -> pd.DataFrame:
     """Each entry in source_tables reads data/samples/<stem>.csv; multiple
     entries left-join into one frame. Two forms per added file:
 
@@ -32,6 +32,10 @@ def load_source_frame(rule: Rule, source_dir: "str | Path") -> pd.DataFrame:
                               whose join keys are named differently
                               (e.g. `lab,region_ref@country=ctry`)
 
+    `source_loader` (optional) replaces CSV reads entirely: a callable
+    `stem -> DataFrame`, e.g. backed by a SourceAdapter — the same workbook
+    then runs against a DB source in a DB→DB migration (unified rules).
+
     String-typed so key matching is dtype-safe."""
     frames = []
     for entry in rule.source_tables:
@@ -39,6 +43,9 @@ def load_source_frame(rule: Rule, source_dir: "str | Path") -> pd.DataFrame:
         if not m:
             raise ValueError(f"{rule.test_id}: bad source table spec {entry!r}")
         stem, acc_col, file_col = m.groups()
+        if source_loader is not None:
+            frames.append((source_loader(stem), acc_col, file_col))
+            continue
         path = Path(source_dir) / f"{stem}.csv"
         if not path.exists():
             raise FileNotFoundError(f"{rule.test_id}: source file not found: {path}")
@@ -101,9 +108,12 @@ def run_rules(
     source_dir: "str | Path",
     query_fn,
     schema: str = "public",
+    source_loader=None,
 ) -> list[RuleResult]:
     """Run every rule in order; a broken rule becomes ERROR, never a crash —
-    one bad Excel row must not hide the other 999 results."""
+    one bad Excel row must not hide the other 999 results. `source_loader`
+    (optional `stem -> DataFrame`) swaps CSV sources for any adapter-backed
+    source without changing rule semantics."""
     results = []
     for rule in rules:
         sql = None
@@ -126,7 +136,11 @@ def run_rules(
                 ]
                 results.append(RuleResult(rule, vs, sql=sql))
                 continue
-            src = load_source_frame(rule, source_dir) if rule.source_tables else pd.DataFrame()
+            src = (
+                load_source_frame(rule, source_dir, source_loader)
+                if rule.source_tables
+                else pd.DataFrame()
+            )
             results.append(RuleResult(rule, validate(rule, src, tgt, mappings), sql=sql))
         except Exception as e:  # noqa: BLE001 — per-rule isolation by design
             results.append(RuleResult(rule, sql=sql, error=f"{type(e).__name__}: {e}"))

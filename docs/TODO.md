@@ -158,9 +158,12 @@ Progress: Stage 0 ▸ 13/14 · Stage 1 ▸ 8/9 · Stage 2 ▸ 3/6 · Stage 3 ▸
       (`requirements-adapters.txt`, lazy import). CI runs a real-mysqld
       smoke (`mysql_adapter_smoke.py`: RO grants, chunks, watermark,
       write-denial). ~~"which workbook when" doc~~ ✅ `EXCEL_MAPPING.md`.
-      _Rest: oracle/mssql real-DB smoke (mysql proves the pattern); S3/API
-      sources (schema already reserves them); `libs/excelrules` workbook
-      rules on DB-backed sources._
+      Real-DB CI smokes for all three (`*_adapter_smoke.py` + mysql:8 /
+      oracle-free / mssql-2022 services). ~~`libs/excelrules` on DB-backed
+      sources~~ ✅ `run_rules`/`load_source_frame` `source_loader` hook —
+      any SourceAdapter can feed the rules workbook, engine unchanged.
+      _Rest (deprioritized): S3/API sources — contract schema already
+      reserves them._
 - [ ] **F — Observability & scale proof.** Run store + trend report;
       secret-store resolver in `_expand_env`; 1M-row benchmark gate in
       nightly CI; parallel mappings; retry/resume.

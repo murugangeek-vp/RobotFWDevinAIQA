@@ -59,9 +59,7 @@ def _retry(fn, attempts=30):
 def provision():
     master = _retry(lambda: _connect("sa", SA_PASSWORD, database="master"))
     cur = master.cursor()
-    cur.execute(
-        f"IF DB_ID('{DATABASE}') IS NULL CREATE DATABASE [{DATABASE}]"
-    )
+    cur.execute(f"IF DB_ID('{DATABASE}') IS NULL CREATE DATABASE [{DATABASE}]")
     try:
         cur.execute(f"CREATE LOGIN [{RO_USER}] WITH PASSWORD = '{RO_PASSWORD}'")
     except Exception as exc:  # noqa: BLE001 — login already exists
@@ -153,9 +151,7 @@ def main():
     # Least privilege: server refuses writes on the RO user.
     try:
         conn = _connect(RO_USER, RO_PASSWORD)
-        conn.cursor().execute(
-            "INSERT INTO dbo.recon_smoke VALUES (9, 9, '2026-01-09')"
-        )
+        conn.cursor().execute("INSERT INTO dbo.recon_smoke VALUES (9, 9, '2026-01-09')")
     except Exception as exc:  # noqa: BLE001 — any driver error proves denial
         assert "denied" in str(exc).lower() or "permission" in str(exc).lower(), exc
     else:

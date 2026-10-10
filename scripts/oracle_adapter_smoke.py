@@ -147,9 +147,7 @@ def main():
     # Least privilege: server refuses writes on the RO user.
     try:
         conn = _connect(RO_USER, RO_PASSWORD)
-        conn.cursor().execute(
-            f"INSERT INTO {APP_USER}.recon_smoke VALUES (9, 9, SYSDATE)"
-        )
+        conn.cursor().execute(f"INSERT INTO {APP_USER}.recon_smoke VALUES (9, 9, SYSDATE)")
     except Exception as exc:  # noqa: BLE001 — any driver error proves denial
         assert "insufficient" in str(exc).lower() or "privileg" in str(exc).lower(), exc
     else:

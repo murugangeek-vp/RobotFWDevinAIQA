@@ -352,6 +352,18 @@ class SafetyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "@"):
             runner.load_source_frame(r, DATA.parent / "samples")
 
+    def test_source_loader_replaces_csv_for_db_sources(self):
+        # Unified rules: the same workbook can run against a DB-backed
+        # source adapter — source_loader maps the stem to a frame.
+        r = _rule(source_tables=["src_table", "codes@k=k2"])
+        frames = {
+            "src_table": pd.DataFrame({"k": [1, 2], "v": ["a", "b"]}),
+            "codes": pd.DataFrame({"k2": [1, 2], "label": ["x", "y"]}),
+        }
+        df = runner.load_source_frame(r, "unused_dir", source_loader=frames.get)
+        self.assertIn("label", df.columns)
+        self.assertEqual(len(df), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
