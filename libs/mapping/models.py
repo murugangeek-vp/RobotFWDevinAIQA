@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 
 CONTRACT_TYPES = {"integer", "decimal", "string", "date", "timestamp", "boolean"}
 RECON_MODES = {"full", "hash"}
+CONTROL_TYPES = {"count", "sum", "min", "max", "null_count", "count_distinct"}
 
 
 @dataclass
@@ -34,3 +35,4 @@ class TableMapping:
     recon_mode: str = "full"
     batch_size: "int | None" = None
     fields: list = field(default_factory=list)  # list[FieldMapping]
+    controls: list = field(default_factory=list)  # Controls-sheet aggregate specs

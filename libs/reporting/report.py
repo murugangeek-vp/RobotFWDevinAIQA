@@ -244,7 +244,7 @@ def write_evidence(results, meta, out_dir):
         if not results
         else ("PASS" if all(r["status"] == "PASS" for r in results) else "FAIL")
     )
-    required = {"source", "dq", "schema", "recon", "transform"}
+    required = {"source", "dq", "schema", "recon", "controls", "transform"}
     coverage = {
         name: sorted(required - {r["stage"] for r in results if r["mapping"] == name})
         for name in meta.get("selected", [])
@@ -348,7 +348,7 @@ def write_evidence(results, meta, out_dir):
                     json.dumps(observed, default=str),
                 ]
             )
-        for key in ("dq_failures", "schema_errors", "diff_samples"):
+        for key in ("dq_failures", "schema_errors", "diff_samples", "control_mismatches"):
             if row.get(key):
                 sheets["Diffs & Violations"].append(
                     [row["mapping"], row["stage"], json.dumps(row[key], default=str)]

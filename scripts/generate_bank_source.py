@@ -13,9 +13,11 @@ tables scale proportionally (accounts ~1.3x, txns ~2.5x, loans ~0.4x).
 """
 
 import argparse
+import csv
 import os
 import random
 import sys
+from collections import Counter
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -90,6 +92,42 @@ _PRODUCT_W = [0.50, 0.30, 0.12, 0.08]
 _TXN_CODES = ["DBT", "CRD", "FEE", "INT"]
 _TXN_W = [0.55, 0.35, 0.06, 0.04]
 _LOAN_TYPES = ["AUTO", "HOME", "PERS", "COMM"]
+
+# Source txn codes -> mapped target values (mirrors the Mapping sheet); the
+# trailer certifies post-mapping groups so it lines up with the Controls
+# sheet's txn_by_type control.
+_TXN_MAP = {"DBT": "debit", "CRD": "credit", "FEE": "fee", "INT": "interest"}
+
+
+def _write_trailer(path, customers, accounts, txns, loans, branches):
+    """Emit the synthetic bank trailer file (name,group,value) — the same
+    totals the workbook Controls sheet declares, in post-mapping terms."""
+    rows = [
+        ("customer_rows", "", len(customers)),
+        ("null_phone", "", sum(1 for c in customers if c[9] is None)),
+        ("account_rows", "", len(accounts)),
+        ("balance_total", "", sum(a[5] for a in accounts)),
+        ("distinct_customers", "", len({a[1] for a in accounts})),
+        ("txn_rows", "", len(txns)),
+        ("txn_amount_total", "", sum(t[5] for t in txns)),
+        ("max_txn", "", max(t[5] for t in txns)),
+        ("loan_rows", "", len(loans)),
+        ("loan_balance_total", "", sum(ln[4] for ln in loans)),
+        ("branch_rows", "", len(branches)),
+    ]
+    by_branch = Counter()
+    for a in accounts:
+        by_branch[a[3]] += a[5]
+    for branch, total in sorted(by_branch.items()):
+        rows.append(("balance_by_branch", str(branch), total))
+    for ttype, n in sorted(Counter(_TXN_MAP[t[4]] for t in txns).items()):
+        rows.append(("txn_by_type", ttype, n))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(["name", "group", "value"])
+        w.writerows(rows)
+    print(f"trailer: {len(rows)} certified totals -> {path}")
 
 
 def _money(lo, hi, rnd):
@@ -221,6 +259,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--rows", type=int, default=10000, help="customer rows (others scale)")
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument(
+        "--trailer",
+        default="data/trailer/webster_trailer.csv",
+        help="bank trailer file (name,group,value) certifying the generated totals",
+    )
     ap.add_argument("--confirm-synthetic", action="store_true")
     args = ap.parse_args()
     if not args.confirm_synthetic or args.rows < 1:
@@ -290,6 +333,7 @@ def main():
     conn.commit()
     cur.close()
     conn.close()
+    _write_trailer(Path(args.trailer), customers, accounts, txns, loans, branches)
     print("done — webster schema seeded and granted to recon_ro")
 
 

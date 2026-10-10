@@ -8,6 +8,8 @@ Sheets:
   FieldMap — one row per field: Mapping ID, Source Column, Target Column,
              Target Type, Nullable, Max Length, Scale, Transformation, Enabled
   Mapping  — code translation tables: Mapping Name, Code, Value
+  Controls — optional aggregate controls: Mapping ID, Control ID, Type,
+             Column, Group By, File Name, Enabled
   README   — free-text documentation (ignored by the parser)
 
 Every shape problem raises immediately (fail closed) — a broken workbook row
@@ -19,11 +21,18 @@ from pathlib import Path
 import openpyxl
 
 from libs.excelrules.validators import where_is_safe
-from libs.mapping.models import CONTRACT_TYPES, RECON_MODES, FieldMapping, TableMapping
+from libs.mapping.models import (
+    CONTRACT_TYPES,
+    CONTROL_TYPES,
+    RECON_MODES,
+    FieldMapping,
+    TableMapping,
+)
 
 TABLES_SHEET = "Tables"
 FIELDMAP_SHEET = "FieldMap"
 MAPPING_SHEET = "Mapping"
+CONTROLS_SHEET = "Controls"
 
 _TABLES_REQUIRED = [
     "mapping id",
@@ -59,6 +68,7 @@ def _rows_by_header(ws):
         TABLES_SHEET: _TABLES_REQUIRED,
         FIELDMAP_SHEET: _FIELDMAP_REQUIRED,
         MAPPING_SHEET: ["mapping name", "code", "value"],
+        CONTROLS_SHEET: ["mapping id", "control id", "type"],
     }[ws.title]
     if len(headers) != len(set(headers)) or set(required) - set(headers):
         raise ValueError(f"{ws.title}: missing or duplicate headers")
@@ -180,6 +190,42 @@ def load_fields(path: str, tables: "list[TableMapping]") -> None:
             raise ValueError(f"{t.mapping_id}: Key Columns {missing} have no enabled FieldMap row")
 
 
+def load_controls(path: str, tables: "list[TableMapping]") -> None:
+    """Attach Controls-sheet aggregate specs to their TableMapping (in place).
+
+    Column/Group By name TARGET-side contract columns; membership is
+    enforced when the contract compiles (engine validate_controls)."""
+    by_id = {t.mapping_id: t for t in tables}
+    seen: dict[str, set] = {t.mapping_id: set() for t in tables}
+    for n, row in enumerate(_read_rows(path, CONTROLS_SHEET, optional=True), 1):
+        ctx = f"Controls row {n + 1}"
+        mid = _need(row, "mapping id", ctx)
+        if mid not in by_id:
+            raise ValueError(f"{ctx}: Mapping ID {mid!r} not declared on Tables sheet")
+        if not _truth(row.get("enabled") if row.get("enabled") not in (None, "") else "yes"):
+            continue
+        cid = _need(row, "control id", ctx)
+        if cid in seen[mid]:
+            raise ValueError(f"{ctx}: duplicate control id {cid!r} for {mid!r}")
+        seen[mid].add(cid)
+        ctype = _need(row, "type", ctx).lower()
+        if ctype not in CONTROL_TYPES:
+            raise ValueError(
+                f"{ctx}: unknown Type {ctype!r}; expected one of {sorted(CONTROL_TYPES)}"
+            )
+        groups = [g.strip() for g in (_opt(row, "group by") or "").split(",") if g.strip()]
+        if len(groups) > 3:
+            raise ValueError(f"{ctx}: Group By supports at most 3 columns")
+        spec = {"id": cid, "type": ctype}
+        if col := _opt(row, "column"):
+            spec["column"] = col
+        if groups:
+            spec["group_by"] = groups
+        if fname := _opt(row, "file name"):
+            spec["file_name"] = fname
+        by_id[mid].controls.append(spec)
+
+
 def load_code_mappings(path: str) -> dict:
     """Mapping sheet -> {mapping_name: {code: value}} for map() transforms."""
     out: dict[str, dict] = {}
@@ -196,9 +242,10 @@ def load_code_mappings(path: str) -> dict:
 
 
 def load_workbook(path: str) -> "tuple[list[TableMapping], dict]":
-    """Parse Tables + FieldMap + Mapping. Returns (table_mappings, code_maps)."""
+    """Parse Tables + FieldMap + Controls + Mapping. Returns (table_mappings, code_maps)."""
     if not Path(path).is_file():
         raise FileNotFoundError(f"mapping workbook not found: {path}")
     tables = load_tables(path)
     load_fields(path, tables)
+    load_controls(path, tables)
     return tables, load_code_mappings(path)

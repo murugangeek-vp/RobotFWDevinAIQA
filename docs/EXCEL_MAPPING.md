@@ -50,6 +50,26 @@ transformations, e.g. `status_codes: A -> ACTIVE`, `product_codes: SAV ->
 Savings Account`. An unmapped source code fails the run — never silently
 defaults.
 
+### `Controls` — aggregate financial controls (optional)
+
+One row per declared control; the `controls` stage recomputes them from the
+source (post-transform) and the target, then certifies them against the bank
+trailer file (`source.control_file` in the env YAML — CSV `name,group,value`).
+
+| Column | Required | Meaning |
+|---|---|---|
+| Mapping ID | yes | must reference a `Tables` row |
+| Control ID | yes | unique per mapping |
+| Type | yes | `count` `sum` `min` `max` `null_count` `count_distinct` |
+| Column | for non-`count` | **target-side** column name |
+| Group By | no | comma-separated target columns (max 3) |
+| File Name | no | certified total's name in the trailer; blank = Control ID |
+| Enabled | no | `yes`/`no` (blank = yes) |
+
+When `source.control_file` is configured, **every** declared control needs a
+certified trailer total — an uncertified control or a drifted value fails the
+stage. Group keys in the trailer join with ` | ` (blank = ungrouped).
+
 ### `README` — free text, ignored by the parser.
 
 ## Transformation language
@@ -73,10 +93,10 @@ parsed by `libs/engine/mapping_transforms.py` (AST-vetted; no arbitrary code).
 
 `parser.load_workbook` raises (never skips) on: missing sheets, missing or
 duplicate headers, empty required cells, formula cells, invalid booleans or
-integers, unknown target types or recon modes, duplicate target columns,
-unsafe WHERE fragments, duplicate mapping IDs, and keys without enabled
-FieldMap rows. `Enabled=no` mappings parse (so typos surface) but cannot be
-selected or executed.
+integers, unknown target types, recon modes or control types, duplicate
+target columns or control IDs, unsafe WHERE fragments, duplicate mapping
+IDs, and keys without enabled FieldMap rows. `Enabled=no` mappings parse (so
+typos surface) but cannot be selected or executed.
 
 ## Authoring tips
 

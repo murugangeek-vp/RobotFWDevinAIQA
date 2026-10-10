@@ -19,6 +19,9 @@ output.xml
 log.html
 report.html
 
+# Generated migration artifacts (regenerate via scripts/generate_bank_source.py)
+data/trailer/
+
 # Secrets / local env
 .env
 .env.*

@@ -10,6 +10,7 @@ from robot.api.deco import keyword
 
 from libs.adapters.registry import create_source, create_target
 from libs.adapters.staging import ordered_chunks
+from libs.engine import controls as engine_controls
 from libs.engine import reconcile, rules, schema
 from libs.engine.mapping_transforms import mapped_rows
 from libs.mapping import builder, parser
@@ -382,6 +383,39 @@ class MigrationLibrary:
                             "Exact missing/extra/tamper/duplicate detection on streamed copies; databases untouched"
                         )
                         return row
+                    if stage == "controls":
+                        specs = engine_controls.validate_controls(contract)
+                        if not specs:
+                            row["detail"] = "no controls declared"
+                            return row
+                        batch = self._batch(contract)
+                        expected = engine_controls.compute_controls(
+                            self._mapped(source.read_chunks(batch), contract), contract
+                        )
+                        need = sorted(
+                            {s["column"] for s in specs if s.get("column")}
+                            | {g for s in specs for g in (s.get("group_by") or [])}
+                        )
+                        actual = engine_controls.compute_controls(
+                            target.read_chunks(contract.table, columns=need, size=batch),
+                            contract,
+                        )
+                        mismatches = engine_controls.compare_controls(expected, actual)
+                        cf = contract.raw["source"].get("control_file")
+                        if cf:
+                            path = Path(cf)
+                            if not path.is_absolute() and not path.is_file():
+                                path = Path(contract.path).parent / cf
+                            declared = engine_controls.load_control_file(path)
+                            mismatches += engine_controls.validate_control_file(
+                                expected, declared, contract
+                            )
+                        row["control_mismatches"] = mismatches
+                        if mismatches:
+                            row["status"] = "FAIL"
+                        else:
+                            row["detail"] = f"{len(specs)} controls certified"
+                        return row
                     result = self._compare(source, target, contract)
                     row.update(
                         {
@@ -432,12 +466,17 @@ class MigrationLibrary:
             "dq",
             "schema",
             "recon",
+            "controls",
             "transform",
             "negative",
             "e2e",
         ):
             raise ValueError("Unknown migration stage")
-        stages = ("source", "dq", "schema", "recon", "transform") if stage == "e2e" else (stage,)
+        stages = (
+            ("source", "dq", "schema", "recon", "controls", "transform")
+            if stage == "e2e"
+            else (stage,)
+        )
         failed = []
         for contract in self.contracts:
             for step in stages:

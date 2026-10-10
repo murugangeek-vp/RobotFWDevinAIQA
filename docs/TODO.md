@@ -133,11 +133,15 @@ Progress: Stage 0 ▸ 13/14 · Stage 1 ▸ 8/9 · Stage 2 ▸ 3/6 · Stage 3 ▸
       unenforced snapshots.
       _Rest: full DB-level seeded delta test needs a watermark column in the
       synthetic fixtures (detection + gate are unit-tested today)._
-- [ ] **C — Financial controls & integrity.** Implement contract `controls`
-      (count/sum/min/max/null_count/count_distinct + group_by) and
-      `control_file` trailer compare — both are schema-declared today but
-      never evaluated (fail-closed violation); `Relations` sheet for FK
-      orphan checks across mapped tables.
+- [~] **C — Financial controls & integrity.** ~~contract `controls`~~ ✅
+      `controls` stage: count/sum/min/max/null_count/count_distinct +
+      `group_by` (≤3) recomputed source-side (post-transform) vs target,
+      streamed. ~~`control_file` trailer compare~~ ✅ `source.control_file`
+      certifies declared totals (CSV `name,group,value`); uncertified or
+      drifted totals fail closed. Workbook `Controls` sheet + demo controls +
+      generated trailer; suite `tests/migration/07_controls.robot`.
+      _Rest: `Relations` sheet for FK orphan checks across mapped tables;
+      subledger-to-GL balancing controls._
 - [ ] **D — Evidence polish.** `transform` stage compares transform columns
       only (today it duplicates `recon`); evidence validation requires
       `coverage == COMPLETE`; `run.fail_on_unmapped` gate; `pii` flag drives

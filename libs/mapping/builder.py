@@ -110,8 +110,17 @@ def build_contract(
     }
     if code_mappings:
         raw["mappings"] = code_mappings
+    if tm.controls:
+        raw["controls"] = [dict(c) for c in tm.controls]
     if tm.recon_mode != "full" or tm.batch_size:
         raw["recon"] = {"mode": tm.recon_mode}
         if tm.batch_size:
             raw["recon"]["batch_size"] = tm.batch_size
-    return contract_from_dict(raw, path=workbook_path)
+    contract = contract_from_dict(raw, path=workbook_path)
+    if tm.controls:
+        # Fail at compile time, not mid-run: control column/group_by names
+        # must resolve to target-side contract columns.
+        from libs.engine.controls import validate_controls
+
+        validate_controls(contract)
+    return contract

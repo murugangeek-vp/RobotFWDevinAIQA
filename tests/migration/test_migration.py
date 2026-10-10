@@ -13,6 +13,7 @@ from libs.adapters.postgres_source import PostgresSource
 from libs.adapters.snowflake_source import SnowflakeSource
 from libs.adapters.snowflake_target import SnowflakeTarget
 from libs.adapters.staging import ordered_chunks
+from libs.engine import controls as engine_controls
 from libs.engine.mapping_transforms import evaluate, mapped_rows, parse_expression
 from libs.engine.reconcile import compare_chunked, normalize
 from libs.mapping import builder, parser
@@ -377,6 +378,103 @@ class SnapshotTests(unittest.TestCase):
             self.assertTrue(cutover["snapshot_enforced"])
             self.assertEqual(cutover["post_snapshot_arrivals"], {"a": 4})
             self.assertEqual(cutover["target_asof"], {"a": "2026-01-01"})
+
+
+class ControlsTests(unittest.TestCase):
+    def setUp(self):
+        tables, codes = parser.load_workbook(str(WORKBOOK))
+        self.account = next(t for t in tables if t.mapping_id == "account_migration")
+        self.contract = builder.build_contract(
+            self.account, codes, {"type": "postgres"}, {"type": "snowflake"}
+        )
+
+    def _frame(self, rows):
+        return pd.DataFrame(
+            rows, columns=["account_id", "customer_id", "branch_id", "balance", "status"]
+        )
+
+    def test_workbook_controls_compile_and_validate(self):
+        specs = engine_controls.validate_controls(self.contract)
+        self.assertEqual(len(specs), 4)
+        self.assertIn("balance_by_branch", {s["id"] for s in specs})
+
+    def test_validate_controls_fails_closed(self):
+        contract = copy.deepcopy(self.contract)
+        for bad in (
+            {"id": "x", "type": "median"},
+            {"id": "x", "type": "sum"},  # sum needs a column
+            {"id": "x", "type": "count", "column": "balance"},
+            {"id": "x", "type": "sum", "column": "nope"},
+            {"id": "x", "type": "sum", "column": "balance", "group_by": ["nope"]},
+        ):
+            with self.subTest(spec=bad):
+                contract.raw["controls"] = [bad]
+                with self.assertRaises(ValueError):
+                    engine_controls.validate_controls(contract)
+        contract.raw["controls"] = [
+            {"id": "dup", "type": "count"},
+            {"id": "dup", "type": "count"},
+        ]
+        with self.assertRaises(ValueError):
+            engine_controls.validate_controls(contract)
+
+    def test_compute_controls_streamed(self):
+        from decimal import Decimal
+
+        frames = [
+            self._frame([(1, 10, 101, "100.50", "a"), (2, 11, 101, "200.25", "a")]),
+            self._frame([(3, 10, 102, "50.00", "a")]),
+        ]
+        agg = engine_controls.compute_controls(frames, self.contract)
+        self.assertEqual(agg["account_rows"][()], 3)
+        self.assertEqual(agg["balance_total"][()], Decimal("350.75"))
+        self.assertEqual(agg["balance_by_branch"][("101",)], Decimal("300.75"))
+        self.assertEqual(agg["balance_by_branch"][("102",)], Decimal("50.00"))
+        self.assertEqual(agg["distinct_customers"][()], 2)
+
+    def test_compare_controls_detects_drift_and_missing_groups(self):
+        from decimal import Decimal
+
+        expected = {"c": {(): 2, ("b",): Decimal("10")}}
+        actual = {"c": {(): 3}}
+        diffs = engine_controls.compare_controls(expected, actual)
+        self.assertEqual(len(diffs), 2)
+        self.assertEqual(
+            {(d["control"], d["group"]) for d in diffs},
+            {("c", "(all rows)"), ("c", "b")},
+        )
+
+    def _trailer(self, tmp, rows):
+        p = Path(tmp) / "trailer.csv"
+        p.write_text("name,group,value\n" + "\n".join(",".join(r) for r in rows))
+        return engine_controls.load_control_file(p)
+
+    def test_trailer_certifies_aggregates(self):
+        from decimal import Decimal
+
+        contract = copy.deepcopy(self.contract)
+        contract.raw["controls"] = [
+            {"id": "t", "type": "sum", "column": "balance", "file_name": "bal"},
+            {"id": "g", "type": "count", "group_by": ["status"], "file_name": "by_status"},
+        ]
+        agg = {"t": {(): Decimal("12.50")}, "g": {("a",): 3}}
+        with tempfile.TemporaryDirectory() as tmp:
+            declared = self._trailer(tmp, [("bal", "", "12.5"), ("by_status", "a", "3")])
+            self.assertEqual(engine_controls.validate_control_file(agg, declared, contract), [])
+            declared = self._trailer(tmp, [("bal", "", "99"), ("by_status", "a", "3")])
+            diffs = engine_controls.validate_control_file(agg, declared, contract)
+            self.assertEqual(len(diffs), 1)
+            self.assertEqual(diffs[0]["control"], "t")
+
+    def test_trailer_fails_closed_on_uncertified_control(self):
+        contract = copy.deepcopy(self.contract)
+        contract.raw["controls"] = [{"id": "t", "type": "count", "file_name": "rows"}]
+        with tempfile.TemporaryDirectory() as tmp:
+            declared = self._trailer(tmp, [("other", "", "1")])
+            diffs = engine_controls.validate_control_file({"t": {(): 5}}, declared, contract)
+            self.assertIn("absent from control file", diffs[0]["actual"])
+        with self.assertRaises(FileNotFoundError):
+            engine_controls.load_control_file("data/trailer/does_not_exist.csv")
 
 
 if __name__ == "__main__":

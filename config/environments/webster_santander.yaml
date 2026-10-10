@@ -20,6 +20,7 @@ source:
   snapshot: exported         # pin every source session to one pg_export_snapshot()
   # snapshot_column: updated_at  # alternative for DBs without snapshot export:
                                  # adds "updated_at" <= run.snapshot_id (bound param)
+  control_file: data/trailer/webster_trailer.csv  # bank trailer certifying Controls-sheet totals
   mapping_workbook: data/mapping/bank_mapping.xlsx
 
 # TARGET — snowflake. To run a real account: set fake: false and replace the

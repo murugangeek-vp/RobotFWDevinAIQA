@@ -312,6 +312,84 @@ FIELDMAP = [
     ],
 ]
 
+CONTROLS_HEADERS = [
+    "Mapping ID",
+    "Control ID",
+    "Type",
+    "Column",
+    "Group By",
+    "File Name",
+    "Enabled",
+]
+
+# Aggregate controls — the financial-totals layer. Type: count | sum | min |
+# max | null_count | count_distinct. Column/Group By name TARGET-side
+# contract columns. File Name is the certified total's name in the bank
+# trailer file (source.control_file); absent = the control id is used.
+CONTROLS = [
+    ["customer_migration", "customer_rows", "count", "", "", "customer_rows", "yes"],
+    ["customer_migration", "null_phone", "null_count", "phone", "", "null_phone", "yes"],
+    ["account_migration", "account_rows", "count", "", "", "account_rows", "yes"],
+    [
+        "account_migration",
+        "balance_total",
+        "sum",
+        "balance",
+        "",
+        "balance_total",
+        "yes",
+    ],
+    [
+        "account_migration",
+        "balance_by_branch",
+        "sum",
+        "balance",
+        "branch_id",
+        "balance_by_branch",
+        "yes",
+    ],
+    [
+        "account_migration",
+        "distinct_customers",
+        "count_distinct",
+        "customer_id",
+        "",
+        "distinct_customers",
+        "yes",
+    ],
+    ["transaction_migration", "txn_rows", "count", "", "", "txn_rows", "yes"],
+    [
+        "transaction_migration",
+        "txn_amount_total",
+        "sum",
+        "amount",
+        "",
+        "txn_amount_total",
+        "yes",
+    ],
+    [
+        "transaction_migration",
+        "txn_by_type",
+        "count",
+        "",
+        "txn_type",
+        "txn_by_type",
+        "yes",
+    ],
+    ["transaction_migration", "max_txn", "max", "amount", "", "max_txn", "yes"],
+    ["loan_migration", "loan_rows", "count", "", "", "loan_rows", "yes"],
+    [
+        "loan_migration",
+        "loan_balance_total",
+        "sum",
+        "current_balance",
+        "",
+        "loan_balance_total",
+        "yes",
+    ],
+    ["branch_migration", "branch_rows", "count", "", "", "branch_rows", "yes"],
+]
+
 MAPPING_HEADERS = ["Mapping Name", "Code", "Value"]
 MAPPING = [
     ["status_codes", "A", "active"],
@@ -358,6 +436,12 @@ README = [
     ["Mapping sheet — code translation tables for map() transforms."],
     ["  Mapping Name: referenced by map(col, name); Code -> Value pairs."],
     [""],
+    ["Controls sheet — aggregate controls (optional, financial totals)."],
+    ["  Type: count | sum | min | max | null_count | count_distinct."],
+    ["  Column / Group By name TARGET-side columns (comma-sep, max 3)."],
+    ["  File Name: the certified total's name in the bank trailer file"],
+    ["    (env source.control_file); blank = Control ID is used."],
+    [""],
     ["Connection details are NOT in this workbook — they live in"],
     ["config/environments/*.yaml; credentials come from env vars only."],
 ]
@@ -382,6 +466,7 @@ def main():
     wb["README"].column_dimensions["A"].width = 90
     _sheet(wb, "Tables", TABLES_HEADERS, TABLES)
     _sheet(wb, "FieldMap", FIELDMAP_HEADERS, FIELDMAP)
+    _sheet(wb, "Controls", CONTROLS_HEADERS, CONTROLS)
     _sheet(wb, "Mapping", MAPPING_HEADERS, MAPPING)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     wb.save(OUT)

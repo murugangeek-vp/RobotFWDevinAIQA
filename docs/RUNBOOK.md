@@ -187,9 +187,14 @@ fakesnow). **No loader runs in this suite** — it validates the target as-is.
 
 ```bash
 .venv/Scripts/python scripts/generate_mapping_workbook.py        # data/mapping/bank_mapping.xlsx
-.venv/Scripts/python scripts/generate_bank_source.py --rows 10000 --confirm-synthetic  # webster.* synthetic tables
+.venv/Scripts/python scripts/generate_bank_source.py --rows 10000 --confirm-synthetic  # webster.* tables + trailer
 .venv/Scripts/python scripts/load_migration_target.py            # expected rows -> emulated Santander target
 ```
+
+The seeder also writes `data/trailer/webster_trailer.csv` — the bank trailer
+file certifying every `Controls`-sheet total (`name,group,value`); the
+`controls` stage fails when a declared control is uncertified or drifts.
+`data/trailer/` is git-ignored and regenerated with the source.
 
 The suite never loads the target — `load_migration_target.py` populates the
 fakesnow warehouse out-of-band (and **refuses non-fake targets**), standing
