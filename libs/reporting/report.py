@@ -250,11 +250,23 @@ def write_evidence(results, meta, out_dir):
         for name in meta.get("selected", [])
     }
     complete = bool(coverage) and not any(coverage.values())
+    cutover = {
+        "snapshot_id": meta.get("snapshot_id", ""),
+        "source_snapshot": meta.get("source_snapshot", ""),
+        "snapshot_enforced": bool(meta.get("snapshot_enforced")),
+        "post_snapshot_arrivals": {
+            r["mapping"]: r["post_snapshot_arrivals"]
+            for r in results
+            if r.get("stage") == "recon" and r.get("post_snapshot_arrivals") is not None
+        },
+        "target_asof": {r["mapping"]: r["target_asof"] for r in results if r.get("target_asof")},
+    }
     summary = {
         "verdict": verdict,
         "coverage": "COMPLETE" if complete else "PARTIAL",
         "not_run": coverage,
         "meta": meta,
+        "cutover": cutover,
         "results": results,
         "production_signoff": False,
     }
@@ -294,6 +306,8 @@ def write_evidence(results, meta, out_dir):
         sheets["Run Info"].append(
             [key, json.dumps(value, default=str) if isinstance(value, dict | list) else str(value)]
         )
+    for key, value in cutover.items():
+        sheets["Run Info"].append([f"cutover.{key}", json.dumps(value, default=str)])
     for row in results:
         sheets["Stage Results"].append(
             [
@@ -365,6 +379,11 @@ def write_evidence(results, meta, out_dir):
             "WARNING: source snapshot was recorded but NOT enforced — rows may "
             "have changed between stage reads.",
         )
+    if any(cutover["post_snapshot_arrivals"].values()):
+        insights.append(
+            f"Post-snapshot arrivals detected: {cutover['post_snapshot_arrivals']} "
+            "— these rows are outside the validated cut and need a delta migration."
+        )
     if verdict == "FAIL":
         insights.append(
             "Resolve every failed/error stage before sign-off: align DDL, repair rejected source rows, and review mapping transformations."
@@ -417,6 +436,17 @@ def write_evidence(results, meta, out_dir):
             )
             + " |"
         )
+    lines += [
+        "",
+        "## Cutover",
+        "",
+        f"- snapshot_id: {cutover['snapshot_id'] or '-'}",
+        f"- enforced: {cutover['snapshot_enforced']} ({cutover['source_snapshot'] or 'recorded only'})",
+    ]
+    if cutover["post_snapshot_arrivals"]:
+        lines.append(f"- post-snapshot arrivals: {cutover['post_snapshot_arrivals']}")
+    if cutover["target_asof"]:
+        lines.append(f"- target as-of max: {cutover['target_asof']}")
     lines += ["", "## Insights and improvement suggestions", ""] + [
         f"- {item}" for item in insights
     ]

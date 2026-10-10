@@ -310,6 +310,74 @@ class SnapshotTests(unittest.TestCase):
         self.assertFalse(lib.meta["snapshot_enforced"])
         self.assertEqual(lib.meta["snapshot_id"], "cut-2026-01-01")
 
+    def _pg(self, **attrs):
+        src = PostgresSource.__new__(PostgresSource)
+        src.schema_name, src.table, src.columns = "s", "t", ["a"]
+        src.where, src.snapshot_column, src._params, src._pinned = (
+            None,
+            None,
+            None,
+            False,
+        )
+        src.conn = MagicMock()
+        src.conn.cursor.return_value.fetchone.return_value = (7,)
+        for key, value in attrs.items():
+            setattr(src, key, value)
+        return src
+
+    def test_post_snapshot_count_uses_strictly_greater_bound(self):
+        src = self._pg(snapshot_column="updated_at", _params=("cut1",))
+        self.assertEqual(src.post_snapshot_count(), 7)
+        sql, params = src.conn.cursor.return_value.execute.call_args[0]
+        self.assertIn('"updated_at" > %s', sql)
+        self.assertEqual(params, ("cut1",))
+
+    def test_post_snapshot_count_scoped_by_where(self):
+        src = self._pg(where="status = 'active'", snapshot_column="updated_at", _params=("cut1",))
+        src.post_snapshot_count()
+        sql, _ = src.conn.cursor.return_value.execute.call_args[0]
+        self.assertIn("(status = 'active') AND", sql)
+
+    def test_pinned_session_cannot_count_arrivals(self):
+        self.assertIsNone(
+            self._pg(snapshot_column="u", _params=("c",), _pinned=True).post_snapshot_count()
+        )
+        self.assertIsNone(self._pg().post_snapshot_count())
+
+    def test_snowflake_post_snapshot_count(self):
+        src = SnowflakeSource.__new__(SnowflakeSource)
+        src.target = MagicMock()
+        src.target._qualified.return_value = '"P"."T"'
+        src.target.conn.cursor.return_value.fetchone.return_value = (3,)
+        src.table, src.columns = "T", ["a"]
+        src.where, src.snapshot_column, src._params = None, '"TS"', ("cut1",)
+        self.assertEqual(src.post_snapshot_count(), 3)
+        sql, params = src.target.conn.cursor.return_value.execute.call_args[0]
+        self.assertIn('"TS" > %s', sql)
+        self.assertEqual(params, ("cut1",))
+
+    def test_cutover_block_in_run_summary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            results = [
+                {
+                    "mapping": "a",
+                    "stage": "recon",
+                    "status": "PASS",
+                    "post_snapshot_arrivals": 4,
+                    "target_asof": "2026-01-01",
+                }
+            ]
+            meta = {
+                "snapshot_enforced": True,
+                "source_snapshot": "watermark:u",
+                "snapshot_id": "c1",
+            }
+            write_evidence(results, meta, tmp)
+            cutover = json.loads((Path(tmp) / "run_summary.json").read_text())["cutover"]
+            self.assertTrue(cutover["snapshot_enforced"])
+            self.assertEqual(cutover["post_snapshot_arrivals"], {"a": 4})
+            self.assertEqual(cutover["target_asof"], {"a": "2026-01-01"})
+
 
 if __name__ == "__main__":
     unittest.main()

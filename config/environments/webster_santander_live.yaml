@@ -4,6 +4,7 @@ run:
   sample_limit: 20
   allow_empty: false
   snapshot_id: ${MIGRATION_SNAPSHOT_ID}
+  allow_post_snapshot: false  # rows past the watermark FAIL recon unless a delta migration is approved
 source:
   type: postgres
   host: ${SOURCE_PG_HOST}
@@ -25,3 +26,4 @@ target:
   database: ${SNOWFLAKE_DATABASE}
   schema: ${SNOWFLAKE_SCHEMA}
   role: ${SNOWFLAKE_ROLE}
+  # asof_column: migrated_at  # optional: evidence records MAX(asof_column) per target table

@@ -123,19 +123,16 @@ Progress: Stage 0 ▸ 13/14 · Stage 1 ▸ 8/9 · Stage 2 ▸ 3/6 · Stage 3 ▸
 
 ## v1 roadmap — general "any-bank" framework (megaplan phases)
 
-- [~] **B — Snapshot & cutover (top priority).** ~~`pg_export_snapshot`
-      pinning~~ ✅ `source.snapshot: exported` — one holder connection exports
-      the snapshot at `Configure Migration`; every source session pins it via
-      `SET TRANSACTION SNAPSHOT`. ~~`snapshot_column` watermark~~ ✅ bound
-      `col <= snapshot_id` predicate on postgres + snowflake sources.
-      ~~target as-of + snapshot evidence~~ ✅ `snapshot_enforced`,
-      `source_snapshot`, `snapshot_id`, optional `target.asof_column` MAX in
-      evidence; non-fake targets refuse unenforceable snapshots.
-      _Rest: delta stage for late arrivals; dedicated cutover section in
-      `run_summary.json` / audit workbook; seeded post-snapshot delta test._
-      _Check:_ a run cannot produce a PASS without a bound snapshot on
-      non-fake targets ✅ (enforced at configure); seeded post-snapshot delta
-      is detected and reported — _open_.
+- [x] **B — Snapshot & cutover (top priority).** `source.snapshot: exported`
+      pins every postgres source session to one `pg_export_snapshot()` held
+      open for the run; `source.snapshot_column` + `run.snapshot_id` is the
+      bound watermark alternative (postgres + snowflake). Evidence carries a
+      `cutover` block (`snapshot_id`, `source_snapshot`, `snapshot_enforced`,
+      `target_asof`, `post_snapshot_arrivals`); `run.allow_post_snapshot`
+      gates rows arriving after the watermark; non-fake targets refuse
+      unenforced snapshots.
+      _Rest: full DB-level seeded delta test needs a watermark column in the
+      synthetic fixtures (detection + gate are unit-tested today)._
 - [ ] **C — Financial controls & integrity.** Implement contract `controls`
       (count/sum/min/max/null_count/count_distinct + group_by) and
       `control_file` trailer compare — both are schema-declared today but

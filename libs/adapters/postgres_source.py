@@ -62,6 +62,7 @@ class PostgresSource(SourceAdapter):
         if self.snapshot_column and snapshot_value in (None, ""):
             raise ValueError("snapshot_column requires a snapshot_value")
         self._params = (snapshot_value,) if self.snapshot_column else None
+        self._pinned = snapshot is not None
         if where:
             from libs.excelrules.validators import where_is_safe
 
@@ -137,6 +138,26 @@ class PostgresSource(SourceAdapter):
         n = cur.fetchone()[0]
         cur.close()
         return n
+
+    def post_snapshot_count(self) -> "int | None":
+        # A session pinned to an exported snapshot cannot see post-cut
+        # arrivals at all — counting them here would return a wrong 0.
+        if not self.snapshot_column or self._pinned:
+            return None
+        clauses = [f'"{self.snapshot_column}" > %s']
+        if self.where:
+            clauses.insert(0, f"({self.where})")
+        sql = (
+            f'SELECT count(*) FROM "{self.schema_name}"."{self.table}"'
+            + " WHERE "
+            + " AND ".join(clauses)
+        )
+        cur = self.conn.cursor()
+        try:
+            cur.execute(sql, self._params)
+            return int(cur.fetchone()[0])
+        finally:
+            cur.close()
 
     def schema(self) -> list:
         cur = self.conn.cursor()

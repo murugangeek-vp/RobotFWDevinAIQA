@@ -85,6 +85,24 @@ class SnowflakeSource(SourceAdapter):
         finally:
             cur.close()
 
+    def post_snapshot_count(self):
+        if not self.snapshot_column:
+            return None
+        clauses = [f"{self.snapshot_column} > %s"]
+        if self.where:
+            clauses.insert(0, f"({self.where})")
+        sql = (
+            f"SELECT count(*) FROM {self.target._qualified(self.table)}"
+            + " WHERE "
+            + " AND ".join(clauses)
+        )
+        cur = self.target.conn.cursor()
+        try:
+            cur.execute(sql, self._params)
+            return int(cur.fetchone()[0])
+        finally:
+            cur.close()
+
     def schema(self):
         return [row[0] for row in self.target.schema(self.table)]
 

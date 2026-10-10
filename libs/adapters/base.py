@@ -21,6 +21,12 @@ class SourceAdapter(ABC):
     def row_count(self) -> int:
         """Number of source records."""
 
+    def post_snapshot_count(self) -> "int | None":
+        """Rows inside the migration scope that arrived after the bound
+        snapshot watermark. None when the source has no watermark predicate
+        or the session is pinned to a snapshot that hides post-cut arrivals."""
+        return None
+
     @abstractmethod
     def schema(self) -> list:
         """List of source column names in order."""

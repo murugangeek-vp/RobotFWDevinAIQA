@@ -401,6 +401,17 @@ class MigrationLibrary:
                             ],
                         }
                     )
+                    arrivals = source.post_snapshot_count()
+                    if arrivals is not None:
+                        row["post_snapshot_arrivals"] = arrivals
+                        if arrivals and not self.env.get("run", {}).get(
+                            "allow_post_snapshot", False
+                        ):
+                            row["status"] = "FAIL"
+                            row["detail"] = (
+                                "post-snapshot arrivals require a delta migration "
+                                "or run.allow_post_snapshot approval"
+                            )
                     if result.mismatch_count:
                         row["status"] = "FAIL"
         except Exception as exc:
