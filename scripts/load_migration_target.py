@@ -44,9 +44,7 @@ def main():
         )
 
     tables, codes = parser.load_workbook(args.workbook)
-    chosen = [
-        t for t in tables if t.enabled and (not args.mapping or t.mapping_id == args.mapping)
-    ]
+    chosen = [t for t in tables if t.enabled and (not args.mapping or t.mapping_id == args.mapping)]
     if not chosen:
         sys.exit("no enabled mappings match the selection")
 

@@ -24,9 +24,20 @@ class SnowflakeSource(SourceAdapter):
         fake=False,
         fake_db_path=None,
         batch_size=5000,
+        snapshot=None,
+        snapshot_column=None,
+        snapshot_value=None,
     ):
         if where and not where_is_safe(where):
             raise ValueError("Unsafe source WHERE fragment")
+        if snapshot is not None:
+            raise ValueError(
+                "exported snapshots are postgres-only; use snapshot_column watermarking"
+            )
+        self.snapshot_column = ident(snapshot_column, "snowflake") if snapshot_column else None
+        if self.snapshot_column and snapshot_value in (None, ""):
+            raise ValueError("snapshot_column requires a snapshot_value")
+        self._params = (snapshot_value,) if self.snapshot_column else None
         self.target = SnowflakeTarget(
             account, user, password, warehouse, database, schema, role, fake, fake_db_path
         )
@@ -40,7 +51,12 @@ class SnowflakeSource(SourceAdapter):
             else ", ".join(ident(c, "snowflake") for c in self.columns or []) or "*"
         )
         sql = f"SELECT {cols} FROM {self.target._qualified(self.table)}"
-        return sql + (f" WHERE ({self.where})" if self.where else "")
+        clauses = []
+        if self.where:
+            clauses.append(f"({self.where})")
+        if self.snapshot_column:
+            clauses.append(f"{self.snapshot_column} <= %s")
+        return sql + (" WHERE " + " AND ".join(clauses) if clauses else "")
 
     def read_chunks(self, size=0):
         size = size or self.batch_size
@@ -48,7 +64,7 @@ class SnowflakeSource(SourceAdapter):
             raise ValueError("batch size must be positive")
         cur = self.target.conn.cursor()
         try:
-            cur.execute(self._select())
+            cur.execute(self._select(), self._params)
             names = self.target._names(cur)
             while rows := cur.fetchmany(size):
                 yield pd.DataFrame(rows, columns=names, dtype=object)
@@ -62,7 +78,12 @@ class SnowflakeSource(SourceAdapter):
         )
 
     def row_count(self):
-        return int(self.target.query(self._select(count=True)).iloc[0, 0])
+        cur = self.target.conn.cursor()
+        try:
+            cur.execute(self._select(count=True), self._params)
+            return int(cur.fetchone()[0])
+        finally:
+            cur.close()
 
     def schema(self):
         return [row[0] for row in self.target.schema(self.table)]

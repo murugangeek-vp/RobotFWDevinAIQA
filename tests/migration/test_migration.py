@@ -3,18 +3,21 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import openpyxl
 import pandas as pd
 from test_streaming import contract, frames
 
+from libs.adapters.postgres_source import PostgresSource
+from libs.adapters.snowflake_source import SnowflakeSource
 from libs.adapters.snowflake_target import SnowflakeTarget
 from libs.adapters.staging import ordered_chunks
 from libs.engine.mapping_transforms import evaluate, mapped_rows, parse_expression
 from libs.engine.reconcile import compare_chunked, normalize
 from libs.mapping import builder, parser
 from libs.reporting.report import write_evidence
+from libs.robot.MigrationLibrary import MigrationLibrary
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKBOOK = ROOT / "data/mapping/bank_mapping.xlsx"
@@ -179,6 +182,133 @@ class SafetyAndEvidenceTests(unittest.TestCase):
             wb = openpyxl.load_workbook(Path(tmp) / "migration_summary.xlsx")
             self.assertEqual(wb["Stage Results"]["A2"].data_type, "s")
             wb.close()
+
+
+def _library(env):
+    lib = MigrationLibrary.__new__(MigrationLibrary)
+    lib.env = copy.deepcopy(env)
+    lib.meta = {}
+    lib._snapshot_holder = None
+    return lib
+
+
+class SnapshotTests(unittest.TestCase):
+    ENV = {
+        "source": {
+            "type": "postgres",
+            "host": "h",
+            "port": 5432,
+            "database": "d",
+            "user": "u",
+            "password": "p",
+        },
+        "target": {"type": "snowflake", "fake": True},
+        "run": {"snapshot_id": "cut-2026-01-01"},
+    }
+
+    def test_malformed_exported_snapshot_rejected_before_connect(self):
+        for bad in ("0001; DROP TABLE t", "snap 1", "'x'", ""):
+            with (
+                self.subTest(snapshot=bad),
+                self.assertRaises(ValueError),
+                patch("psycopg2.connect") as connect,
+            ):
+                PostgresSource(
+                    host="h",
+                    port=5432,
+                    database="d",
+                    user="u",
+                    password="p",
+                    table="t",
+                    snapshot=bad,
+                )
+            connect.assert_not_called()
+
+    def test_watermark_requires_value_before_connect(self):
+        with (
+            self.assertRaisesRegex(ValueError, "snapshot_value"),
+            patch("psycopg2.connect") as connect,
+        ):
+            PostgresSource(
+                host="h",
+                port=5432,
+                database="d",
+                user="u",
+                password="p",
+                table="t",
+                snapshot_column="updated_at",
+            )
+        connect.assert_not_called()
+
+    def test_postgres_watermark_predicate_is_bound(self):
+        src = PostgresSource.__new__(PostgresSource)
+        src.schema_name, src.table, src.columns = "s", "t", ["a"]
+        src.where, src.snapshot_column, src._params = None, "updated_at", ("cut1",)
+        self.assertEqual(src._select_sql(), 'SELECT "a" FROM "s"."t" WHERE "updated_at" <= %s')
+        self.assertEqual(src._params, ("cut1",))
+
+    def test_snowflake_watermark_combines_with_scope(self):
+        src = SnowflakeSource.__new__(SnowflakeSource)
+        src.target = MagicMock()
+        src.target._qualified.return_value = '"SANTANDER"."PUBLIC"."T"'
+        src.table, src.columns = "T", ["a"]
+        src.where, src.snapshot_column, src._params = "x = 1", '"TS"', ("cut1",)
+        sql = src._select()
+        self.assertIn('(x = 1) AND "TS" <= %s', sql)
+        self.assertEqual(src._params, ("cut1",))
+
+    def test_exported_snapshot_pins_holder_and_source(self):
+        lib = _library({**self.ENV, "source": {**self.ENV["source"], "snapshot": "exported"}})
+        holder = MagicMock()
+        holder.cursor.return_value.fetchone.return_value = ("0000000A-00000C7B-1",)
+        with patch("psycopg2.connect", return_value=holder) as connect:
+            lib._bind_snapshot()
+        holder.set_session.assert_called_once_with(
+            readonly=True, autocommit=False, isolation_level="REPEATABLE READ"
+        )
+        self.assertEqual(connect.call_count, 1)
+        self.assertEqual(lib.env["source"]["snapshot"], "0000000A-00000C7B-1")
+        self.assertTrue(lib.meta["snapshot_enforced"])
+        self.assertIs(lib._snapshot_holder, holder)
+
+    def test_exported_snapshot_is_postgres_only(self):
+        lib = _library({**self.ENV, "source": {"type": "snowflake", "snapshot": "exported"}})
+        with self.assertRaisesRegex(ValueError, "postgres-only"):
+            lib._bind_snapshot()
+
+    def test_watermark_binding_uses_snapshot_id(self):
+        lib = _library(
+            {
+                **self.ENV,
+                "source": {**self.ENV["source"], "snapshot_column": "updated_at"},
+            }
+        )
+        lib._bind_snapshot()
+        self.assertEqual(lib.env["source"]["snapshot_value"], "cut-2026-01-01")
+        self.assertEqual(lib.meta["source_snapshot"], "watermark:updated_at")
+        self.assertTrue(lib.meta["snapshot_enforced"])
+
+    def test_watermark_without_snapshot_id_fails(self):
+        lib = _library(
+            {
+                **self.ENV,
+                "run": {},
+                "source": {**self.ENV["source"], "snapshot_column": "updated_at"},
+            }
+        )
+        with self.assertRaisesRegex(ValueError, "snapshot_id"):
+            lib._bind_snapshot()
+
+    def test_real_target_refuses_unenforced_snapshot(self):
+        lib = _library({**self.ENV, "target": {"type": "snowflake", "fake": False}})
+        with self.assertRaisesRegex(ValueError, "enforceable snapshot"):
+            lib._bind_snapshot()
+
+    def test_emulated_run_records_unenforced_snapshot(self):
+        lib = _library({**self.ENV, "source": dict(self.ENV["source"])})
+        lib._bind_snapshot()
+        self.assertFalse(lib.meta["snapshot_enforced"])
+        self.assertEqual(lib.meta["snapshot_id"], "cut-2026-01-01")
 
 
 if __name__ == "__main__":

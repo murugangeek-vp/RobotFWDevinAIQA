@@ -27,6 +27,60 @@ class MigrationLibrary:
         self.env = {}
         self.meta = {}
         self.signature = None
+        self._snapshot_holder = None
+
+    def _bind_snapshot(self):
+        """Enforce the declared migration cut on the source side.
+
+        `source.snapshot: exported` pins every source session to one
+        pg_export_snapshot() (postgres only — the holder connection must stay
+        open for the whole run). `source.snapshot_column` + `run.snapshot_id`
+        scopes reads with a bound watermark predicate instead (any DB).
+        Neither mechanism is required for emulated targets, but a real target
+        refuses a run whose snapshot is only recorded, not enforced.
+        """
+        src = self.env["source"]
+        sid = self.env.get("run", {}).get("snapshot_id")
+        mode = src.get("snapshot")
+        if self._snapshot_holder is not None:
+            self._snapshot_holder.close()
+            self._snapshot_holder = None
+        if mode == "exported":
+            if src.get("type") != "postgres":
+                raise ValueError("source.snapshot 'exported' is postgres-only")
+            import psycopg2
+
+            kw = {
+                k: src[k]
+                for k in ("host", "port", "database", "user", "password", "sslmode", "sslrootcert")
+                if k in src
+            }
+            holder = psycopg2.connect(connect_timeout=15, **kw)
+            holder.set_session(readonly=True, autocommit=False, isolation_level="REPEATABLE READ")
+            cur = holder.cursor()
+            cur.execute("SELECT pg_export_snapshot()")
+            exported = cur.fetchone()[0]
+            cur.close()
+            src["snapshot"] = exported
+            self._snapshot_holder = holder
+            self.meta["source_snapshot"] = exported
+            self.meta["snapshot_enforced"] = True
+        elif src.get("snapshot_column"):
+            if not sid:
+                raise ValueError("source.snapshot_column requires run.snapshot_id")
+            src["snapshot_value"] = sid
+            self.meta["source_snapshot"] = f"watermark:{src['snapshot_column']}"
+            self.meta["snapshot_enforced"] = True
+        elif mode:
+            raise ValueError(f"unknown source.snapshot mode {mode!r}")
+        else:
+            self.meta["snapshot_enforced"] = False
+        self.meta["snapshot_id"] = sid or ""
+        if not self.env["target"].get("fake") and not self.meta["snapshot_enforced"]:
+            raise ValueError(
+                "non-emulated runs require an enforceable snapshot: "
+                "source.snapshot: exported or source.snapshot_column + run.snapshot_id"
+            )
 
     @keyword("Configure Migration")
     def configure(self, env_file, workbook, mapping_id=""):
@@ -50,6 +104,7 @@ class MigrationLibrary:
             limit = int(run.get("sample_limit", 20))
             if batch < 1 or not 0 <= limit <= 1000:
                 raise ValueError("Invalid batch_size/sample_limit")
+            self._bind_snapshot()
             tables, codes = parser.load_workbook(workbook)
             chosen = [
                 t for t in tables if t.enabled and (not mapping_id or t.mapping_id == mapping_id)
@@ -266,15 +321,36 @@ class MigrationLibrary:
                         row["unmapped_target_tables"] = sorted(
                             {c["table"] for c in catalog} - mapped_tables
                         )
+                        asof = self.env["target"].get("asof_column")
+                        if asof:
+                            qn = (
+                                f"{schema.ident(contract.schema, target.dialect)}."
+                                f"{schema.ident(contract.table, target.dialect)}"
+                            )
+                            cur = target.conn.cursor()
+                            try:
+                                cur.execute(
+                                    f"SELECT MAX({schema.ident(asof, target.dialect)}) FROM {qn}"
+                                )
+                                row["target_asof"] = str(cur.fetchone()[0])
+                            finally:
+                                cur.close()
                         row["schema_errors"] = schema.validate_target_schema(target, contract)
                         by_name = {c["column"]: c for c in row["target_metadata"]}
                         for spec in contract.columns:
                             observed = by_name.get(spec["name"], {})
                             if "max_length" in spec:
-                                if self.env["target"].get("fake") and observed.get("max_length") is None:
-                                    row.setdefault("not_validated", []).append(f"{spec['name']}: emulator does not expose declared VARCHAR length")
+                                if (
+                                    self.env["target"].get("fake")
+                                    and observed.get("max_length") is None
+                                ):
+                                    row.setdefault("not_validated", []).append(
+                                        f"{spec['name']}: emulator does not expose declared VARCHAR length"
+                                    )
                                 elif observed.get("max_length") != spec["max_length"]:
-                                    row["schema_errors"].append(f"{spec['name']}: length differs from workbook")
+                                    row["schema_errors"].append(
+                                        f"{spec['name']}: length differs from workbook"
+                                    )
                             if "scale" in spec and observed.get("scale") != spec["scale"]:
                                 row["schema_errors"].append(
                                     f"{spec['name']}: numeric scale differs from workbook"

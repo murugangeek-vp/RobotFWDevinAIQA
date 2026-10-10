@@ -353,6 +353,18 @@ def write_evidence(results, meta, out_dir):
             0,
             "EMULATED TARGET: fakesnow is not a real Santander or Snowflake deployment. All demo data is synthetic.",
         )
+    if meta.get("snapshot_enforced"):
+        insights.insert(
+            0,
+            f"Source snapshot ENFORCED ({meta.get('source_snapshot')}); "
+            f"cut id: {meta.get('snapshot_id') or 'exported pg snapshot'}.",
+        )
+    else:
+        insights.insert(
+            0,
+            "WARNING: source snapshot was recorded but NOT enforced — rows may "
+            "have changed between stage reads.",
+        )
     if verdict == "FAIL":
         insights.append(
             "Resolve every failed/error stage before sign-off: align DDL, repair rejected source rows, and review mapping transformations."

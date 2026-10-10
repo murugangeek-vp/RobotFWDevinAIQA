@@ -11,6 +11,8 @@ source:
   database: ${SOURCE_PG_DATABASE}
   user: ${RECON_RO_USER}
   password: ${RECON_RO_PASSWORD}
+  snapshot: exported         # one pg_export_snapshot() shared by all source sessions
+  # snapshot_column: migrated_at  # alternative: watermark predicate <= snapshot_id
   sslmode: verify-full
   sslrootcert: ${SOURCE_PG_CA_FILE}
 target:

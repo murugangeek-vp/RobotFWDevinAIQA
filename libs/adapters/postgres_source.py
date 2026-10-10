@@ -23,7 +23,9 @@ class PostgresSource(SourceAdapter):
     Rows stream through a named server-side cursor so million-row sources
     stay flat in memory; the optional `where` fragment is vetted read-only.
     Config keys: host, port, database, user, password, schema, table,
-    columns, where, batch_size.
+    columns, where, batch_size, sslmode, sslrootcert, snapshot (exported
+    pg snapshot id pinned via SET TRANSACTION SNAPSHOT), snapshot_column +
+    snapshot_value (bound watermark predicate for non-pg-exportable sources).
     """
 
     def __init__(
@@ -40,11 +42,32 @@ class PostgresSource(SourceAdapter):
         batch_size: int = _DEFAULT_BATCH,
         sslmode: str | None = None,
         sslrootcert: str | None = None,
+        snapshot: "str | None" = None,
+        snapshot_column: "str | None" = None,
+        snapshot_value: "str | None" = None,
     ):
         _ident(schema, "schema")
         _ident(table, "table")
         if int(batch_size) < 1:
             raise ValueError("batch_size must be positive")
+        # Validate everything before opening a connection — fail fast.
+        if snapshot is not None and not re.fullmatch(
+            r"[0-9A-Fa-f]+(-[0-9A-Fa-f]+)+", str(snapshot)
+        ):
+            # pg_export_snapshot() ids look like '0000000A-00000C7B-1'.
+            raise ValueError(f"malformed exported snapshot id: {snapshot!r}")
+        self.snapshot_column = (
+            _ident(snapshot_column, "snapshot column") if snapshot_column else None
+        )
+        if self.snapshot_column and snapshot_value in (None, ""):
+            raise ValueError("snapshot_column requires a snapshot_value")
+        self._params = (snapshot_value,) if self.snapshot_column else None
+        if where:
+            from libs.excelrules.validators import where_is_safe
+
+            if not where_is_safe(where):
+                raise ValueError(f"unsafe source WHERE fragment: {where!r}")
+        self.where = where
         self.conn = psycopg2.connect(
             host=host,
             port=port,
@@ -60,16 +83,16 @@ class PostgresSource(SourceAdapter):
         # readonly session; autocommit stays off — the named server-side
         # cursor in read_chunks needs an open transaction.
         self.conn.set_session(readonly=True, autocommit=False, isolation_level="REPEATABLE READ")
+        if snapshot is not None:
+            # Set as the first statement so the whole session reads the same
+            # source snapshot the exporter pinned.
+            cur = self.conn.cursor()
+            cur.execute(f"SET TRANSACTION SNAPSHOT '{snapshot}'")
+            cur.close()
         self.schema_name = _ident(schema, "schema")
         self.table = _ident(table, "table")
         self.columns = [_ident(c, "column") for c in columns] if columns else None
         self.batch_size = int(batch_size or _DEFAULT_BATCH)
-        if where:
-            from libs.excelrules.validators import where_is_safe
-
-            if not where_is_safe(where):
-                raise ValueError(f"unsafe source WHERE fragment: {where!r}")
-        self.where = where
 
     def _select_sql(self, count_only: bool = False) -> str:
         cols = (
@@ -78,9 +101,12 @@ class PostgresSource(SourceAdapter):
             else (", ".join(f'"{c}"' for c in self.columns) if self.columns else "*")
         )
         sql = f'SELECT {cols} FROM "{self.schema_name}"."{self.table}"'
+        clauses = []
         if self.where:
-            sql += f" WHERE ({self.where})"
-        return sql
+            clauses.append(f"({self.where})")
+        if self.snapshot_column:
+            clauses.append(f'"{self.snapshot_column}" <= %s')
+        return sql + (" WHERE " + " AND ".join(clauses) if clauses else "")
 
     def read_batch(self, **kwargs):
         frames = list(self.read_chunks())
@@ -92,7 +118,7 @@ class PostgresSource(SourceAdapter):
         cur = self.conn.cursor(name="recon_src")
         cur.itersize = int(size or self.batch_size)
         try:
-            cur.execute(self._select_sql())
+            cur.execute(self._select_sql(), self._params)
             # server-side cursors only populate .description after a fetch
             names = None
             while True:
@@ -107,7 +133,7 @@ class PostgresSource(SourceAdapter):
 
     def row_count(self) -> int:
         cur = self.conn.cursor()
-        cur.execute(self._select_sql(count_only=True))
+        cur.execute(self._select_sql(count_only=True), self._params)
         n = cur.fetchone()[0]
         cur.close()
         return n

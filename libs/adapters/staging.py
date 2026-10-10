@@ -39,8 +39,6 @@ def ordered_chunks(chunks, contract, size=5000, directory=None):
         db.execute("CREATE INDEX row_key ON rows(key)")
         # Cursor registered last so it unwinds first: an open statement keeps
         # the sqlite file locked on Windows and breaks tempdir cleanup.
-        cur = stack.enter_context(
-            closing(db.execute("SELECT payload FROM rows ORDER BY key"))
-        )
+        cur = stack.enter_context(closing(db.execute("SELECT payload FROM rows ORDER BY key")))
         while rows := cur.fetchmany(size):
             yield pd.DataFrame([json.loads(row[0]) for row in rows], columns=names, dtype=object)

@@ -123,12 +123,19 @@ Progress: Stage 0 ▸ 13/14 · Stage 1 ▸ 8/9 · Stage 2 ▸ 3/6 · Stage 3 ▸
 
 ## v1 roadmap — general "any-bank" framework (megaplan phases)
 
-- [ ] **B — Snapshot & cutover (top priority).** `pg_export_snapshot` pinning
-      for postgres sources; `snapshot_column` watermark predicates for other
-      DBs; target as-of + snapshot bound into evidence; delta stage for
-      late arrivals; cutover section in `run_summary.json` / audit workbook.
+- [~] **B — Snapshot & cutover (top priority).** ~~`pg_export_snapshot`
+      pinning~~ ✅ `source.snapshot: exported` — one holder connection exports
+      the snapshot at `Configure Migration`; every source session pins it via
+      `SET TRANSACTION SNAPSHOT`. ~~`snapshot_column` watermark~~ ✅ bound
+      `col <= snapshot_id` predicate on postgres + snowflake sources.
+      ~~target as-of + snapshot evidence~~ ✅ `snapshot_enforced`,
+      `source_snapshot`, `snapshot_id`, optional `target.asof_column` MAX in
+      evidence; non-fake targets refuse unenforceable snapshots.
+      _Rest: delta stage for late arrivals; dedicated cutover section in
+      `run_summary.json` / audit workbook; seeded post-snapshot delta test._
       _Check:_ a run cannot produce a PASS without a bound snapshot on
-      non-fake targets; seeded post-snapshot delta is detected and reported.
+      non-fake targets ✅ (enforced at configure); seeded post-snapshot delta
+      is detected and reported — _open_.
 - [ ] **C — Financial controls & integrity.** Implement contract `controls`
       (count/sum/min/max/null_count/count_distinct + group_by) and
       `control_file` trailer compare — both are schema-declared today but
