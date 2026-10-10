@@ -70,6 +70,19 @@ jobs:
             ALTER DEFAULT PRIVILEGES FOR ROLE recon_rw IN SCHEMA public GRANT SELECT ON TABLES TO recon_ro;
           SQL
 
+      - name: Seed migration demo (webster source + emulated Santander target)
+        # Migration suites are verify-only — the emulated target is loaded
+        # out-of-band here, same as a real bank ETL would load it.
+        if: inputs.suite == '' || contains(inputs.suite, 'migration')
+        env:
+          RECON_ADMIN_USER: postgres
+          RECON_ADMIN_PASSWORD: postgres_ci
+          RECON_RO_USER: recon_ro
+          RECON_RO_PASSWORD: ${{ secrets.RECON_RO_PASSWORD }}
+        run: |
+          python scripts/generate_bank_source.py --rows 500 --confirm-synthetic
+          python scripts/load_migration_target.py
+
       - name: Run reconciliation suites
         env:
           RECON_RO_USER: recon_ro
@@ -87,9 +100,15 @@ jobs:
           [ -n "$EXCLUDE_TAG" ] && cmd+=(--exclude "$EXCLUDE_TAG")
           cmd+=("${SUITE:-tests/pilot}")
           "${cmd[@]}"
+          # Full runs cover both suites; a dispatch picking one path skips the other.
+          if [ -z "$SUITE" ]; then
+            robot -d results/migration tests/migration
+          fi
 
       - name: Engine unit tests
-        run: python -m unittest discover -s tests/pilot -p "test_*.py" -v
+        run: |
+          python -m unittest discover -s tests/pilot -p "test_*.py" -v
+          python -m unittest discover -s tests/migration -p "test_*.py" -v
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -101,3 +120,4 @@ jobs:
             results/output.xml
             results/run_summary.json
             results/business_rules_summary.xlsx
+            results/migration/

@@ -226,6 +226,10 @@ Open in a browser after a run:
 | `04_record_comparison` | Load | `missing_in_target` / `extra_in_target` key lists |
 | `05_transformations` | Mapping logic | `Get Transform Diffs` output — column, expected, actual |
 | `06_pipeline` | Whole flow | Read earlier failures first; pipeline is the summary |
+| migration `mapping`/`source` | Workbook → contract compile or live source columns vs FieldMap |
+| migration `dq` | Source rule violations — `dq_failures` in the evidence workbook |
+| migration `schema` | Target DDL drift — `schema_errors`; `not_validated` = fakesnow gap only |
+| migration `recon`/`transform` | Missing/extra keys, per-column diffs — bounded redacted samples |
 
 ---
 
@@ -240,6 +244,30 @@ Open in a browser after a run:
 | `05_transformations` | Did every derivation/mapping compute correctly? One test per transform column |
 | `06_pipeline` | The whole flow end-to-end — release gate + loader completeness, audit summary, reload idempotency |
 | `90_negative_path` | Self-test: proves detection works and that `recon_ro` cannot write (safe to run anytime) |
+
+### Migration suites (`tests/migration/` — bank → bank, verify-only)
+
+For database-to-database migrations (e.g. Webster Bank → Santander Bank) the
+same idea runs at table level: an **Excel mapping workbook** declares every
+table pair, key, scope filter, field rename and transformation; the suite
+compiles it into contracts and validates the loaded target **as-is — it never
+writes to either database**.
+
+| Stage | Answers |
+| --- | --- |
+| `mapping` / `source` | Does the workbook compile, and do mapped columns exist in the live source? |
+| `dq` | Does the source satisfy contract rules, code mappings and key uniqueness? |
+| `schema` | Does the target table match the workbook DDL (names, types, nullability, keys)? |
+| `recon` | Did every record arrive — exact counts, missing/extra keys, per-column diffs? |
+| `transform` | Did every transformation compute correctly? |
+| `negative` | Self-test: missing/extra/tamper/duplicate detected on streamed copies |
+
+Evidence per run (in the output dir): `migration_summary.xlsx` (audit
+workbook — Run Info, Stage Results, Metadata, Diffs & Violations, Insights),
+`migration_report.md`, `run_summary.json`. `production_signoff` is **always
+false** — a green emulated run is not sign-off; real-account and snapshot
+validation is required. Setup and live-run details: `docs/RUNBOOK.md`
+"Bank migration suite" section.
 
 ---
 

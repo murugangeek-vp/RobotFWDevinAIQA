@@ -1,3 +1,9 @@
+> **Superseded — implemented.** This design note is realized by TWO workbook
+> layers: `data/rules/business_rules.xlsx` (25 rule types — `libs/excelrules`,
+> pilot `07_excel_rules`) and `data/mapping/bank_mapping.xlsx` (field-level
+> table mapping — `libs/mapping`, `tests/migration`). Kept for history; see
+> `docs/EXCEL_MAPPING.md` and `docs/ADAPTERS.md`.
+
 Most important design principle
 I would position the solution as:
 

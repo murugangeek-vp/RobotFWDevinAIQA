@@ -10,18 +10,27 @@ Contract-driven — suites contain zero hardcoded column logic.
 - `libs/engine/` — pure comparison / rules / schema logic. No I/O, no DB
   connections, no Robot imports.
 - `libs/adapters/` — `SourceAdapter` / `TargetAdapter` / writer ABCs +
-  `@register_*` registry. All source/target I/O lives here.
+  `@register_*` registry (postgres + snowflake today), `staging.py` external
+  canonical sort, `catalog.py` introspection. All source/target I/O lives here.
 - `libs/robot/ReconciliationLibrary.py` — thin Robot keyword layer that
-  composes engine + adapters. No comparison logic here.
+  composes engine + adapters (pilot suites). `MigrationLibrary.py` — the
+  workbook-driven, verify-only counterpart for `tests/migration`.
 - `libs/excelrules/` — workbook-driven business rules
   (`data/rules/business_rules.xlsx` is the source of truth).
-- `libs/mapping/` — Excel mapping workbook for bank→bank migration.
+- `libs/mapping/` — Excel mapping workbook → contract compiler
+  (`data/mapping/bank_mapping.xlsx` for bank→bank migration).
+- `libs/reporting/` — migration evidence (`migration_summary.xlsx`,
+  `migration_report.md`, `run_summary.json`; `production_signoff` is never
+  granted by a run).
 - `config/contracts/*.yaml` — data contracts, validated against
   `contract.schema.json` at load (fail closed).
 - `config/environments/*.yaml` — environment wiring; credentials only via
-  `${ENV_VAR}` references.
-- `resources/keywords/` — composed Robot keywords; `tests/pilot/` — numbered
-  suites (`01_`–`07_`, `90_` = negative-path self-tests).
+  `${ENV_VAR}` references. `webster_santander_live.yaml` (non-fake) requires
+  `run.snapshot_id` — the agreed frozen migration cut.
+- `resources/keywords/` — composed Robot keywords.
+- `tests/pilot/` — contract-driven suites (`01_`–`07_`, `90_` negative-path).
+- `tests/migration/` — verify-only bank→bank suites: no loader, target is
+  validated as-is; `90_` proves detection on streamed copies only.
 
 ## Non-negotiable rules
 
@@ -52,9 +61,12 @@ Contract-driven — suites contain zero hardcoded column logic.
 ## Quality gates (run before committing)
 
 ```bash
-pre-commit run --all-files                 # ruff, ruff-format, mypy, yaml/json
+pre-commit run --all-files                    # ruff, ruff-format, mypy, yaml/json
 python -m unittest discover -s tests/pilot -p "test_*.py" -v
-.venv/Scripts/robot -d results tests/pilot # must stay green on clean fixtures
+python -m unittest discover -s tests/migration -p "test_*.py" -v
+.venv/Scripts/robot -d results tests/pilot    # must stay green on clean fixtures
+.venv/Scripts/robot -d results/migration tests/migration  # needs webster
+    # schema seeded + emulated target loaded (scripts/load_migration_target.py)
 ```
 
 Style: Python 3.11+, ruff line-length 100 (E/F/W/I/B/UP/SIM), mypy clean on

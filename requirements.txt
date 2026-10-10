@@ -5,5 +5,6 @@ pyyaml==6.0.3
 jsonschema==4.26.0
 openpyxl==3.1.5
 snowflake-connector-python==4.7.5
+sqlglot==30.17.0            # single-SELECT vetting in SnowflakeTarget.query (direct import)
 fakesnow==0.11.18    # local Snowflake emulation (target.fake: true); unused against real accounts
 faker==40.39.0       # scripts/generate_bank_source.py sample banking data

@@ -59,6 +59,11 @@ def load_credentials(path: Path) -> None:
                 "SNOWFLAKE_DATABASE",
                 "SNOWFLAKE_SCHEMA",
                 "SNOWFLAKE_ROLE",
+                "SOURCE_PG_HOST",
+                "SOURCE_PG_PORT",
+                "SOURCE_PG_DATABASE",
+                "SOURCE_PG_CA_FILE",
+                "MIGRATION_SNAPSHOT_ID",
             }
             or key in os.environ
         ):

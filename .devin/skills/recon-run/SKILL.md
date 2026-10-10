@@ -30,7 +30,25 @@ All commands run from the repo root using the venv executables
 7. **Negative path (prove detection):**
    `robot -d results_neg -v SOURCE_FILE:data/samples/customer_bad_dq.csv tests/pilot/02_data_quality.robot`
    and `tests/pilot/90_negative_path.robot` (seeds defects, asserts exact counts).
-8. **Engine unit tests:** `python -m unittest discover -s tests/pilot -p "test_*.py" -v`
+8. **Engine unit tests:**
+   `python -m unittest discover -s tests/pilot -p "test_*.py" -v` and
+   `python -m unittest discover -s tests/migration -p "test_*.py" -v`
+
+## Migration suites (`tests/migration/` — verify-only, DB→DB)
+
+Prereq: webster source schema seeded (`scripts/generate_bank_source.py
+--confirm-synthetic`) and the emulated target loaded
+(`scripts/load_migration_target.py`). No loader runs in the suite itself.
+
+1. **All mappings/stages:** `robot -d results/migration tests/migration`
+2. **One mapping:** `robot -d results/m1 -v MAPPING_ID:account_migration tests/migration`
+3. **Compare+transform only:** `robot -d results/r --include recon tests/migration`
+4. **Defect-detection proof:** `robot -d results/n tests/migration/90_negative_path.robot`
+5. **Env/workbook overrides:** `-v MIGRATION_ENV:<env>.yaml -v MAPPING_WORKBOOK:<wb>.xlsx`
+
+Evidence lands in the output dir: `migration_summary.xlsx` (audit),
+`migration_report.md`, `run_summary.json` (`production_signoff` is always
+false — a green emulated run is not sign-off).
 
 ## Interpret failures (map to layer first)
 
@@ -43,6 +61,10 @@ All commands run from the repo root using the venv executables
 | 05_transformations | mapping layer — `Get Transform Diffs` output |
 | 06_pipeline | whole flow — read earlier failures first |
 | 07_excel_rules | business-rules workbook — check `results/business_rules_summary.xlsx` |
+| migration `mapping`/`source` | workbook compile or live source columns vs FieldMap |
+| migration `dq` | source rule violations — `dq_failures` in evidence |
+| migration `schema` | target DDL drift — `schema_errors` / `not_validated` (fakesnow gap) |
+| migration `recon`/`transform` | missing/extra keys, per-column diffs — bounded redacted samples |
 | `permission denied` | wrong role — verify must be `recon_ro`, loader `recon_rw` |
 
 ## Report

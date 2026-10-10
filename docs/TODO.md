@@ -1,13 +1,36 @@
-# TODO / Delivery Checklist — Data Reconciliation Testing Framework (Pilot)
+# TODO / Delivery Checklist — Data Reconciliation Testing Framework
 
 Tick a box when the item's **acceptance check** passes. GitHub renders `- [x]` as a green tick.
 Every stage ends with a **Stage gate** — do not start the next stage until its gate is ticked.
 
-> **Branch scope:** this checklist covers the pilot branch — CSV source →
-> PostgreSQL target. The multi-source / multi-target / bank-migration work
-> stream lives on the main development branch (`devin/1790991363-bank-migration-recon`).
+> **Scope:** two suites now exist — `tests/pilot/` (CSV → PostgreSQL,
+> contract-driven) and `tests/migration/` (DB → DB, workbook-driven,
+> verify-only). The bank-migration stream (Webster → Santander demo) has
+> landed; remaining work is tracked in Stage 2 and the v1 roadmap below.
 
-Progress: Stage 0 ▸ 13/14 · Stage 1 ▸ 8/9 · Stage 2 (pilot scope) ▸ 2/5 · Stage 3 ▸ 0/4
+Progress: Stage 0 ▸ 13/14 · Stage 1 ▸ 8/9 · Stage 2 ▸ 3/6 · Stage 3 ▸ 0/4 · v1 roadmap: phases A–F
+
+---
+
+## Bank-migration stream — delivered
+
+- [x] **MIG-01 Workbook-driven contracts** — `bank_mapping.xlsx` (Tables /
+      FieldMap / Mapping sheets) compiles into validated contracts; the
+      workbook is the single source of truth; fail-closed parsing.
+- [x] **MIG-02 Verify-only `tests/migration/` suite** — 7 stages
+      (mapping/source/dq/schema/recon/transform/negative) + e2e gate; no
+      loader; RO roles on both sides.
+- [x] **MIG-03 Postgres + Snowflake adapters** — source and target each;
+      fakesnow emulation via `fake: true`; sqlglot single-SELECT vetting.
+- [x] **MIG-04 Scale path** — server-side chunked reads + canonical external
+      sort (temp SQLite) — flat RAM at million-row volumes; SHA-256 hash mode.
+- [x] **MIG-05 Evidence** — `migration_summary.xlsx` (Run Info / Stage
+      Results / Metadata / Diffs / Insights), `migration_report.md`,
+      `run_summary.json`; `production_signoff` never granted by a run.
+- [x] **MIG-06 Negative self-test** — exact missing/extra/tamper/duplicate
+      detection on streamed copies; databases untouched.
+- [x] **MIG-07 CI coverage** — `tests/migration` robot + unittest in the
+      reconciliation workflow; emulated-target loader for demos/CI.
 
 ---
 
@@ -86,20 +109,43 @@ Progress: Stage 0 ▸ 13/14 · Stage 1 ▸ 8/9 · Stage 2 (pilot scope) ▸ 2/5 
 
 ---
 
-## Stage 2 — Production hardening (pilot scope)
+## Stage 2 — Production hardening
 
 - [x] **PROD-01 Adapter architecture** — `SourceAdapter`/`TargetAdapter` ABCs +
-      config-driven registry; CSV + PostgreSQL on it. ✅
+      config-driven registry; CSV + PostgreSQL + Snowflake on it. ✅
 - [x] **PROD-07 (partial) Least-privilege + secret scanning** — `recon_ro` SELECT-only
       proven by `Read Only Role Cannot Mutate Target`; writes rejected; gitleaks in CI. ✅
 - [ ] **PROD-07 (rest) Central secret store** (Vault / cloud secret manager).
-- [ ] **PROD-08 Performance** — chunked/streamed comparison, 1M-row benchmark ceiling.
+- [x] **PROD-08 (partial) Performance** — chunked reads + external canonical
+      sort, bounded RAM, hash mode. ✅ _Rest: committed 1M-row benchmark gate._
 - [ ] **PROD-09 Observability** — central run store, trend view, audit retention.
 - [ ] **PROD-10 AI failure analysis + rollout** — failure clustering, assertion-diff check.
 
-_Out of scope on this branch: additional source adapters (S3/REST/Dataiku),
-additional targets (Snowflake/MySQL), and the Webster→Santander migration
-tooling — they continue on the main development branch._
+## v1 roadmap — general "any-bank" framework (megaplan phases)
+
+- [ ] **B — Snapshot & cutover (top priority).** `pg_export_snapshot` pinning
+      for postgres sources; `snapshot_column` watermark predicates for other
+      DBs; target as-of + snapshot bound into evidence; delta stage for
+      late arrivals; cutover section in `run_summary.json` / audit workbook.
+      _Check:_ a run cannot produce a PASS without a bound snapshot on
+      non-fake targets; seeded post-snapshot delta is detected and reported.
+- [ ] **C — Financial controls & integrity.** Implement contract `controls`
+      (count/sum/min/max/null_count/count_distinct + group_by) and
+      `control_file` trailer compare — both are schema-declared today but
+      never evaluated (fail-closed violation); `Relations` sheet for FK
+      orphan checks across mapped tables.
+- [ ] **D — Evidence polish.** `transform` stage compares transform columns
+      only (today it duplicates `recon`); evidence validation requires
+      `coverage == COMPLETE`; `run.fail_on_unmapped` gate; `pii` flag drives
+      selective (not all-or-nothing) redaction; fuse DQ source passes.
+- [ ] **E — Any-bank adapters & unified rules.** MySQL/Oracle/MSSQL adapters
+      per `docs/ADAPTERS.md` checklist; S3/API sources (schema already
+      reserves them); `libs/excelrules` extended to DB-backed sources so a
+      client rules workbook runs in DB→DB migrations; "which workbook when"
+      doc.
+- [ ] **F — Observability & scale proof.** Run store + trend report;
+      secret-store resolver in `_expand_env`; 1M-row benchmark gate in
+      nightly CI; parallel mappings; retry/resume.
 
 ---
 
