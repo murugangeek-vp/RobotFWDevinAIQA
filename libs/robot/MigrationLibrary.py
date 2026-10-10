@@ -252,7 +252,11 @@ class MigrationLibrary:
                     from libs.adapters.catalog import inspect_schema
 
                     conn = source.conn if hasattr(source, "conn") else source.target.conn
-                    catalog = inspect_schema(conn, contract.raw["source"]["schema"])
+                    catalog = inspect_schema(
+                        conn,
+                        contract.raw["source"]["schema"],
+                        dialect=source.dialect,
+                    )
                     mapped_tables = {
                         c.raw["source"]["table"]
                         for c in self.contracts
@@ -325,7 +329,9 @@ class MigrationLibrary:
                     if stage == "schema":
                         from libs.adapters.catalog import inspect_schema
 
-                        catalog = inspect_schema(target.conn, contract.schema)
+                        catalog = inspect_schema(
+                            target.conn, contract.schema, dialect=target.dialect
+                        )
                         row["target_metadata"] = [
                             c for c in catalog if c["table"] == contract.table
                         ]

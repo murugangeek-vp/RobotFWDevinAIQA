@@ -58,8 +58,77 @@ SF_TYPE_ALIASES = {
     "boolean": {"BOOLEAN"},
 }
 
-_TYPE_MAPS = {"postgres": PG_TYPE_MAP, "snowflake": SF_TYPE_MAP}
-TYPE_ALIASES = {"postgres": PG_TYPE_ALIASES, "snowflake": SF_TYPE_ALIASES}
+# contract type -> MySQL DDL type
+MYSQL_TYPE_MAP = {
+    "integer": "INT",
+    "decimal": "DECIMAL",
+    "string": "VARCHAR",
+    "date": "DATE",
+    "timestamp": "DATETIME",
+    "boolean": "TINYINT(1)",
+}
+MYSQL_TYPE_ALIASES = {
+    "integer": {"int", "bigint", "smallint", "mediumint", "tinyint"},
+    "decimal": {"decimal", "numeric", "float", "double", "double precision", "real"},
+    "string": {"varchar", "char", "text", "tinytext", "mediumtext", "longtext", "enum"},
+    "date": {"date"},
+    "timestamp": {"datetime", "timestamp"},
+    "boolean": {"tinyint", "bit", "boolean", "bool"},
+}
+
+# contract type -> Oracle DDL type. Oracle has no integer/boolean storage —
+# NUMBER(p,0) / NUMBER(1,0) carry them.
+ORACLE_TYPE_MAP = {
+    "integer": "NUMBER(19,0)",
+    "decimal": "NUMBER",
+    "string": "VARCHAR2",
+    "date": "DATE",
+    "timestamp": "TIMESTAMP",
+    "boolean": "NUMBER(1,0)",
+}
+ORACLE_TYPE_ALIASES = {
+    # all_tab_columns values are normalized by _ora_dtype (NUMBER scale 0 ->
+    # "NUMBER_INT") before alias matching.
+    "integer": {"NUMBER_INT", "INTEGER", "INT", "SMALLINT"},
+    "decimal": {"NUMBER", "DECIMAL", "FLOAT", "BINARY_FLOAT", "BINARY_DOUBLE"},
+    "string": {"VARCHAR2", "NVARCHAR2", "CHAR", "NCHAR", "CLOB", "NCLOB", "LONG"},
+    "date": {"DATE"},
+    "timestamp": {"TIMESTAMP"},
+    "boolean": {"NUMBER_INT"},
+}
+
+# contract type -> T-SQL (MSSQL) DDL type
+MSSQL_TYPE_MAP = {
+    "integer": "INT",
+    "decimal": "DECIMAL",
+    "string": "NVARCHAR",
+    "date": "DATE",
+    "timestamp": "DATETIME2",
+    "boolean": "BIT",
+}
+MSSQL_TYPE_ALIASES = {
+    "integer": {"int", "bigint", "smallint", "tinyint"},
+    "decimal": {"decimal", "numeric", "money", "smallmoney", "float", "real"},
+    "string": {"nvarchar", "varchar", "nchar", "char", "ntext", "text"},
+    "date": {"date"},
+    "timestamp": {"datetime", "datetime2", "smalldatetime", "datetimeoffset"},
+    "boolean": {"bit"},
+}
+
+_TYPE_MAPS = {
+    "postgres": PG_TYPE_MAP,
+    "snowflake": SF_TYPE_MAP,
+    "mysql": MYSQL_TYPE_MAP,
+    "oracle": ORACLE_TYPE_MAP,
+    "mssql": MSSQL_TYPE_MAP,
+}
+TYPE_ALIASES = {
+    "postgres": PG_TYPE_ALIASES,
+    "snowflake": SF_TYPE_ALIASES,
+    "mysql": MYSQL_TYPE_ALIASES,
+    "oracle": ORACLE_TYPE_ALIASES,
+    "mssql": MSSQL_TYPE_ALIASES,
+}
 
 
 def _sf_dtype(data_type, numeric_scale) -> str:
@@ -71,12 +140,29 @@ def _sf_dtype(data_type, numeric_scale) -> str:
     return base
 
 
+def _ora_dtype(data_type, data_precision, data_scale) -> str:
+    """Normalize an Oracle all_tab_columns data_type for alias matching:
+    NUMBER with scale 0 is normalized to NUMBER_INT so contract `integer`
+    and `decimal` can be told apart (like _sf_dtype for Snowflake)."""
+    base = (data_type or "").split("(")[0].strip().upper()
+    if base == "NUMBER":
+        return "DECIMAL" if data_scale not in (None, 0) else "NUMBER_INT"
+    return base
+
+
 def ident(name: str, dialect: str = "postgres") -> str:
-    """Quote an identifier for the configured SQL dialect."""
+    """Quote an identifier for the configured SQL dialect. Oracle identifiers
+    are emitted quoted-UPPER — the same name an unquoted CREATE produces."""
     if dialect not in TYPE_ALIASES:
         raise ValueError(f"Unsupported SQL dialect: {dialect}")
     if not isinstance(name, str) or not name:
         raise ValueError("SQL identifier must be a nonempty string")
+    if dialect == "mysql":
+        return "`" + name.replace("`", "``") + "`"
+    if dialect == "mssql":
+        return "[" + name.replace("]", "]]") + "]"
+    if dialect == "oracle":
+        name = name.upper()
     return '"' + name.replace('"', '""') + '"'
 
 
@@ -199,9 +285,10 @@ def _describe_fallback(conn, qualified: str, rows_to_schema: bool):
 
 
 def fetch_db_schema(conn, schema: str, table: str, dialect: str = "postgres") -> list:
-    """Live schema from information_schema: [(name, data_type, nullable), ...].
-    For snowflake the dtype is normalized via _sf_dtype; a DESCRIBE TABLE
-    fallback covers engines with thin information_schema support."""
+    """Live schema from information_schema (or ALL_TAB_COLUMNS for oracle):
+    [(name, data_type, nullable), ...]. Snowflake dtypes are normalized via
+    _sf_dtype and Oracle via _ora_dtype; the DESCRIBE TABLE fallback covers
+    engines with thin information_schema support."""
     if dialect not in TYPE_ALIASES:
         raise ValueError(f"Unsupported SQL dialect: {dialect}")
     cur = conn.cursor()
@@ -216,6 +303,34 @@ def fetch_db_schema(conn, schema: str, table: str, dialect: str = "postgres") ->
             (schema, table),
         )
         rows = [(r[0], r[1], _truthy(r[2])) for r in cur.fetchall()]
+        cur.close()
+        return rows
+    if dialect in ("mysql", "mssql"):
+        ph = "%s" if dialect == "mysql" else "?"
+        cur.execute(
+            f"""
+            SELECT column_name, data_type, is_nullable
+            FROM information_schema.columns
+            WHERE table_schema = {ph} AND table_name = {ph}
+            ORDER BY ordinal_position
+            """,
+            (schema, table),
+        )
+        rows = [(r[0], (r[1] or "").lower(), _truthy(r[2])) for r in cur.fetchall()]
+        cur.close()
+        return rows
+    if dialect == "oracle":
+        # ALL_TAB_COLUMNS is grant-filtered; OWNER holds the schema name.
+        cur.execute(
+            """
+            SELECT column_name, data_type, nullable, data_precision, data_scale
+            FROM all_tab_columns
+            WHERE owner = :1 AND table_name = :2
+            ORDER BY column_id
+            """,
+            (schema.upper(), table.upper()),
+        )
+        rows = [(r[0], _ora_dtype(r[1], r[3], r[4]), _truthy(r[2])) for r in cur.fetchall()]
         cur.close()
         return rows
     qualified = f"{ident(schema, dialect)}.{ident(table, dialect)}"
@@ -243,6 +358,55 @@ def fetch_db_schema(conn, schema: str, table: str, dialect: str = "postgres") ->
 
 def fetch_primary_key(conn, schema: str, table: str, dialect: str = "postgres") -> list:
     cur = conn.cursor()
+    if dialect == "mysql":
+        cur.execute(
+            """
+            SELECT column_name
+            FROM information_schema.key_column_usage
+            WHERE constraint_name = 'PRIMARY'
+              AND table_schema = %s AND table_name = %s
+            ORDER BY ordinal_position
+            """,
+            (schema, table),
+        )
+        rows = [r[0] for r in cur.fetchall()]
+        cur.close()
+        return rows
+    if dialect == "mssql":
+        cur.execute(
+            """
+            SELECT kcu.column_name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+              ON tc.constraint_schema = kcu.constraint_schema
+             AND tc.constraint_name = kcu.constraint_name
+             AND tc.table_name = kcu.table_name
+            WHERE tc.constraint_type = 'PRIMARY KEY'
+              AND tc.table_schema = ? AND tc.table_name = ?
+            ORDER BY kcu.ordinal_position
+            """,
+            (schema, table),
+        )
+        rows = [r[0] for r in cur.fetchall()]
+        cur.close()
+        return rows
+    if dialect == "oracle":
+        cur.execute(
+            """
+            SELECT cc.column_name
+            FROM all_constraints c
+            JOIN all_cons_columns cc
+              ON c.owner = cc.owner
+             AND c.constraint_name = cc.constraint_name
+            WHERE c.constraint_type = 'P'
+              AND c.owner = :1 AND c.table_name = :2
+            ORDER BY cc.position
+            """,
+            (schema.upper(), table.upper()),
+        )
+        rows = [r[0] for r in cur.fetchall()]
+        cur.close()
+        return rows
     if dialect == "snowflake":
         qualified = f"{ident(schema, dialect)}.{ident(table, dialect)}"
         try:

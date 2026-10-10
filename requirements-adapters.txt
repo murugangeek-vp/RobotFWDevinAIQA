@@ -1,0 +1,10 @@
+# Optional DBAPI drivers for the mysql/oracle/mssql adapters.
+# Install only the drivers for databases you actually verify against:
+#   pip install -r requirements-adapters.txt      (all)
+#   pip install pymysql==1.1.1                    (one)
+# The adapters lazy-import these inside _connect(), so the core framework,
+# CI and the postgres/snowflake path work without them. MSSQL additionally
+# needs an ODBC driver installed on the host (e.g. msodbcsql18).
+pymysql==1.1.1
+oracledb==2.5.1
+pyodbc==5.1.0

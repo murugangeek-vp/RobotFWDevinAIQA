@@ -2,9 +2,39 @@
 
 The framework is config-driven: `source.type` / `target.type` in the
 environment YAML pick the adapter at runtime. Working adapters today are
-**PostgreSQL** (source + target) and **Snowflake** (source + target). Adding
-MySQL, Oracle, Databricks, Salesforce, etc. means adding one module and a
-decorator — the engine, parser and Robot suites do not change.
+**PostgreSQL**, **Snowflake**, **MySQL**, **Oracle** and **MSSQL** (source +
+target each). Adding Databricks, Salesforce, etc. means adding one module
+and a decorator — the engine, parser and Robot suites do not change.
+
+## DB-API dialects (mysql / oracle / mssql)
+
+The three relational adapters share `libs/adapters/dbapi.py`: identifier
+vetting, `where_is_safe` WHERE fragments, `snapshot_column` watermarks,
+bounded-memory chunking, the single-SELECT `query()` guard and catalog
+introspection. A dialect supplies `_connect`, `_cursor` (streaming) and a
+schema default:
+
+| `type` | Driver (lazy) | Paramstyle | Quoting | Streaming | Schema default |
+|---|---|---|---|---|---|
+| `mysql` | `pymysql` | `%s` | `` `name` `` | `SSCursor` (unbuffered) | `database` |
+| `oracle` | `oracledb` (thin mode) | `:1` | `"NAME"` (upper) | `fetchmany` + prefetch | connecting user |
+| `mssql` | `pyodbc` | `?` | `[name]` | `fetchmany` | `dbo` |
+
+Drivers are **optional** — install `requirements-adapters.txt` only for
+the databases you verify against (MSSQL also needs a host ODBC driver such
+as msodbcsql18). Adapter modules lazy-import inside `_connect`, so the
+framework and CI run without them.
+
+Extra per-dialect config keys (env yaml `source:` / `target:` blocks):
+`mysql`: `charset`, `connect_timeout`; `oracle`: `service_name` (falls back
+to `database`); `mssql`: `driver`, `encrypt`, `trust_cert`, `timeout`.
+
+**Read-only enforcement differs from postgres/snowflake:** these engines
+are guarded by the account's *grants* (provision a SELECT-only role such as
+`recon_ro`) plus the single-SELECT `query()` guard — there is no session-
+level `readonly=True` equivalent. Snapshot pinning is watermark-based
+(`source.snapshot_column` + `run.snapshot_id`); exported snapshots remain
+postgres-only.
 
 ## Registry
 
@@ -87,8 +117,8 @@ Targets also expose `.conn` (DB-API connection) and `.dialect`
 
 ## Checklist for a new database
 
-1. `libs/adapters/<db>_source.py` / `<db>_target.py` implementing the tables
-   above; register types.
+1. `libs/adapters/<db>.py` implementing the tables above (subclass
+   `DbapiSource`/`DbapiTarget` for DB-API engines); register types.
 2. Type map + aliases in `libs/engine/schema.py` (`<DB>_TYPE_MAP`,
    `TYPE_ALIASES[...]`) so contract types translate and introspected types
    map back.

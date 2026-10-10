@@ -11,7 +11,7 @@
       "type": "object",
       "required": ["type"],
       "properties": {
-        "type": {"type": "string", "enum": ["csv", "s3", "api", "dataiku", "postgres", "snowflake"]},
+        "type": {"type": "string", "enum": ["csv", "s3", "api", "dataiku", "postgres", "snowflake", "mysql", "oracle", "mssql"]},
         "path": {"type": "string"},
         "encoding": {"type": "string"},
         "delimiter": {"type": "string"},
@@ -133,7 +133,7 @@
       "type": "object",
       "required": ["type", "table"],
       "properties": {
-        "type": {"type": "string", "enum": ["postgres", "snowflake"]},
+        "type": {"type": "string", "enum": ["postgres", "snowflake", "mysql", "oracle", "mssql"]},
         "schema": {"type": "string"},
         "table": {"type": "string", "minLength": 1}
       }

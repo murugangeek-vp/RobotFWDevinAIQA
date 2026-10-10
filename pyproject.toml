@@ -18,3 +18,9 @@ exclude = ["\\.venv", "results", "data/samples", "scripts"]
 ignore_missing_imports = true
 warn_unused_ignores = true
 warn_redundant_casts = true
+
+# Optional adapter drivers (requirements-adapters.txt) — not installed in CI
+# and ship no type stubs, so lazy imports would trip import-untyped.
+[[tool.mypy.overrides]]
+module = ["pymysql", "pymysql.*", "oracledb", "oracledb.*", "pyodbc", "pyodbc.*"]
+disable_error_code = ["import-untyped", "import-not-found"]

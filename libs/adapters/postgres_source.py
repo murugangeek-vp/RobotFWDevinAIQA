@@ -18,6 +18,8 @@ def _ident(name, what):
 
 @register_source("postgres")
 class PostgresSource(SourceAdapter):
+    dialect = "postgres"
+
     """Read a PostgreSQL table as the migration source (SELECT-only session).
 
     Rows stream through a named server-side cursor so million-row sources

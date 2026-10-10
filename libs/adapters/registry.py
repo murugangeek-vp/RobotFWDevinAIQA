@@ -44,6 +44,9 @@ def _ensure_builtin():
     from importlib import import_module
 
     import libs.adapters.csv_source  # noqa: F401
+    import libs.adapters.mssql  # noqa: F401
+    import libs.adapters.mysql  # noqa: F401
+    import libs.adapters.oracle  # noqa: F401
     import libs.adapters.postgres_source  # noqa: F401
     import libs.adapters.postgres_target  # noqa: F401
     import libs.adapters.snowflake_target  # noqa: F401

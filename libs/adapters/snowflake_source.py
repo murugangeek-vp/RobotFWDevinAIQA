@@ -9,6 +9,8 @@ from libs.excelrules.validators import where_is_safe
 
 @register_source("snowflake")
 class SnowflakeSource(SourceAdapter):
+    dialect = "snowflake"
+
     def __init__(
         self,
         table,

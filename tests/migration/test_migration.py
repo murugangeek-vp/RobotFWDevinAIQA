@@ -517,5 +517,146 @@ class RelationsTests(unittest.TestCase):
         self.assertEqual(len(result["samples"]), 5)
 
 
+class NewDialectAdapterTests(unittest.TestCase):
+    """mysql/oracle/mssql adapters — SQL generation, quoting, guardrails.
+    Driver imports are lazy so these run without the optional
+    requirements-adapters.txt drivers installed."""
+
+    def _src(self, cls, dialect):
+        src = cls.__new__(cls)
+        src.dialect = dialect
+        src.schema_name, src.table, src.columns = "s", "t", ["a"]
+        src.where, src.snapshot_column, src._params = None, "updated_at", ("cut1",)
+        return src
+
+    def test_ident_quoting_per_dialect(self):
+        from libs.engine.schema import ident
+
+        self.assertEqual(ident("col", "mysql"), "`col`")
+        self.assertEqual(ident("a`b", "mysql"), "`a``b`")
+        self.assertEqual(ident("col", "mssql"), "[col]")
+        self.assertEqual(ident("a]b", "mssql"), "[a]]b]")
+        self.assertEqual(ident("col", "oracle"), '"COL"')
+        self.assertEqual(ident("col", "postgres"), '"col"')
+        self.assertEqual(ident("col", "snowflake"), '"col"')
+
+    def test_ora_dtype_normalization(self):
+        from libs.engine.schema import _ora_dtype
+
+        self.assertEqual(_ora_dtype("NUMBER", 19, 0), "NUMBER_INT")
+        self.assertEqual(_ora_dtype("NUMBER", 19, 2), "DECIMAL")
+        self.assertEqual(_ora_dtype("NUMBER", None, None), "NUMBER_INT")
+        self.assertEqual(_ora_dtype("VARCHAR2", None, None), "VARCHAR2")
+
+    def test_type_maps_cover_all_dialects(self):
+        from libs.engine.schema import TYPE_ALIASES, ddl_for_contract
+
+        for dialect in ("postgres", "snowflake", "mysql", "oracle", "mssql"):
+            self.assertIn(dialect, TYPE_ALIASES)
+            for t in ("integer", "decimal", "string", "date", "timestamp", "boolean"):
+                self.assertIn(t, TYPE_ALIASES[dialect])
+        for dialect in ("mysql", "oracle", "mssql"):
+            ddl = ddl_for_contract(
+                type(
+                    "C",
+                    (),
+                    {
+                        "columns": [
+                            {"name": "id", "type": "integer", "nullable": False},
+                            {"name": "amt", "type": "decimal", "nullable": True, "scale": 2},
+                            {"name": "nm", "type": "string", "nullable": True, "max_length": 9},
+                        ],
+                        "keys": ["id"],
+                        "schema": "s",
+                        "table": "t",
+                    },
+                )(),
+                dialect,
+            )
+            self.assertIn("PRIMARY KEY", ddl)
+
+    def test_select_sql_uses_dialect_paramstyle(self):
+        from libs.adapters.mssql import MssqlSource
+        from libs.adapters.mysql import MysqlSource
+        from libs.adapters.oracle import OracleSource
+
+        self.assertEqual(
+            self._src(MysqlSource, "mysql")._select_sql(),
+            "SELECT `a` FROM `s`.`t` WHERE `updated_at` <= %s",
+        )
+        self.assertEqual(
+            self._src(OracleSource, "oracle")._select_sql(),
+            'SELECT "A" FROM "S"."T" WHERE "UPDATED_AT" <= :1',
+        )
+        self.assertEqual(
+            self._src(MssqlSource, "mssql")._select_sql(),
+            "SELECT [a] FROM [s].[t] WHERE [updated_at] <= ?",
+        )
+
+    def test_exported_snapshot_rejected_before_connect(self):
+        from libs.adapters.mssql import MssqlSource
+        from libs.adapters.mysql import MysqlSource
+        from libs.adapters.oracle import OracleSource
+
+        for cls in (MysqlSource, OracleSource, MssqlSource):
+            with (
+                self.subTest(cls=cls.__name__),
+                self.assertRaisesRegex(ValueError, "postgres-only"),
+                patch.object(cls, "_connect") as connect,
+            ):
+                cls(
+                    host="h",
+                    port=1,
+                    database="d",
+                    user="u",
+                    password="p",
+                    table="t",
+                    snapshot="0001-0001-1",
+                )
+            connect.assert_not_called()
+
+    def test_query_guard_accepts_select_only(self):
+        from libs.adapters.dbapi import DbapiTarget, _vet_select
+
+        for dialect in ("mysql", "oracle", "mssql"):
+            _vet_select("SELECT a FROM t WHERE b = 1", dialect)
+            for bad in ("DELETE FROM t", "SELECT 1; DROP TABLE t", "INSERT INTO t VALUES (1)"):
+                with self.subTest(dialect=dialect, bad=bad), self.assertRaises(ValueError):
+                    _vet_select(bad, dialect)
+        tgt = DbapiTarget.__new__(DbapiTarget)
+        tgt.dialect, tgt._closed = "mysql", False
+        cur = MagicMock()
+        cur.description = [("a",)]
+        cur.fetchall.return_value = [(1,)]
+        tgt.conn = MagicMock()
+        tgt.conn.cursor.return_value = cur
+        tgt.query("SELECT a FROM t", (1,))
+        cur.execute.assert_called_once_with("SELECT a FROM t", (1,))
+        with self.assertRaises(ValueError):
+            tgt.query("UPDATE t SET a = 1")
+
+    def test_registry_resolves_new_types(self):
+        from libs.adapters.registry import _SOURCE_REGISTRY, _TARGET_REGISTRY, _ensure_builtin
+
+        _ensure_builtin()
+        for kind in ("mysql", "oracle", "mssql"):
+            self.assertIn(kind, _SOURCE_REGISTRY)
+            self.assertIn(kind, _TARGET_REGISTRY)
+
+    def test_catalog_dialect_queries(self):
+        from libs.adapters.catalog import inspect_schema
+
+        cur = MagicMock()
+        cur.fetchall.return_value = []
+        conn = MagicMock()
+        conn.cursor.return_value = cur
+        inspect_schema(conn, "SCH", dialect="oracle")
+        self.assertIn("all_tab_columns", cur.execute.call_args[0][0])
+        self.assertEqual(cur.execute.call_args[0][1], ("SCH",))
+        inspect_schema(conn, "sch", dialect="mssql")
+        self.assertIn("information_schema.columns", cur.execute.call_args[0][0])
+        self.assertIn("table_schema = ?", cur.execute.call_args[0][0])
+
+
 if __name__ == "__main__":
     unittest.main()
