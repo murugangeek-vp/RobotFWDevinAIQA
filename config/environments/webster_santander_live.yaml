@@ -5,6 +5,7 @@ run:
   allow_empty: false
   snapshot_id: ${MIGRATION_SNAPSHOT_ID}
   allow_post_snapshot: false  # rows past the watermark FAIL recon unless a delta migration is approved
+  fail_on_unmapped: true      # real migrations: unmapped tables must not pass silently
 source:
   type: postgres
   host: ${SOURCE_PG_HOST}

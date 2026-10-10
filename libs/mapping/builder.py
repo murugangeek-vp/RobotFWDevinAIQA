@@ -86,6 +86,8 @@ def build_contract(
             col["max_length"] = f.max_length
         if f.scale is not None:
             col["scale"] = f.scale
+        if f.pii:
+            col["pii"] = True
         if f.target_column in tm.keys:
             if f.nullable:
                 raise ValueError("Reconciliation keys must be non-nullable")

@@ -142,10 +142,13 @@ Progress: Stage 0 ▸ 13/14 · Stage 1 ▸ 8/9 · Stage 2 ▸ 3/6 · Stage 3 ▸
       generated trailer; suite `tests/migration/07_controls.robot`.
       _Rest: `Relations` sheet for FK orphan checks across mapped tables;
       subledger-to-GL balancing controls._
-- [ ] **D — Evidence polish.** `transform` stage compares transform columns
-      only (today it duplicates `recon`); evidence validation requires
-      `coverage == COMPLETE`; `run.fail_on_unmapped` gate; `pii` flag drives
-      selective (not all-or-nothing) redaction; fuse DQ source passes.
+- [x] **D — Evidence polish.** `transform` stage compares keys + transform
+      columns only (drift attributed to the transform layer); evidence
+      validation requires `coverage == COMPLETE`; `run.fail_on_unmapped`
+      gate on both sides (default off in demo, on in live); `pii` flag
+      (FieldMap `PII` column) drives selective diff-sample redaction —
+      unknown columns stay redacted; DQ stage runs rules and key-uniqueness
+      in a single source pass.
 - [ ] **E — Any-bank adapters & unified rules.** MySQL/Oracle/MSSQL adapters
       per `docs/ADAPTERS.md` checklist; S3/API sources (schema already
       reserves them); `libs/excelrules` extended to DB-backed sources so a

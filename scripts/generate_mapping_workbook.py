@@ -93,8 +93,13 @@ FIELDMAP_HEADERS = [
     "Max Length",
     "Scale",
     "Transformation",
+    "PII",
     "Enabled",
 ]
+
+# PII=yes columns get their diff sample values redacted in evidence;
+# non-PII columns show bounded actual values for reviewers.
+_PII_TARGETS = {"ssn_last4", "phone", "email", "full_name", "address"}
 
 # Transformation: blank = direct move (rename when names differ); otherwise an
 # engine expression — {col} placeholders, upper/lower/trim/substr/round/
@@ -488,7 +493,12 @@ def main():
     _sheet(wb, "README", None, README, first=True)
     wb["README"].column_dimensions["A"].width = 90
     _sheet(wb, "Tables", TABLES_HEADERS, TABLES)
-    _sheet(wb, "FieldMap", FIELDMAP_HEADERS, FIELDMAP)
+    _sheet(
+        wb,
+        "FieldMap",
+        FIELDMAP_HEADERS,
+        [[*r[:8], "yes" if r[2] in _PII_TARGETS else "no", r[8]] for r in FIELDMAP],
+    )
     _sheet(wb, "Controls", CONTROLS_HEADERS, CONTROLS)
     _sheet(wb, "Relations", RELATIONS_HEADERS, RELATIONS)
     _sheet(wb, "Mapping", MAPPING_HEADERS, MAPPING)

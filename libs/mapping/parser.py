@@ -180,6 +180,7 @@ def load_fields(path: str, tables: "list[TableMapping]") -> None:
                 max_length=_opt_int(row, "max length", ctx),
                 scale=_opt_int(row, "scale", ctx),
                 transformation=_opt(row, "transformation"),
+                pii=(_truth(row.get("pii")) if row.get("pii") not in (None, "") else False),
                 enabled=_truth(row.get("enabled")),
             )
         )

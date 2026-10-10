@@ -1,3 +1,4 @@
+import copy
 import hashlib
 import json
 import os
@@ -260,6 +261,14 @@ class MigrationLibrary:
                     row["unmapped_source_tables"] = sorted(
                         {c["table"] for c in catalog} - mapped_tables
                     )
+                    if row["unmapped_source_tables"] and self.env.get("run", {}).get(
+                        "fail_on_unmapped"
+                    ):
+                        row["status"] = "FAIL"
+                        row["detail"] = (
+                            "run.fail_on_unmapped: source tables without workbook mappings"
+                        )
+                        return row
                     row["source_metadata"] = [
                         c for c in catalog if c["table"] == contract.raw["source"]["table"]
                     ]
@@ -280,24 +289,25 @@ class MigrationLibrary:
                     return row
                 if stage == "dq":
                     failures = {}
-                    for chunk in source.read_chunks(self._batch(contract)):
-                        expected = mapped_rows(chunk, contract)
-                        found = rules.merge_failures(
-                            rules.evaluate_source_rules(chunk, contract),
-                            rules.evaluate_derived_rules(expected, contract),
-                        )
-                        for failure in found:
-                            failures[failure.rule_id] = (
-                                failures.get(failure.rule_id, 0) + failure.failing_rows
-                            )
-                    row["dq_failures"] = failures
-                    expected_chunks = (
-                        mapped_rows(chunk, contract)
-                        for chunk in source.read_chunks(self._batch(contract))
-                    )
+
+                    def _dq_pass():
+                        # One source read serves both checks: contract rules
+                        # are merged per chunk, and the mapped frame feeds the
+                        # sorted stream for key-uniqueness detection.
+                        for chunk in source.read_chunks(self._batch(contract)):
+                            expected = mapped_rows(chunk, contract)
+                            for failure in rules.merge_failures(
+                                rules.evaluate_source_rules(chunk, contract),
+                                rules.evaluate_derived_rules(expected, contract),
+                            ):
+                                failures[failure.rule_id] = (
+                                    failures.get(failure.rule_id, 0) + failure.failing_rows
+                                )
+                            yield expected
+
                     previous = None
                     with closing(
-                        ordered_chunks(expected_chunks, contract, self._batch(contract))
+                        ordered_chunks(_dq_pass(), contract, self._batch(contract))
                     ) as ordered:
                         for chunk in ordered:
                             for values in chunk.itertuples(index=False, name=None):
@@ -307,6 +317,7 @@ class MigrationLibrary:
                                 if key == previous:
                                     raise ValueError("Duplicate composite reconciliation keys")
                                 previous = key
+                    row["dq_failures"] = failures
                     if failures:
                         row["status"] = "FAIL"
                     return row
@@ -324,6 +335,14 @@ class MigrationLibrary:
                         row["unmapped_target_tables"] = sorted(
                             {c["table"] for c in catalog} - mapped_tables
                         )
+                        if row["unmapped_target_tables"] and self.env.get("run", {}).get(
+                            "fail_on_unmapped"
+                        ):
+                            row["status"] = "FAIL"
+                            row["detail"] = (
+                                "run.fail_on_unmapped: target tables without workbook mappings"
+                            )
+                            return row
                         asof = self.env["target"].get("asof_column")
                         if asof:
                             qn = (
@@ -418,7 +437,22 @@ class MigrationLibrary:
                         else:
                             row["detail"] = f"{len(specs)} controls certified"
                         return row
-                    result = self._compare(source, target, contract)
+                    check = contract
+                    if stage == "transform":
+                        # Attribute drift to the transform layer: compare keys
+                        # plus transform-derived columns only — recon already
+                        # covers the full column set.
+                        if not any("transform" in c for c in contract.columns):
+                            row["detail"] = "no transform columns declared"
+                            return row
+                        check = copy.deepcopy(contract)
+                        check.raw["columns"] = [
+                            c
+                            for c in contract.columns
+                            if "transform" in c or c["name"] in contract.keys
+                        ]
+                    result = self._compare(source, target, check)
+                    pii = {c["name"]: bool(c.get("pii")) for c in contract.columns}
                     row.update(
                         {
                             "source_count": result.source_count,
@@ -430,8 +464,12 @@ class MigrationLibrary:
                             "diff_samples": [
                                 {
                                     "column": d.column,
-                                    "expected": "[REDACTED]",
-                                    "actual": "[REDACTED]",
+                                    "expected": (
+                                        "[REDACTED]" if pii.get(d.column, True) else str(d.expected)
+                                    ),
+                                    "actual": (
+                                        "[REDACTED]" if pii.get(d.column, True) else str(d.actual)
+                                    ),
                                 }
                                 for d in result.diffs
                             ],
@@ -592,5 +630,5 @@ class MigrationLibrary:
     def validate_report(self, out_dir):
         self.write_report(out_dir)
         data = json.loads((Path(out_dir) / "run_summary.json").read_text(encoding="utf-8"))
-        if not data["results"] or data["verdict"] != "PASS":
+        if not data["results"] or data["verdict"] != "PASS" or data["coverage"] != "COMPLETE":
             raise AssertionError("Evidence contains failed, incomplete or absent checks")

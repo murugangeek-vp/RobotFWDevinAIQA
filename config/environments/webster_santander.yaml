@@ -8,6 +8,7 @@ run:
   batch_size: 2000
   sample_limit: 20
   allow_empty: false
+  fail_on_unmapped: false  # true = FAIL when tables lack workbook mappings
   snapshot_id: synthetic-demo
 source:
   type: postgres

@@ -17,6 +17,7 @@ class FieldMapping:
     max_length: "int | None" = None
     scale: "int | None" = None
     transformation: "str | None" = None
+    pii: bool = False
     enabled: bool = True
 
 
