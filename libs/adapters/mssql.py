@@ -10,8 +10,18 @@ from libs.adapters.dbapi import DbapiSource, DbapiTarget
 from libs.adapters.registry import register_source, register_target
 
 
-def _connect(host, port, database, user, password, driver="ODBC Driver 18 for SQL Server",
-             encrypt=None, trust_cert=None, timeout=15, **_):
+def _connect(
+    host,
+    port,
+    database,
+    user,
+    password,
+    driver="ODBC Driver 18 for SQL Server",
+    encrypt=None,
+    trust_cert=None,
+    timeout=15,
+    **_,
+):
     import pyodbc
 
     kw = {}

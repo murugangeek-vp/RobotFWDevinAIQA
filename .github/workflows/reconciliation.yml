@@ -32,6 +32,15 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s --health-timeout 5s --health-retries 10
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: root_ci
+          MYSQL_DATABASE: recon_src
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -proot_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 20
 
     steps:
       - uses: actions/checkout@v4
@@ -109,6 +118,15 @@ jobs:
         run: |
           python -m unittest discover -s tests/pilot -p "test_*.py" -v
           python -m unittest discover -s tests/migration -p "test_*.py" -v
+
+      - name: MySQL adapter smoke (real mysqld)
+        # Proves the dbapi adapters end-to-end on a real engine: RO grants,
+        # streaming chunks, watermark predicates, SELECT-only query guard.
+        env:
+          MYSQL_RO_PASSWORD: ${{ secrets.RECON_RO_PASSWORD }}
+        run: |
+          pip install pymysql==1.1.1
+          python scripts/mysql_adapter_smoke.py
 
       - uses: actions/upload-artifact@v4
         if: always()

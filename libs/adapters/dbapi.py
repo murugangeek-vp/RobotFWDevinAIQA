@@ -110,36 +110,26 @@ class DbapiSource(SourceAdapter):
         self.conn = self._connect(
             host=host, port=port, database=database, user=user, password=password, **kw
         )
-        self.schema_name = _vident(
-            schema or self._default_schema(user, database), "schema"
-        )
+        self.schema_name = _vident(schema or self._default_schema(user, database), "schema")
         self.table = _vident(table, "table")
         self.columns = [_vident(c, "column") for c in columns] if columns else None
         self.batch_size = int(batch_size or _DEFAULT_BATCH)
 
     def _qualified(self) -> str:
-        return (
-            f"{ident(self.schema_name, self.dialect)}.{ident(self.table, self.dialect)}"
-        )
+        return f"{ident(self.schema_name, self.dialect)}.{ident(self.table, self.dialect)}"
 
     def _select_sql(self, count_only: bool = False) -> str:
         cols = (
             "count(*)"
             if count_only
-            else (
-                ", ".join(ident(c, self.dialect) for c in self.columns)
-                if self.columns
-                else "*"
-            )
+            else (", ".join(ident(c, self.dialect) for c in self.columns) if self.columns else "*")
         )
         sql = f"SELECT {cols} FROM {self._qualified()}"
         clauses = []
         if self.where:
             clauses.append(f"({self.where})")
         if self.snapshot_column:
-            clauses.append(
-                f"{ident(self.snapshot_column, self.dialect)} <= {self.PARAM}"
-            )
+            clauses.append(f"{ident(self.snapshot_column, self.dialect)} <= {self.PARAM}")
         return sql + (" WHERE " + " AND ".join(clauses) if clauses else "")
 
     def read_chunks(self, size: int = 0):
@@ -260,9 +250,7 @@ class DbapiTarget(TargetAdapter):
         order = ", ".join(ident(k, self.dialect) for k in keys) if keys else "1"
         cur = self._cursor()
         try:
-            cur.execute(
-                f"SELECT {cols} FROM {self._qualified(table)} ORDER BY {order}"
-            )
+            cur.execute(f"SELECT {cols} FROM {self._qualified(table)} ORDER BY {order}")
             names = self._names(cur)
             while rows := cur.fetchmany(size):
                 yield pd.DataFrame(rows, columns=names, dtype=object)
@@ -287,14 +275,10 @@ class DbapiTarget(TargetAdapter):
             cur.close()
 
     def schema(self, table: str) -> list:
-        return fetch_db_schema(
-            self.conn, self.schema_name, table, dialect=self.dialect
-        )
+        return fetch_db_schema(self.conn, self.schema_name, table, dialect=self.dialect)
 
     def primary_key(self, table: str) -> list:
-        return fetch_primary_key(
-            self.conn, self.schema_name, table, dialect=self.dialect
-        )
+        return fetch_primary_key(self.conn, self.schema_name, table, dialect=self.dialect)
 
     def is_closed(self) -> bool:
         return self._closed

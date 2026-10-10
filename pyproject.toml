@@ -23,4 +23,4 @@ warn_redundant_casts = true
 # and ship no type stubs, so lazy imports would trip import-untyped.
 [[tool.mypy.overrides]]
 module = ["pymysql", "pymysql.*", "oracledb", "oracledb.*", "pyodbc", "pyodbc.*"]
-disable_error_code = ["import-untyped", "import-not-found"]
+ignore_missing_imports = true

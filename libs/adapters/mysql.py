@@ -11,7 +11,7 @@ from libs.adapters.registry import register_source, register_target
 
 
 def _connect(host, port, database, user, password, charset="utf8mb4", connect_timeout=15, **_):
-    import pymysql  # type: ignore[import-untyped]
+    import pymysql
 
     return pymysql.connect(
         host=host,

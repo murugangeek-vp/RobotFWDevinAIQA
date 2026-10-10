@@ -149,11 +149,18 @@ Progress: Stage 0 ▸ 13/14 · Stage 1 ▸ 8/9 · Stage 2 ▸ 3/6 · Stage 3 ▸
       (FieldMap `PII` column) drives selective diff-sample redaction —
       unknown columns stay redacted; DQ stage runs rules and key-uniqueness
       in a single source pass.
-- [ ] **E — Any-bank adapters & unified rules.** MySQL/Oracle/MSSQL adapters
-      per `docs/ADAPTERS.md` checklist; S3/API sources (schema already
-      reserves them); `libs/excelrules` extended to DB-backed sources so a
-      client rules workbook runs in DB→DB migrations; "which workbook when"
-      doc.
+- [~] **E — Any-bank adapters & unified rules.** ~~MySQL/Oracle/MSSQL
+      adapters~~ ✅ `libs/adapters/dbapi.py` shared base + `mysql.py`/
+      `oracle.py`/`mssql.py` behind the registry (source+target each);
+      dialect quoting/paramstyles, type maps + alias normalizers, catalog +
+      PK introspection, streaming cursors (pymysql SSCursor), snapshot
+      watermarks, single-SELECT guard. Drivers optional
+      (`requirements-adapters.txt`, lazy import). CI runs a real-mysqld
+      smoke (`mysql_adapter_smoke.py`: RO grants, chunks, watermark,
+      write-denial). ~~"which workbook when" doc~~ ✅ `EXCEL_MAPPING.md`.
+      _Rest: oracle/mssql real-DB smoke (mysql proves the pattern); S3/API
+      sources (schema already reserves them); `libs/excelrules` workbook
+      rules on DB-backed sources._
 - [ ] **F — Observability & scale proof.** Run store + trend report;
       secret-store resolver in `_expand_env`; 1M-row benchmark gate in
       nightly CI; parallel mappings; retry/resume.

@@ -5,6 +5,18 @@ table pairs, keys, scope filters, field renames, types and transformations.
 No per-table test code exists — the suites compile every enabled row into a
 validated contract at runtime.
 
+## Which workbook is which
+
+| Workbook | Drives | Suite |
+|---|---|---|
+| `data/mapping/bank_mapping.xlsx` | Bank→bank DB migration scope: `Tables`, `FieldMap`, `Mapping`, `Relations`, `Controls` | `tests/migration` |
+| `data/rules/business_rules.xlsx` | Row-level business/DQ rules for file→DB feeds | `tests/pilot` |
+
+Both compile to the same contract model — a rule or mapping declared in
+either runs through the same engine regardless of source dialect
+(postgres/snowflake/mysql/oracle/mssql or CSV), which is what "unified
+rules" means here: adapters translate, the engine is unchanged.
+
 Regenerate the demo workbook:
 
 ```bash
