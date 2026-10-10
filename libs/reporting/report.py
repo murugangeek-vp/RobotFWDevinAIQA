@@ -244,9 +244,13 @@ def write_evidence(results, meta, out_dir):
         if not results
         else ("PASS" if all(r["status"] == "PASS" for r in results) else "FAIL")
     )
-    required = {"source", "dq", "schema", "recon", "controls", "transform"}
+    base = {"source", "dq", "schema", "recon", "controls", "transform"}
+    relation_children = set(meta.get("relation_children") or [])
     coverage = {
-        name: sorted(required - {r["stage"] for r in results if r["mapping"] == name})
+        name: sorted(
+            (base | ({"relations"} if name in relation_children else set()))
+            - {r["stage"] for r in results if r["mapping"] == name}
+        )
         for name in meta.get("selected", [])
     }
     complete = bool(coverage) and not any(coverage.values())
@@ -335,6 +339,13 @@ def write_evidence(results, meta, out_dir):
                 "field_mappings",
                 "unmapped_source_tables",
                 "unmapped_target_tables",
+                "relation",
+                "source_orphans",
+                "source_null_fk",
+                "target_orphans",
+                "target_null_fk",
+                "post_snapshot_arrivals",
+                "target_asof",
             )
             if k in row
         }

@@ -58,9 +58,18 @@ def _dec(v):
 
 
 def _gcanon(v) -> str:
-    """Canonical group-key component — cross-DB type drift (int 101 vs
-    '101') must not split a group."""
-    return "" if _is_empty(v) else str(v).strip()
+    """Canonical group-key component — cross-DB type drift must not split a
+    group: numeric values compare numerically (int 101 vs float 101.0 vs
+    '101'), but STRINGS stay literal — '001' and '1' are different
+    identifiers in banking."""
+    if _is_empty(v):
+        return ""
+    if isinstance(v, str):
+        return v.strip()
+    d = _dec(v)
+    if d is not None and d == d.to_integral_value():
+        return str(int(d))
+    return str(v).strip()
 
 
 def _value(spec_type: str, numeric: bool, v):
@@ -88,7 +97,7 @@ def compute_controls(chunks, contract: Contract) -> dict:
         for spec in specs
     }
     for chunk in chunks:
-        names = {c for spec in specs for c in ([spec.get("column")] or [])} | {
+        names = {c for spec in specs for c in [spec.get("column")]} | {
             g for spec in specs for g in (spec.get("group_by") or [])
         }
         names.discard(None)
@@ -215,15 +224,20 @@ def validate_control_file(agg: dict, declared: dict, contract: Contract) -> list
                         "actual": "(no computed rows)",
                     }
                 )
-            elif dec is not None and _dec(cval) is not None and _dec(cval) != dec:
+            elif (
+                dec is not None
+                and _dec(cval) is not None
+                and _dec(cval) != dec
+                or dec is None
+                and str(cval) != dval
+            ):
                 diffs.append(
-                    {"control": cid, "group": gstr or "(all rows)", "expected": dval,
-                     "actual": str(cval)}
-                )
-            elif dec is None and str(cval) != dval:
-                diffs.append(
-                    {"control": cid, "group": gstr or "(all rows)", "expected": dval,
-                     "actual": str(cval)}
+                    {
+                        "control": cid,
+                        "group": gstr or "(all rows)",
+                        "expected": dval,
+                        "actual": str(cval),
+                    }
                 )
         for key in computed.keys() - seen:
             diffs.append(

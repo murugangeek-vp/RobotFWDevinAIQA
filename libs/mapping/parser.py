@@ -33,6 +33,7 @@ TABLES_SHEET = "Tables"
 FIELDMAP_SHEET = "FieldMap"
 MAPPING_SHEET = "Mapping"
 CONTROLS_SHEET = "Controls"
+RELATIONS_SHEET = "Relations"
 
 _TABLES_REQUIRED = [
     "mapping id",
@@ -69,6 +70,7 @@ def _rows_by_header(ws):
         FIELDMAP_SHEET: _FIELDMAP_REQUIRED,
         MAPPING_SHEET: ["mapping name", "code", "value"],
         CONTROLS_SHEET: ["mapping id", "control id", "type"],
+        RELATIONS_SHEET: ["parent mapping", "parent column", "child mapping", "child column"],
     }[ws.title]
     if len(headers) != len(set(headers)) or set(required) - set(headers):
         raise ValueError(f"{ws.title}: missing or duplicate headers")
@@ -226,6 +228,34 @@ def load_controls(path: str, tables: "list[TableMapping]") -> None:
         by_id[mid].controls.append(spec)
 
 
+def load_relations(path: str, tables: "list[TableMapping]") -> None:
+    """Attach Relations-sheet FK specs to the CHILD TableMapping (in place).
+
+    Columns name target-side contract columns on each side; membership is
+    enforced when the relations stage resolves both contracts."""
+    by_id = {t.mapping_id: t for t in tables}
+    seen = set()
+    for n, row in enumerate(_read_rows(path, RELATIONS_SHEET, optional=True), 1):
+        ctx = f"Relations row {n + 1}"
+        pmid = _need(row, "parent mapping", ctx)
+        cmid = _need(row, "child mapping", ctx)
+        for mid in (pmid, cmid):
+            if mid not in by_id:
+                raise ValueError(f"{ctx}: Mapping ID {mid!r} not declared on Tables sheet")
+        if not _truth(row.get("enabled") if row.get("enabled") not in (None, "") else "yes"):
+            continue
+        rel = {
+            "parent_mapping": pmid,
+            "parent_column": _need(row, "parent column", ctx),
+            "child_column": _need(row, "child column", ctx),
+        }
+        key = (cmid, rel["child_column"], pmid, rel["parent_column"])
+        if key in seen:
+            raise ValueError(f"{ctx}: duplicate relation {key}")
+        seen.add(key)
+        by_id[cmid].relations.append(rel)
+
+
 def load_code_mappings(path: str) -> dict:
     """Mapping sheet -> {mapping_name: {code: value}} for map() transforms."""
     out: dict[str, dict] = {}
@@ -242,10 +272,11 @@ def load_code_mappings(path: str) -> dict:
 
 
 def load_workbook(path: str) -> "tuple[list[TableMapping], dict]":
-    """Parse Tables + FieldMap + Controls + Mapping. Returns (table_mappings, code_maps)."""
+    """Parse Tables + FieldMap + Controls + Relations + Mapping."""
     if not Path(path).is_file():
         raise FileNotFoundError(f"mapping workbook not found: {path}")
     tables = load_tables(path)
     load_fields(path, tables)
     load_controls(path, tables)
+    load_relations(path, tables)
     return tables, load_code_mappings(path)

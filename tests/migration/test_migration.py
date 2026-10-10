@@ -14,6 +14,7 @@ from libs.adapters.snowflake_source import SnowflakeSource
 from libs.adapters.snowflake_target import SnowflakeTarget
 from libs.adapters.staging import ordered_chunks
 from libs.engine import controls as engine_controls
+from libs.engine import relations as engine_relations
 from libs.engine.mapping_transforms import evaluate, mapped_rows, parse_expression
 from libs.engine.reconcile import compare_chunked, normalize
 from libs.mapping import builder, parser
@@ -475,6 +476,45 @@ class ControlsTests(unittest.TestCase):
             self.assertIn("absent from control file", diffs[0]["actual"])
         with self.assertRaises(FileNotFoundError):
             engine_controls.load_control_file("data/trailer/does_not_exist.csv")
+
+
+class RelationsTests(unittest.TestCase):
+    def setUp(self):
+        tables, _ = parser.load_workbook(str(WORKBOOK))
+        self.rels = {t.mapping_id: t.relations for t in tables if t.relations}
+
+    def test_workbook_relations_parse_and_attach_to_children(self):
+        self.assertEqual(
+            set(self.rels), {"account_migration", "transaction_migration", "loan_migration"}
+        )
+        self.assertEqual(len(self.rels["account_migration"]), 2)
+        self.assertEqual(
+            self.rels["transaction_migration"][0],
+            {
+                "parent_mapping": "account_migration",
+                "parent_column": "account_id",
+                "child_column": "account_id",
+            },
+        )
+
+    def test_key_set_canonicalizes_types(self):
+        chunks = [pd.DataFrame({"k": [1, 2, None]}), pd.DataFrame({"k": [" 3 ", 2]})]
+        self.assertEqual(engine_relations.key_set(chunks, "k"), {"1", "2", "3"})
+        with self.assertRaises(ValueError):
+            engine_relations.key_set(chunks, "missing")
+
+    def test_find_orphans_exact_counts_and_nulls_apart(self):
+        chunks = [pd.DataFrame({"fk": [1, 9, None, "8", 9]})]
+        result = engine_relations.find_orphans(chunks, "fk", {"1", "2"})
+        self.assertEqual(result["orphans"], 3)
+        self.assertEqual(result["null_fk"], 1)
+        self.assertEqual(sorted(result["samples"]), ["8", "9", "9"])
+
+    def test_orphans_are_exact_not_bounded(self):
+        chunks = [pd.DataFrame({"fk": list(range(100, 200))})]
+        result = engine_relations.find_orphans(chunks, "fk", set(), sample_limit=5)
+        self.assertEqual(result["orphans"], 100)
+        self.assertEqual(len(result["samples"]), 5)
 
 
 if __name__ == "__main__":

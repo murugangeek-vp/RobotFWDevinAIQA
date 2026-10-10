@@ -390,6 +390,25 @@ CONTROLS = [
     ["branch_migration", "branch_rows", "count", "", "", "branch_rows", "yes"],
 ]
 
+RELATIONS_HEADERS = [
+    "Parent Mapping",
+    "Parent Column",
+    "Child Mapping",
+    "Child Column",
+    "Enabled",
+]
+
+# FK integrity across mappings — target-side column names on both ends.
+# The relations stage checks both sides: orphans in source space (source DQ
+# problem) and in the target (a migration integrity break). Null FKs are
+# counted separately, not treated as orphans.
+RELATIONS = [
+    ["customer_migration", "customer_id", "account_migration", "customer_id", "yes"],
+    ["branch_migration", "branch_id", "account_migration", "branch_id", "yes"],
+    ["account_migration", "account_id", "transaction_migration", "account_id", "yes"],
+    ["customer_migration", "customer_id", "loan_migration", "customer_id", "yes"],
+]
+
 MAPPING_HEADERS = ["Mapping Name", "Code", "Value"]
 MAPPING = [
     ["status_codes", "A", "active"],
@@ -442,6 +461,10 @@ README = [
     ["  File Name: the certified total's name in the bank trailer file"],
     ["    (env source.control_file); blank = Control ID is used."],
     [""],
+    ["Relations sheet — FK pairs across mappings (optional)."],
+    ["  Parent/Child columns are target-side names; every child value must"],
+    ["  exist in the parent's column on BOTH source and target sides."],
+    [""],
     ["Connection details are NOT in this workbook — they live in"],
     ["config/environments/*.yaml; credentials come from env vars only."],
 ]
@@ -467,6 +490,7 @@ def main():
     _sheet(wb, "Tables", TABLES_HEADERS, TABLES)
     _sheet(wb, "FieldMap", FIELDMAP_HEADERS, FIELDMAP)
     _sheet(wb, "Controls", CONTROLS_HEADERS, CONTROLS)
+    _sheet(wb, "Relations", RELATIONS_HEADERS, RELATIONS)
     _sheet(wb, "Mapping", MAPPING_HEADERS, MAPPING)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     wb.save(OUT)

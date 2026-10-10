@@ -107,6 +107,20 @@
         }
       }
     },
+    "relations": {
+      "type": "array",
+      "description": "FK integrity across contracts: child column (this contract) must exist in the parent contract's column — checked on both source and target sides",
+      "items": {
+        "type": "object",
+        "required": ["parent_mapping", "parent_column", "child_column"],
+        "additionalProperties": false,
+        "properties": {
+          "parent_mapping": {"type": "string", "minLength": 1},
+          "parent_column": {"type": "string", "minLength": 1},
+          "child_column": {"type": "string", "minLength": 1}
+        }
+      }
+    },
     "metadata": {
       "type": "object",
       "properties": {

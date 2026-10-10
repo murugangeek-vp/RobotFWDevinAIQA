@@ -12,6 +12,7 @@ from libs.adapters.registry import create_source, create_target
 from libs.adapters.staging import ordered_chunks
 from libs.engine import controls as engine_controls
 from libs.engine import reconcile, rules, schema
+from libs.engine import relations as engine_relations
 from libs.engine.mapping_transforms import mapped_rows
 from libs.mapping import builder, parser
 from libs.reporting.report import write_evidence
@@ -127,6 +128,7 @@ class MigrationLibrary:
                     "unselected": [t.mapping_id for t in tables if t.enabled and t not in chosen],
                     "git_commit": ReconciliationLibrary._git_head(),
                     "executor": os.environ.get("USERNAME", os.environ.get("USER", "")),
+                    "relation_children": [t.mapping_id for t in chosen if t.relations],
                     "read_only": True,
                     "comparison": "canonical external sort; full comparison or client-side SHA-256",
                     "evidence_values": "redacted; exact totals with bounded samples",
@@ -458,6 +460,93 @@ class MigrationLibrary:
             self.evidence.append(row)
         return row
 
+    def _relations(self):
+        """Cross-mapping FK orphan checks — one evidence row per declared
+        relation, on both the source (post-transform) and target sides."""
+        by_name = {c.name: c for c in self.contracts}
+        rows = []
+        for child in self.contracts:
+            for rel in child.raw.get("relations", []):
+                row = {
+                    "mapping": child.name,
+                    "stage": "relations",
+                    "status": "PASS",
+                    "detail": "",
+                    "relation": (
+                        f"{rel['parent_mapping']}.{rel['parent_column']}"
+                        f" <- {child.name}.{rel['child_column']}"
+                    ),
+                }
+                started = time.perf_counter()
+                try:
+                    parent = by_name.get(rel["parent_mapping"])
+                    if parent is None:
+                        raise ValueError(
+                            f"relation parent {rel['parent_mapping']!r} "
+                            "is not a selected mapping"
+                        )
+                    for side, contract, col in (
+                        ("parent", parent, rel["parent_column"]),
+                        ("child", child, rel["child_column"]),
+                    ):
+                        if col not in {c["name"] for c in contract.columns}:
+                            raise ValueError(
+                                f"relation {side} column {col!r} is not mapped in {contract.name}"
+                            )
+                    batch = self._batch(child)
+                    with closing(self._source(parent)) as psrc:
+                        pkeys_src = engine_relations.key_set(
+                            self._mapped(psrc.read_chunks(batch), parent),
+                            rel["parent_column"],
+                        )
+                    with closing(self._source(child)) as csrc:
+                        src = engine_relations.find_orphans(
+                            self._mapped(csrc.read_chunks(batch), child),
+                            rel["child_column"],
+                            pkeys_src,
+                        )
+                    with closing(self._target(parent)) as ptgt:
+                        pkeys_tgt = engine_relations.key_set(
+                            ptgt.read_chunks(
+                                parent.table, columns=[rel["parent_column"]], size=batch
+                            ),
+                            rel["parent_column"],
+                        )
+                    with closing(self._target(child)) as ctgt:
+                        tgt = engine_relations.find_orphans(
+                            ctgt.read_chunks(
+                                child.table, columns=[rel["child_column"]], size=batch
+                            ),
+                            rel["child_column"],
+                            pkeys_tgt,
+                        )
+                    row.update(
+                        {
+                            "source_orphans": src["orphans"],
+                            "source_null_fk": src["null_fk"],
+                            "target_orphans": tgt["orphans"],
+                            "target_null_fk": tgt["null_fk"],
+                        }
+                    )
+                    if src["orphans"] or tgt["orphans"]:
+                        row["status"] = "FAIL"
+                        row["detail"] = (
+                            f"{src['orphans']} source / {tgt['orphans']} target orphan rows"
+                        )
+                        row["dq_failures"] = {
+                            "orphan_samples": (tgt["samples"] or src["samples"])[:5]
+                        }
+                    else:
+                        row["detail"] = "no orphans on either side"
+                except Exception as exc:
+                    row["status"] = "ERROR"
+                    row["detail"] = f"{type(exc).__name__}: relation check could not complete"
+                finally:
+                    row["seconds"] = round(time.perf_counter() - started, 3)
+                    self.evidence.append(row)
+                    rows.append(row)
+        return rows
+
     @keyword("Run Migration Stage")
     def run_stage(self, stage):
         if stage not in (
@@ -468,6 +557,7 @@ class MigrationLibrary:
             "recon",
             "controls",
             "transform",
+            "relations",
             "negative",
             "e2e",
         ):
@@ -480,9 +570,15 @@ class MigrationLibrary:
         failed = []
         for contract in self.contracts:
             for step in stages:
+                if step == "relations":
+                    continue  # cross-mapping — handled after the per-contract loop
                 row = self._one(step, contract)
                 if row["status"] != "PASS":
                     failed.append(f"{contract.name}/{step}: {row['status']}")
+        if stage in ("relations", "e2e"):
+            for row in self._relations():
+                if row["status"] != "PASS":
+                    failed.append(f"{row['mapping']}/relations: {row['status']}")
         if not self.contracts:
             raise AssertionError("No mappings configured")
         if failed:

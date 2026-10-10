@@ -36,3 +36,4 @@ class TableMapping:
     batch_size: "int | None" = None
     fields: list = field(default_factory=list)  # list[FieldMapping]
     controls: list = field(default_factory=list)  # Controls-sheet aggregate specs
+    relations: list = field(default_factory=list)  # Relations-sheet FK specs (child side)

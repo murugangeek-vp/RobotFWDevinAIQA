@@ -112,6 +112,8 @@ def build_contract(
         raw["mappings"] = code_mappings
     if tm.controls:
         raw["controls"] = [dict(c) for c in tm.controls]
+    if tm.relations:
+        raw["relations"] = [dict(r) for r in tm.relations]
     if tm.recon_mode != "full" or tm.batch_size:
         raw["recon"] = {"mode": tm.recon_mode}
         if tm.batch_size:
