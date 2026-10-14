@@ -219,10 +219,26 @@ class MigrationLibrary:
                             )
                         chunk = pd.concat([chunk, added], ignore_index=True)
                     else:
-                        col = next(c for c in contract.columns if c["name"] not in contract.keys)
-                        value = chunk.iloc[0][col["name"]]
-                        replacement = str(value) + "_DEFECT" if col["type"] == "string" else None
-                        chunk.loc[chunk.index[0], col["name"]] = replacement
+                        col = next(
+                            (c for c in contract.columns if c["name"] not in contract.keys),
+                            None,
+                        )
+                        if col is None:
+                            # Every mapped column is a key — tampering the key
+                            # is an identity change (missing + extra), which is
+                            # the only defect a key-only table can carry.
+                            key = contract.keys[0]
+                            chunk.loc[chunk.index[0], key] = (
+                                -999999999
+                                if contract.column(key)["type"] == "integer"
+                                else str(chunk.iloc[0][key]) + "_DEFECT"
+                            )
+                        else:
+                            value = chunk.iloc[0][col["name"]]
+                            replacement = (
+                                str(value) + "_DEFECT" if col["type"] == "string" else None
+                            )
+                            chunk.loc[chunk.index[0], col["name"]] = replacement
                     changed = True
                 yield chunk
             if not changed:
@@ -393,9 +409,15 @@ class MigrationLibrary:
                         missing = self._compare(source, target, contract, "missing")
                         tamper = self._compare(source, target, contract, "tamper")
                         extra = self._compare(source, target, contract, "extra")
+                        key_only = not any(c["name"] not in contract.keys for c in contract.columns)
+                        tampered = (
+                            tamper.count("missing_in_target") + tamper.count("extra_in_target") == 2
+                            if key_only
+                            else tamper.count("diffs") == 1
+                        )
                         if (
                             missing.count("missing_in_target") != 1
-                            or tamper.count("diffs") != 1
+                            or not tampered
                             or extra.count("extra_in_target") != 1
                         ):
                             raise ValueError("Defect counts differ from the injected defects")

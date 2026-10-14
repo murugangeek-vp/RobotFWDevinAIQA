@@ -63,6 +63,15 @@ def _casewhen(v, *args):
     return next((t for w, t in pairs if str(v) == str(w)), default)
 
 
+def _band(v, lo, hi, low_label, mid_label, high_label):
+    """band(score, 40, 70, 'LOW', 'MEDIUM', 'HIGH') — numeric bucketing for
+    code derivation: v<=lo -> low_label; v>hi -> high_label; else mid."""
+    d = Decimal(str(v))
+    if d <= Decimal(str(lo)):
+        return str(low_label)
+    return str(high_label) if d > Decimal(str(hi)) else str(mid_label)
+
+
 def _date_fmt(v, out_fmt, in_fmt=None):
     """Date/timestamp -> strftime'd string ('%d/%m/%Y' etc.).
 
@@ -102,6 +111,7 @@ _SAFE_FUNCS: dict = {
     "dec": lambda v: _demo_decipher(v, _key()),
     "ifnull": _ifnull,
     "casewhen": _casewhen,
+    "band": _band,
     "mul": lambda a, b: Decimal(str(a)) * Decimal(str(b)),
     "date_fmt": _date_fmt,
 }

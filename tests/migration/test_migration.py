@@ -48,6 +48,22 @@ class MappingTests(unittest.TestCase):
         table.keys = ["customer_id", "first_name"]
         self.assertFalse(self.compile(table).column("first_name")["unique"])
 
+    def test_band_transform_buckets_scores(self):
+        from libs.engine.reconcile import apply_transform
+
+        row = pd.Series({"risk_rating_score": 55})
+        expr = "band(risk_rating_score, 40, 70, 'LOW', 'MEDIUM', 'HIGH')"
+        self.assertEqual(apply_transform(expr, row), "MEDIUM")
+        for score, want in (
+            (1, "LOW"),
+            (40, "LOW"),
+            (41, "MEDIUM"),
+            (70, "MEDIUM"),
+            (71, "HIGH"),
+            (100, "HIGH"),
+        ):
+            self.assertEqual(apply_transform(expr, pd.Series({"risk_rating_score": score})), want)
+
     def test_unknown_transform_rejected(self):
         for expression in (
             "evil(email)",
