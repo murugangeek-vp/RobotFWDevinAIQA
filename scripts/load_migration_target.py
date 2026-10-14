@@ -52,7 +52,12 @@ def main():
         contract = builder.build_contract(
             t, codes, env["source"], env["target"], str(args.workbook)
         )
-        source = create_source(contract.raw["source"])
+        # `snapshot: exported` is a verifier-only directive — resolving it
+        # needs a holder connection pinned for a whole run, which the loader
+        # doesn't manage. The load path reads current source state;
+        # snapshot_column/snapshot_value watermarking stays honored.
+        src_cfg = {k: v for k, v in contract.raw["source"].items() if k != "snapshot"}
+        source = create_source(src_cfg)
         try:
             frames = [mapped_rows(chunk, contract) for chunk in source.read_chunks()]
         finally:
