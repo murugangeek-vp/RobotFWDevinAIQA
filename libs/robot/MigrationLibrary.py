@@ -142,7 +142,7 @@ class MigrationLibrary:
                     "mapping": "configuration",
                     "stage": "setup",
                     "status": "ERROR",
-                    "detail": type(exc).__name__,
+                    "detail": f"{type(exc).__name__}: {exc}"[:500],
                 }
             )
             raise
@@ -496,8 +496,11 @@ class MigrationLibrary:
                         row["status"] = "FAIL"
         except Exception as exc:
             row["status"] = "ERROR"
+            # Bounded message — enough to diagnose (which module, which
+            # connection, which column) without dumping rows or credentials.
             row["detail"] = (
-                f"{type(exc).__name__}: validation could not complete; check mapped schema, types, keys and connectivity"
+                f"{type(exc).__name__}: {exc}"[:500]
+                or f"{type(exc).__name__}: validation could not complete"
             )
         finally:
             row["seconds"] = round(time.perf_counter() - started, 3)
@@ -584,7 +587,7 @@ class MigrationLibrary:
                         row["detail"] = "no orphans on either side"
                 except Exception as exc:
                     row["status"] = "ERROR"
-                    row["detail"] = f"{type(exc).__name__}: relation check could not complete"
+                    row["detail"] = f"{type(exc).__name__}: {exc}"[:500]
                 finally:
                     row["seconds"] = round(time.perf_counter() - started, 3)
                     self.evidence.append(row)
