@@ -213,9 +213,7 @@ def main():
     )
     conn.autocommit = False
     cur = conn.cursor()
-    cur.execute(
-        "SELECT 1 FROM information_schema.schemata WHERE schema_name = %s", ("bank1",)
-    )
+    cur.execute("SELECT 1 FROM information_schema.schemata WHERE schema_name = %s", ("bank1",))
     if cur.fetchone():
         cur.close()
         conn.close()
@@ -231,11 +229,15 @@ def main():
     for i, (city_code, _cname, _st) in enumerate(_CITIES * 2):
         routing = f"MSSB{i:07d}"
         branches.append(
-            (routing, fake.company() + " Branch", city_code,
-             rnd.choice(["TIER_1", "TIER_2", "TIER_3"]),
-             # last branch inactive — exercises the workbook WHERE scope
-             # filter; it must never receive accounts (would be an orphan)
-             i < len(_CITIES * 2) - 1)
+            (
+                routing,
+                fake.company() + " Branch",
+                city_code,
+                rnd.choice(["TIER_1", "TIER_2", "TIER_3"]),
+                # last branch inactive — exercises the workbook WHERE scope
+                # filter; it must never receive accounts (would be an orphan)
+                i < len(_CITIES * 2) - 1,
+            )
         )
     active_branches = branches[:-1]
     execute_values(cur, "INSERT INTO bank1.ent_branches VALUES %s", branches)
@@ -286,9 +288,16 @@ def main():
         status = rnd.choices(_ACCT_STATUS, _ACCT_W)[0]
         insider = rnd.random() < 0.02
         accounts.append(
-            (acct, cust[0], prod[0], branch[0], status,
-             ccy_of[iso],
-             insider, datetime(2020, 1, 1) + timedelta(days=rnd.randint(0, 2000)))
+            (
+                acct,
+                cust[0],
+                prod[0],
+                branch[0],
+                status,
+                ccy_of[iso],
+                insider,
+                datetime(2020, 1, 1) + timedelta(days=rnd.randint(0, 2000)),
+            )
         )
         if prod[1] == "SAVINGS":
             bal = Decimal(rnd.randint(1000, 9000000)) / 100
@@ -298,16 +307,25 @@ def main():
             sanctioned = Decimal(rnd.randint(500000, 90000000)) / 100
             outstanding = sanctioned - Decimal(rnd.randint(0, 60)) * sanctioned / 100
             loans.append(
-                (acct, outstanding, sanctioned, rnd.choice([120, 180, 240, 300]),
-                 (sanctioned / 240).quantize(Decimal("0.0001")),
-                 date(2026, 11, rnd.randint(1, 28)))
+                (
+                    acct,
+                    outstanding,
+                    sanctioned,
+                    rnd.choice([120, 180, 240, 300]),
+                    (sanctioned / 240).quantize(Decimal("0.0001")),
+                    date(2026, 11, rnd.randint(1, 28)),
+                )
             )
         else:
             principal = Decimal(rnd.randint(100000, 50000000)) / 100
             fds.append(
-                (acct, principal, (principal * Decimal("1.071")).quantize(Decimal("0.0001")),
-                 date(2028, 1, 1) + timedelta(days=rnd.randint(0, 700)),
-                 rnd.random() < 0.5)
+                (
+                    acct,
+                    principal,
+                    (principal * Decimal("1.071")).quantize(Decimal("0.0001")),
+                    date(2028, 1, 1) + timedelta(days=rnd.randint(0, 700)),
+                    rnd.random() < 0.5,
+                )
             )
     execute_values(cur, "INSERT INTO bank1.account_master VALUES %s", accounts)
     execute_values(cur, "INSERT INTO bank1.ledger_savings VALUES %s", savings)
@@ -339,10 +357,14 @@ def main():
 
     _write_trailer(args.trailer, savings, loans, fds, accounts, customers)
     for name, rows in (
-        ("ent_branches", branches), ("app_users", users),
-        ("customer_master", customers), ("bank_products", _PRODUCTS),
-        ("account_master", accounts), ("ledger_savings", savings),
-        ("ledger_loans", loans), ("ledger_fixed_deposits", fds),
+        ("ent_branches", branches),
+        ("app_users", users),
+        ("customer_master", customers),
+        ("bank_products", _PRODUCTS),
+        ("account_master", accounts),
+        ("ledger_savings", savings),
+        ("ledger_loans", loans),
+        ("ledger_fixed_deposits", fds),
         ("transaction_journal", txns),
     ):
         print(f"  bank1.{name}: {len(rows)} rows")

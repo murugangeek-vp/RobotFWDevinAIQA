@@ -516,6 +516,12 @@ class MigrationLibrary:
                             )
                     if result.mismatch_count:
                         row["status"] = "FAIL"
+                    elif not row["detail"]:
+                        row["detail"] = (
+                            f"{result.target_count}/{result.source_count} rows match; "
+                            f"{row['missing']} missing / {row['extra']} extra / "
+                            f"{row['diffs']} column diffs"
+                        )
         except Exception as exc:
             row["status"] = "ERROR"
             # Bounded message — enough to diagnose (which module, which
