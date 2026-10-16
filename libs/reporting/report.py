@@ -359,7 +359,14 @@ def write_evidence(results, meta, out_dir):
                     json.dumps(observed, default=str),
                 ]
             )
-        for key in ("dq_failures", "schema_errors", "diff_samples", "control_mismatches"):
+        for key in (
+            "dq_failures",
+            "schema_errors",
+            "missing_samples",
+            "extra_samples",
+            "diff_samples",
+            "control_mismatches",
+        ):
             if row.get(key):
                 sheets["Diffs & Violations"].append(
                     [row["mapping"], row["stage"], json.dumps(row[key], default=str)]

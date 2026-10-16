@@ -549,12 +549,19 @@ class MigrationLibrary:
                         ]
                     result = self._compare(source, target, check)
                     pii = {c["name"]: bool(c.get("pii")) for c in contract.columns}
+                    sample_limit = int(self.env.get("run", {}).get("sample_limit", 20))
                     row.update(
                         {
                             "source_count": result.source_count,
                             "target_count": result.target_count,
                             "missing": result.count("missing_in_target"),
                             "extra": result.count("extra_in_target"),
+                            "missing_samples": [
+                                str(k) for k in result.missing_in_target[:sample_limit]
+                            ],
+                            "extra_samples": [
+                                str(k) for k in result.extra_in_target[:sample_limit]
+                            ],
                             "diffs": result.count("diffs"),
                             "mismatches": result.mismatch_count,
                             "diff_samples": [
