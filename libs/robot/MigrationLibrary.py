@@ -24,6 +24,25 @@ from libs.mapping import builder, parser
 from libs.reporting.report import write_evidence
 from libs.robot.ReconciliationLibrary import ReconciliationLibrary, _expand_env, load_credentials
 
+_LOADER_CRED_KEYS = {"load_user", "load_password"}
+
+
+def _strip_loader_credentials(node):
+    """Remove loader-only credential keys before env expansion.
+
+    The verify suites never write to a target, so a missing RECON_RW_* env
+    var must not fail the run — and write credentials should never even be
+    loaded into the verifier's process. `load_phase2_hop.py` expands the raw
+    file itself and still requires them there.
+    """
+    if isinstance(node, dict):
+        return {
+            k: _strip_loader_credentials(v) for k, v in node.items() if k not in _LOADER_CRED_KEYS
+        }
+    if isinstance(node, list):
+        return [_strip_loader_credentials(v) for v in node]
+    return node
+
 
 class MigrationLibrary:
     ROBOT_LIBRARY_SCOPE = "GLOBAL"
@@ -102,7 +121,8 @@ class MigrationLibrary:
         root = Path(__file__).resolve().parents[2]
         load_credentials(root / ".env")
         try:
-            self.env = _expand_env(yaml.safe_load(Path(env_file).read_text(encoding="utf-8")))
+            raw = yaml.safe_load(Path(env_file).read_text(encoding="utf-8"))
+            self.env = _expand_env(_strip_loader_credentials(raw))
             run = self.env.get("run", {})
             if not self.env["target"].get("fake") and not run.get("snapshot_id"):
                 raise ValueError(
