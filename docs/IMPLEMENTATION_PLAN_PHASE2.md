@@ -84,7 +84,7 @@ expressions only. Two-part implementation:
 ### P2-4 — CSV fixture generator + hop loaders
 - `scripts/generate_phase1_csv.py` — deterministic synthetic CSVs per table
   (CUP00301/CUP01201/DIM_REFERENCE + negative files: malformed rows, dup keys,
-  bad codes, null PKs, encoding edge cases) into `data/phase2_csv/`.
+  bad codes, null PKs, encoding edge cases) into `data/phase1_csv/`.
 - `scripts/load_phase2_hop.py` — env-driven loader: CSV→landing (COPY),
   landing→integration and integration→target apply the workbook transforms
   through the real engine (`mapped_rows`) into the next database — mirrors

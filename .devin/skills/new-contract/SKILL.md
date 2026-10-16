@@ -35,7 +35,7 @@ existing `tests/migration` suites apply unchanged. No per-feed test code.
      when the spec is the source.
 2. **Fixtures.** Extend `scripts/generate_phase1_csv.py` — deterministic
    synthetic rows only, plus corrupted siblings under
-   `data/phase2/negative/` with EXACT seeded defect counts and matching
+   `data/phase1/negative/` with EXACT seeded defect counts and matching
    trailer totals (`name,group,value`).
 3. **Environment.** Env YAMLs under `config/environments/phase1_*.yaml`
    pair one-to-one with workbooks; copy the hop's env, adjust

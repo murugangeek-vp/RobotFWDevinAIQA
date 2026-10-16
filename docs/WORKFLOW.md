@@ -8,7 +8,7 @@ setup detail and `docs/EXCEL_MAPPING.md` for workbook authoring.
 
 ```
 CSV extracts (one file/table)        PostgreSQL 16 (local recon-db)
-data/phase2/csv/*.csv                ┌──────────────────────────────┐
+data/phase1/csv/*.csv                ┌──────────────────────────────┐
         │                            │ wdr_uat_active_stage         │
         │  hop 1                     │   signature.cup00301         │
         ▼                            │   signature.cup01201         │
@@ -51,7 +51,7 @@ engagement where the bank's ETL owns target writes.
 ```
 
 Fixtures are synthetic and seeded — 200 customers / 160 legal entities /
-3 reference rows, same every run. `data/phase2/` and `data/trailer/*.csv`
+3 reference rows, same every run. `data/phase1/` and `data/trailer/*.csv`
 are git-ignored; regenerate, never commit.
 
 ### 2. Load targets (the "ETL" — RW role)
@@ -127,7 +127,7 @@ treats a *passing* negative run as an error — detection is the feature.
 ## Full rebuild (clean slate)
 
 ```bash
-rm -rf results/phase1 data/phase2 data/trailer/phase1_*.csv
+rm -rf results/phase1 data/phase1 data/trailer/phase1_*.csv
 # databases persist; loaders truncate-and-reload their own tables
 # (drop the wdr_uat_* schemas to reset fully, then re-apply the CI
 #  provisioning block, then the chain above)

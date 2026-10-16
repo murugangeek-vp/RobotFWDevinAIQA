@@ -106,7 +106,7 @@ verdict; `production_signoff` is never granted by a run).
 ## Negative-path demo (expected FAIL)
 
 `phase1_hop1_csv_stage_negative.yaml` points `source.dir` at
-`data/phase2/negative/missing_rows/` — the same suite against corrupted
+`data/phase1/negative/missing_rows/` — the same suite against corrupted
 extracts must fail:
 
 ```bash
@@ -117,7 +117,7 @@ extracts must fail:
 
 Observed: recon `src 195 / tgt 200 / extra: 5` (exact counts), trailer
 controls FAIL vs certified totals, relations flag 4 FK orphans. Other
-corruption cases live under `data/phase2/negative/` — point `source.dir`
+corruption cases live under `data/phase1/negative/` — point `source.dir`
 at any of them.
 
 ## Spec-gap resolutions (documented in each workbook README)

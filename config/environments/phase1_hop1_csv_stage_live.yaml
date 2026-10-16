@@ -22,7 +22,7 @@ run:
   hop: hop1_csv_to_stage
 source:
   type: csv
-  dir: data/phase2/csv        # one file per table, name = Source Table cell
+  dir: data/phase1/csv        # one file per table, name = Source Table cell
   encoding: utf-8
   delimiter: ","
   header: true

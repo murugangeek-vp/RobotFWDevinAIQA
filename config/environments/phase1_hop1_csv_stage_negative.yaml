@@ -1,8 +1,8 @@
 # NEGATIVE-PATH demo — hop 1 pointed at the corrupted fixture set.
-# data/phase2/negative/missing_rows drops 5 cup00301 customers; the run is
+# data/phase1/negative/missing_rows drops 5 cup00301 customers; the run is
 # EXPECTED TO FAIL (missing rows vs trailer control + recon). To demo a
 # different defect, point source.dir at another case under
-# data/phase2/negative/ (extra_rows, duplicate_rows, tampered_values,
+# data/phase1/negative/ (extra_rows, duplicate_rows, tampered_values,
 # null_violation, bad_type, fk_orphan).
 environment: phase1_hop1_csv_to_stage_negative
 run:
@@ -16,7 +16,7 @@ run:
   hop: hop1_csv_to_stage_negative
 source:
   type: csv
-  dir: data/phase2/negative/missing_rows
+  dir: data/phase1/negative/missing_rows
   encoding: utf-8
   delimiter: ","
   header: true
