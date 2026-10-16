@@ -61,7 +61,10 @@ def provision():
     cur = master.cursor()
     cur.execute(f"IF DB_ID('{DATABASE}') IS NULL CREATE DATABASE [{DATABASE}]")
     try:
-        cur.execute(f"CREATE LOGIN [{RO_USER}] WITH PASSWORD = '{RO_PASSWORD}'")
+        # CHECK_POLICY OFF: ephemeral CI container — the smoke verifies
+        # grant-based least privilege, not credential strength. CI secrets
+        # (and the local default) may not satisfy SQL Server complexity rules.
+        cur.execute(f"CREATE LOGIN [{RO_USER}] WITH PASSWORD = '{RO_PASSWORD}', CHECK_POLICY = OFF")
     except Exception as exc:  # noqa: BLE001 — login already exists
         if "already" not in str(exc):
             raise

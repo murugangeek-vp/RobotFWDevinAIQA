@@ -141,7 +141,9 @@ class DbapiSource(SourceAdapter):
             cur.execute(self._select_sql(), self._params)
             names = self._names(cur)
             while rows := cur.fetchmany(size):
-                yield pd.DataFrame(rows, columns=names, dtype=object)
+                # pyodbc returns Row objects pandas treats as scalars —
+                # normalize to tuples so frame columns line up for all drivers.
+                yield pd.DataFrame([tuple(r) for r in rows], columns=names, dtype=object)
         finally:
             cur.close()
 
@@ -233,7 +235,9 @@ class DbapiTarget(TargetAdapter):
         cur = self.conn.cursor()
         try:
             cur.execute(f"SELECT {cols} FROM {self._qualified(table)} ORDER BY 1")
-            return pd.DataFrame(cur.fetchall(), columns=self._names(cur), dtype=object)
+            return pd.DataFrame(
+                [tuple(r) for r in cur.fetchall()], columns=self._names(cur), dtype=object
+            )
         finally:
             cur.close()
 
@@ -253,7 +257,9 @@ class DbapiTarget(TargetAdapter):
             cur.execute(f"SELECT {cols} FROM {self._qualified(table)} ORDER BY {order}")
             names = self._names(cur)
             while rows := cur.fetchmany(size):
-                yield pd.DataFrame(rows, columns=names, dtype=object)
+                # pyodbc returns Row objects pandas treats as scalars —
+                # normalize to tuples so frame columns line up for all drivers.
+                yield pd.DataFrame([tuple(r) for r in rows], columns=names, dtype=object)
         finally:
             cur.close()
 
@@ -261,8 +267,13 @@ class DbapiTarget(TargetAdapter):
         _vet_select(sql, self.dialect)
         cur = self.conn.cursor()
         try:
-            cur.execute(sql, params or None)
-            return pd.DataFrame(cur.fetchall(), columns=self._names(cur), dtype=object)
+            if params:
+                cur.execute(sql, params)
+            else:
+                cur.execute(sql)
+            return pd.DataFrame(
+                [tuple(r) for r in cur.fetchall()], columns=self._names(cur), dtype=object
+            )
         finally:
             cur.close()
 
