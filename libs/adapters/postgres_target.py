@@ -13,7 +13,15 @@ class PostgresTarget(TargetAdapter):
     dialect = "postgres"
 
     def __init__(
-        self, host: str, port: int, database: str, user: str, password: str, schema: str = "public"
+        self,
+        host: str,
+        port: int,
+        database: str,
+        user: str,
+        password: str,
+        schema: str = "public",
+        sslmode: "str | None" = None,
+        sslrootcert: "str | None" = None,
     ):
         self.schema_name = schema
         # Keep the connect kwargs for the chunked-read session — conn.dsn
@@ -21,6 +29,10 @@ class PostgresTarget(TargetAdapter):
         self._connect_kwargs = dict(
             host=host, port=port, dbname=database, user=user, password=password
         )
+        if sslmode:
+            self._connect_kwargs["sslmode"] = sslmode
+        if sslrootcert:
+            self._connect_kwargs["sslrootcert"] = sslrootcert
         self.conn = psycopg2.connect(**self._connect_kwargs)
         self.conn.set_session(readonly=True, autocommit=True)
 

@@ -38,5 +38,4 @@ target:
   schema: signature
   user: ${RECON_RO_USER}
   password: ${RECON_RO_PASSWORD}
-  sslmode: verify-full
-  sslrootcert: ${PG_CA_FILE}
+  sslmode: ${PG_SSLMODE}   # prod: verify-full + add `sslrootcert: ${PG_CA_FILE}`

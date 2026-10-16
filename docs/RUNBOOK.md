@@ -132,6 +132,32 @@ at any of them.
 - `LOAD_DATE` is an auditable run parameter (`run.load_date` →
   `__load_date` pseudo-column in transforms), not a source fetch.
 
+## Live (read-only) mode — `phase1_*_live.yaml`
+
+Production-shape verification: no `allow_qa_load`, no loader credentials,
+`RECON_RO_*` only, and `run.snapshot_id` is mandatory (a non-emulated target
+refuses to run without an enforceable cut). All connection values come from
+env vars:
+
+```bash
+export RECON_RO_USER=recon_ro  RECON_RO_PASSWORD=...
+export MIGRATION_SNAPSHOT_ID=2026-10-15        # the agreed frozen cut
+export PG_SSLMODE=verify-full                  # disable for local rehearsal
+export STAGE_PG_HOST=...  IL_PG_HOST=...  CONSUMPTION_PG_HOST=...
+export LANDING_PG_HOST=...                     # hop-1 target
+# prod TLS: add `sslrootcert: ${PG_CA_FILE}` under each postgres block and
+# export PG_CA_FILE=/path/to/ca-chain.pem
+
+robot -d results/phase1/hop1 \
+  -v MIGRATION_ENV:config/environments/phase1_hop1_csv_stage_live.yaml \
+  -v MAPPING_WORKBOOK:data/mapping/phase1_hop1_csv_to_stage.xlsx tests/migration
+```
+
+Local rehearsal (docker DBs, no TLS): `PG_SSLMODE=disable`, hosts `localhost`,
+`MIGRATION_SNAPSHOT_ID=2026-10-15`. DB hops enforce the cut via a real
+`pg_export_snapshot()` held on a `readonly=True` session — evidence records
+the actual snapshot id (e.g. `00000009-00000194-1`).
+
 ## Onboarding real UAT data
 
 Swap the env yamls to the client hosts/credentials, set `run.snapshot_id`
