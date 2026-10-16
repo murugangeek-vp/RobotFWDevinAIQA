@@ -1,8 +1,8 @@
 """Generate deterministic synthetic Phase-1 CSV extracts + trailer files.
 
 Outputs:
-  data/phase1/csv/{cup00301,cup01201,dim_reference}.csv   — positive extracts
-  data/phase1/negative/<case>/*.csv                        — corrupted variants
+  data/phase2/csv/{cup00301,cup01201,dim_reference}.csv   — positive extracts
+  data/phase2/negative/<case>/*.csv                        — corrupted variants
       (full file set in each dir so a hop-1 env can point source.dir at it)
   data/trailer/phase1_hop{1,2,3}_trailer.csv               — certified totals
 
