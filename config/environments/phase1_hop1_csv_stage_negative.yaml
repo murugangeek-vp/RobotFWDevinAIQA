@@ -1,0 +1,34 @@
+# NEGATIVE-PATH demo — hop 1 pointed at the corrupted fixture set.
+# data/phase1/negative/missing_rows drops 5 cup00301 customers; the run is
+# EXPECTED TO FAIL (missing rows vs trailer control + recon). To demo a
+# different defect, point source.dir at another case under
+# data/phase1/negative/ (extra_rows, duplicate_rows, tampered_values,
+# null_violation, bad_type, fk_orphan).
+environment: phase1_hop1_csv_to_stage_negative
+run:
+  batch_size: 2000
+  sample_limit: 20
+  allow_empty: false
+  fail_on_unmapped: false
+  snapshot_id: "2026-10-15"
+  load_date: "2026-10-15"
+  pipeline_id: phase1-uat-demo
+  hop: hop1_csv_to_stage_negative
+source:
+  type: csv
+  dir: data/phase1/negative/missing_rows
+  encoding: utf-8
+  delimiter: ","
+  header: true
+  keep_default_na: true
+  snapshot_column: load_date
+  control_file: data/trailer/phase1_hop1_trailer.csv
+  mapping_workbook: data/mapping/phase1_hop1_csv_to_stage.xlsx
+target:
+  type: postgres
+  host: localhost
+  port: 5432
+  database: wdr_uat_active_stage
+  schema: signature
+  user: ${RECON_RO_USER}
+  password: ${RECON_RO_PASSWORD}

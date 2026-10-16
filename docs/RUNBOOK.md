@@ -243,6 +243,53 @@ opened by this suite.
 See `docs/EXCEL_MAPPING.md` (workbook spec) and `docs/ADAPTERS.md`
 (any-database extension points).
 
+## Phase-2 multi-hop pipeline — CSV → Stage → Integration → Consumption
+
+Spec: `data/trailer/Phase1.xlsx`. Three independent hop runs, one
+`pipeline_id` in evidence metadata links the chain.
+
+| Hop | Source | Target (postgres) | Env / workbook |
+|---|---|---|---|
+| 1 | CSV files (`source.dir`, one file/table) | `wdr_uat_active_stage.signature` | `phase1_hop1_csv_stage.yaml` / `phase1_hop1_csv_to_stage.xlsx` |
+| 2 | `signature` tables + `v_dim_customer_src` view | `wdr_uat_integration.wdr_il_core` | `phase1_hop2_stage_il.yaml` / `phase1_hop2_stage_to_il.xlsx` |
+| 3 | `wdr_il_core.v_party_snpsht_src` view | `wdr_uat_consumption.wdr_cl_fds_core` | `phase1_hop3_il_consumption.yaml` / `phase1_hop3_il_to_consumption.xlsx` |
+
+Provisioned locally via `scripts/provision_phase2.py` (databases/schemas
+live in `recon-db`; CI creates them in `reconciliation.yml`). Verification
+reads as `recon_ro`; loads use `recon_rw` (`target.load_user/load_password`)
+and only when `target.allow_qa_load: true` — set on demo envs only.
+
+Full chain:
+
+```bash
+.venv/Scripts/python scripts/generate_phase1_workbooks.py   # workbooks
+.venv/Scripts/python scripts/generate_phase1_csv.py         # csvs+trailers+negatives
+.venv/Scripts/python scripts/load_phase2_hop.py --env config/environments/phase1_hop1_csv_stage.yaml --workbook data/mapping/phase1_hop1_csv_to_stage.xlsx
+.venv/Scripts/python scripts/provision_phase2.py --views stage
+.venv/Scripts/python scripts/load_phase2_hop.py --env config/environments/phase1_hop2_stage_il.yaml --workbook data/mapping/phase1_hop2_stage_to_il.xlsx
+.venv/Scripts/python scripts/provision_phase2.py --views il
+.venv/Scripts/python scripts/load_phase2_hop.py --env config/environments/phase1_hop3_il_consumption.yaml --workbook data/mapping/phase1_hop3_il_to_consumption.xlsx
+.venv/Scripts/robot -d results/phase1/hop1 -v MIGRATION_ENV:config/environments/phase1_hop1_csv_stage.yaml -v MAPPING_WORKBOOK:data/mapping/phase1_hop1_csv_to_stage.xlsx tests/migration
+.venv/Scripts/robot -d results/phase1/hop2 -v MIGRATION_ENV:config/environments/phase1_hop2_stage_il.yaml -v MAPPING_WORKBOOK:data/mapping/phase1_hop2_stage_to_il.xlsx tests/migration
+.venv/Scripts/robot -d results/phase1/hop3 -v MIGRATION_ENV:config/environments/phase1_hop3_il_consumption.yaml -v MAPPING_WORKBOOK:data/mapping/phase1_hop3_il_to_consumption.xlsx tests/migration
+```
+
+Negative demo (expected FAIL — `missing_rows` drops 5 customers; recon
+reports `extra: 5`, controls fail vs trailer, relations flag FK orphans):
+
+```bash
+.venv/Scripts/robot -d results/phase1/hop1_negative \
+  -v MIGRATION_ENV:config/environments/phase1_hop1_csv_stage_negative.yaml \
+  -v MAPPING_WORKBOOK:data/mapping/phase1_hop1_csv_to_stage.xlsx tests/migration
+# point source.dir at data/phase1/negative/<other-case> for other defects
+```
+
+Spec-gap handling: `CUSIC`→APPL_KEY+NAICS_CD split (APPL_KEY='CBS'
+authoritative), CASE without ELSE → `ELSE 'UNSPECIFIED'`, `PARTY_TYPE`
+"complex logic" → `literal('PENDING_SPEC')` sentinel, DIM_REFERENCE lookup
+via `signature.v_dim_customer_src`. All documented in each workbook's
+README sheet.
+
 ## Switching environment / contract
 
 `config/environments/dev.yaml` points at the local Docker database. For another
