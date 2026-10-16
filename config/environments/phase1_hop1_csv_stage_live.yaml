@@ -1,0 +1,42 @@
+# Phase-1 hop 1 — PRODUCTION read-only verification: CSV extracts -> landing.
+#
+# Read-only by design: the suite opens file reads + SELECT-only sessions and
+# never loads the target. The bank's ETL owns all writes — there are no
+# load_user/load_password keys and no allow_qa_load flag here.
+#
+# REQUIRED before a real run:
+#   - run.snapshot_id: the agreed frozen extract cut (watermark predicate
+#     load_date <= snapshot_id enforced on the CSV frame). A non-emulated
+#     target REFUSES to run without an enforceable snapshot.
+#   - source.dir / control_file: real extract + certified trailer paths.
+#   - RECON_RO_USER / RECON_RO_PASSWORD env vars: SELECT-only role.
+environment: phase1_hop1_csv_to_stage_live
+run:
+  batch_size: 2000
+  sample_limit: 20
+  allow_empty: false
+  fail_on_unmapped: false   # set true to fail on any extract file without a mapping
+  snapshot_id: "${MIGRATION_SNAPSHOT_ID}"   # mandatory — the agreed frozen cut
+  load_date: "${MIGRATION_SNAPSHOT_ID}"     # declared run param -> __load_date
+  pipeline_id: phase1-uat
+  hop: hop1_csv_to_stage
+source:
+  type: csv
+  dir: data/phase1/csv        # one file per table, name = Source Table cell
+  encoding: utf-8
+  delimiter: ","
+  header: true
+  keep_default_na: true
+  snapshot_column: load_date
+  control_file: data/trailer/phase1_hop1_trailer.csv
+  mapping_workbook: data/mapping/phase1_hop1_csv_to_stage.xlsx
+target:
+  type: postgres
+  host: ${LANDING_PG_HOST}
+  port: 5432
+  database: wdr_uat_active_stage
+  schema: signature
+  user: ${RECON_RO_USER}
+  password: ${RECON_RO_PASSWORD}
+  sslmode: verify-full
+  sslrootcert: ${PG_CA_FILE}
