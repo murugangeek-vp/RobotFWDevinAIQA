@@ -16,6 +16,10 @@
         "encoding": {"type": "string"},
         "delimiter": {"type": "string"},
         "header": {"type": "boolean"},
+        "keep_default_na": {
+          "type": "boolean",
+          "description": "csv source: true = empty cells become NULL (landing semantics); default false preserves literal empty strings"
+        },
         "columns": {"type": "array", "items": {"type": "string"}, "minItems": 1},
         "host": {"type": "string", "description": "DB source: server host (postgres)"},
         "port": {"type": "integer"},

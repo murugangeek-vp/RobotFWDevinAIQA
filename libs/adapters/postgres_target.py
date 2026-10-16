@@ -16,9 +16,12 @@ class PostgresTarget(TargetAdapter):
         self, host: str, port: int, database: str, user: str, password: str, schema: str = "public"
     ):
         self.schema_name = schema
-        self.conn = psycopg2.connect(
+        # Keep the connect kwargs for the chunked-read session — conn.dsn
+        # masks the password ('xxx'), so it cannot be used to reconnect.
+        self._connect_kwargs = dict(
             host=host, port=port, dbname=database, user=user, password=password
         )
+        self.conn = psycopg2.connect(**self._connect_kwargs)
         self.conn.set_session(readonly=True, autocommit=True)
 
     def read_table(self, table: str, columns: "list | None" = None):
@@ -33,7 +36,7 @@ class PostgresTarget(TargetAdapter):
     def read_chunks(self, table, columns=None, keys=None, size=50000):
         if size < 1:
             raise ValueError("batch size must be positive")
-        conn = psycopg2.connect(self.conn.dsn)
+        conn = psycopg2.connect(**self._connect_kwargs)
         conn.set_session(readonly=True, autocommit=False, isolation_level="REPEATABLE READ")
         cur = conn.cursor(name="recon_target")
         try:

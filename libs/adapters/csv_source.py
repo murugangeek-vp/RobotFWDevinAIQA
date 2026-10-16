@@ -6,14 +6,14 @@ from libs.adapters.registry import register_source
 _JOIN_HOWS = ("left", "inner")
 
 
-def _read(path, encoding, delimiter, header, dtype):
+def _read(path, encoding, delimiter, header, dtype, keep_default_na):
     return pd.read_csv(
         path,
         encoding=encoding,
         sep=delimiter,
         header=0 if header else None,
         dtype=dtype,
-        keep_default_na=False,
+        keep_default_na=keep_default_na,
     )
 
 
@@ -27,18 +27,34 @@ class CsvSource(SourceAdapter):
         header: bool = True,
         dtype=str,
         joins: "list | None" = None,
+        snapshot_column: "str | None" = None,
+        snapshot_value: "str | None" = None,
+        keep_default_na: bool = False,
     ):
         self.path = path
-        self._df = _read(path, encoding, delimiter, header, dtype)
+        self._df = _read(path, encoding, delimiter, header, dtype, keep_default_na)
+        if snapshot_column is not None:
+            if snapshot_column not in self._df.columns:
+                raise ValueError(
+                    f"snapshot_column {snapshot_column!r} not in {path} "
+                    f"(columns: {list(self._df.columns)})"
+                )
+            self._df = self._df[self._df[snapshot_column].astype(str) <= str(snapshot_value)]
         for spec in joins or []:
-            self._df = self._apply_join(self._df, spec, encoding, delimiter, header, dtype)
+            self._df = self._apply_join(
+                self._df, spec, encoding, delimiter, header, dtype, keep_default_na
+            )
 
-    def _apply_join(self, left: pd.DataFrame, spec: dict, encoding, delimiter, header, dtype):
+    def _apply_join(
+        self, left: pd.DataFrame, spec: dict, encoding, delimiter, header, dtype, keep_default_na
+    ):
         """Merge one secondary file onto the main frame. Fail closed: duplicate
         join keys, missing key columns, undeclared header drift, column
         collisions, and (with require_match) unmatched rows all raise."""
         path = spec["path"]
-        right = _read(path, encoding, spec.get("delimiter", delimiter), header, dtype)
+        right = _read(
+            path, encoding, spec.get("delimiter", delimiter), header, dtype, keep_default_na
+        )
         keys = spec["on"] if isinstance(spec["on"], list) else [spec["on"]]
 
         want = spec.get("columns")

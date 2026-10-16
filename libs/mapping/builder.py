@@ -87,6 +87,17 @@ def build_contract(
     ]:
         if not _IDENT_RE.fullmatch(name):
             raise ValueError(f"Invalid mapping identifier: {name!r}")
+    if source_cfg.get("type") == "csv":
+        # One CSV per table under source.dir — file name == workbook's
+        # Source Table cell. `dir` is an env-level convention, not a contract
+        # key; fail closed if it is absent.
+        csv_dir = source_cfg.get("dir")
+        if not csv_dir:
+            raise ValueError("csv source requires env source.dir (one file per table)")
+        source["path"] = f"{csv_dir.rstrip('/')}/{tm.source_table}.csv"
+        for k in ("encoding", "delimiter", "header"):
+            if k in source_cfg:
+                source[k] = source_cfg[k]
     if tm.where:
         source["where"] = tm.where
     if tm.batch_size:

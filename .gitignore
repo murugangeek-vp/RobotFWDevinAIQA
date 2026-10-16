@@ -22,6 +22,10 @@ report.html
 # Generated migration artifacts (regenerate via scripts/generate_bank_source.py)
 data/trailer/
 
+# Phase-1 synthetic extracts (regenerate via scripts/generate_phase1_csv.py)
+data/phase1/csv/
+data/phase1/negative/
+
 # Secrets / local env
 .env
 .env.*

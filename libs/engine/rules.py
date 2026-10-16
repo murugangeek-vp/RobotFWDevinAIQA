@@ -147,19 +147,20 @@ def evaluate_source_rules(df: pd.DataFrame, contract: Contract) -> list:
     failures: dict = {}
     source_cols = set(df.columns)
 
-    # implicit not-null on source inputs feeding non-nullable derived columns
+    # implicit not-null on source inputs feeding non-nullable derived columns.
+    # AST-based extraction handles nested calls; inputs whose null path is
+    # explicitly handled (ifnull/coalesce first arg) are exempt — the derived
+    # not_null check on the transform output still guards correctness.
+    from libs.engine.mapping_transforms import transform_inputs
+
     derived_inputs = set()
+    mappings = contract.raw.get("mappings") or {}
     for col in contract.columns:
         expr = col.get("transform") or ""
-        if not col["nullable"]:
-            derived_inputs.update(re.findall(r"\{(\w+)\}", expr))
-            m = re.match(r"^\w+\((.+)\)$", expr.strip())
-            if m:
-                derived_inputs.update(
-                    a.strip().strip("'\"")
-                    for a in m.group(1).split(",")
-                    if re.fullmatch(r"[A-Za-z_]\w*", a.strip())
-                )
+        if not expr or col["nullable"]:
+            continue
+        null_safe = set(re.findall(r"(?:ifnull|coalesce)\(\s*([A-Za-z_]\w*)", expr))
+        derived_inputs.update(transform_inputs(expr, mappings) - null_safe)
     for name in derived_inputs:
         if name in source_cols:
             _record(failures, "transform_input_not_null", name, df[name].map(_is_empty), df)

@@ -1,0 +1,35 @@
+# Phase-1 hop 2 — wdr_uat_active_stage.signature -> wdr_uat_integration.wdr_il_core.
+# Source snapshot: exported pins every read to one pg_export_snapshot() so
+# stage reads are consistent across all stages of the run.
+environment: phase1_hop2_stage_to_il
+run:
+  batch_size: 2000
+  sample_limit: 20
+  allow_empty: false
+  fail_on_unmapped: false   # cup01201 feeds dim_customer via the join view — unmapped-table insight documents it
+  snapshot_id: "2026-10-15"
+  load_date: "2026-10-15"
+  pipeline_id: phase1-uat-demo
+  hop: hop2_stage_to_il
+source:
+  type: postgres
+  host: localhost
+  port: 5432
+  database: wdr_uat_active_stage
+  schema: signature
+  user: ${RECON_RO_USER}
+  password: ${RECON_RO_PASSWORD}
+  snapshot: exported
+  control_file: data/trailer/phase1_hop2_trailer.csv
+  mapping_workbook: data/mapping/phase1_hop2_stage_to_il.xlsx
+target:
+  type: postgres
+  host: localhost
+  port: 5432
+  database: wdr_uat_integration
+  schema: wdr_il_core
+  user: ${RECON_RO_USER}
+  password: ${RECON_RO_PASSWORD}
+  allow_qa_load: true       # local synthetic demo only
+  load_user: ${RECON_RW_USER}
+  load_password: ${RECON_RW_PASSWORD}

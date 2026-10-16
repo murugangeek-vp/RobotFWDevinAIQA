@@ -1,0 +1,36 @@
+# Phase-1 hop 1 — CSV extracts -> wdr_uat_active_stage.signature (landing).
+# Snapshot semantics for files: source.snapshot_column applies the declared
+# watermark (load_date <= run.snapshot_id) as a real filter on the CSV frame.
+environment: phase1_hop1_csv_to_stage
+run:
+  batch_size: 2000
+  sample_limit: 20
+  allow_empty: false
+  fail_on_unmapped: false
+  snapshot_id: "2026-10-15"   # the agreed extract cut
+  load_date: "2026-10-15"     # auditable run param -> __load_date in transforms
+  pipeline_id: phase1-uat-demo
+  hop: hop1_csv_to_stage
+source:
+  type: csv
+  dir: data/phase1/csv        # one file per table, name = Source Table cell
+  encoding: utf-8
+  delimiter: ","
+  header: true
+  keep_default_na: true     # empty CSV cell loads as NULL — landing semantics
+  snapshot_column: load_date
+  control_file: data/trailer/phase1_hop1_trailer.csv
+  mapping_workbook: data/mapping/phase1_hop1_csv_to_stage.xlsx
+target:
+  type: postgres
+  host: localhost
+  port: 5432
+  database: wdr_uat_active_stage
+  schema: signature
+  user: ${RECON_RO_USER}
+  password: ${RECON_RO_PASSWORD}
+  # Local synthetic demo only — loaders may write here. Real UAT/production
+  # targets never set this flag; the bank's ETL owns target writes.
+  allow_qa_load: true
+  load_user: ${RECON_RW_USER}
+  load_password: ${RECON_RW_PASSWORD}

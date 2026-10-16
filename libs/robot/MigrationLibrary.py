@@ -127,6 +127,8 @@ class MigrationLibrary:
                     "emulated_target": bool(self.env["target"].get("fake")),
                     "snapshot_id": run.get("snapshot_id", ""),
                     "load_date": str(run.get("load_date", "")),
+                    "pipeline_id": str(run.get("pipeline_id", "")),
+                    "hop": str(run.get("hop", "")),
                     "workbook_sha256": hashlib.sha256(Path(workbook).read_bytes()).hexdigest(),
                     "selected": [c.name for c in self.contracts],
                     "disabled": [t.mapping_id for t in tables if not t.enabled],
@@ -269,33 +271,57 @@ class MigrationLibrary:
                     raise ValueError("Mapped columns missing from source metadata")
                 row["source_columns"] = live_columns
                 if stage in ("mapping", "source"):
-                    from libs.adapters.catalog import inspect_schema
+                    src_cfg = contract.raw["source"]
+                    if src_cfg.get("type") == "csv":
+                        # File-source catalog: every *.csv under dir must map —
+                        # files without a workbook mapping surface as
+                        # unmapped_source_tables.
+                        files = {p.stem for p in Path(src_cfg["path"]).parent.glob("*.csv")}
+                        mapped = {
+                            c.raw["source"]["table"]
+                            for c in self.contracts
+                            if c.raw["source"].get("type") == "csv"
+                        }
+                        row["unmapped_source_tables"] = sorted(files - mapped)
+                        if row["unmapped_source_tables"] and self.env.get("run", {}).get(
+                            "fail_on_unmapped"
+                        ):
+                            row["status"] = "FAIL"
+                            row["detail"] = (
+                                "run.fail_on_unmapped: source files without workbook mappings"
+                            )
+                            return row
+                        row["source_metadata"] = [
+                            {"table": src_cfg["table"], "columns": live_columns}
+                        ]
+                    else:
+                        from libs.adapters.catalog import inspect_schema
 
-                    conn = source.conn if hasattr(source, "conn") else source.target.conn
-                    catalog = inspect_schema(
-                        conn,
-                        contract.raw["source"]["schema"],
-                        dialect=source.dialect,
-                    )
-                    mapped_tables = {
-                        c.raw["source"]["table"]
-                        for c in self.contracts
-                        if c.raw["source"]["schema"] == contract.raw["source"]["schema"]
-                    }
-                    row["unmapped_source_tables"] = sorted(
-                        {c["table"] for c in catalog} - mapped_tables
-                    )
-                    if row["unmapped_source_tables"] and self.env.get("run", {}).get(
-                        "fail_on_unmapped"
-                    ):
-                        row["status"] = "FAIL"
-                        row["detail"] = (
-                            "run.fail_on_unmapped: source tables without workbook mappings"
+                        conn = source.conn if hasattr(source, "conn") else source.target.conn
+                        catalog = inspect_schema(
+                            conn,
+                            contract.raw["source"]["schema"],
+                            dialect=source.dialect,
                         )
-                        return row
-                    row["source_metadata"] = [
-                        c for c in catalog if c["table"] == contract.raw["source"]["table"]
-                    ]
+                        mapped_tables = {
+                            c.raw["source"]["table"]
+                            for c in self.contracts
+                            if c.raw["source"]["schema"] == contract.raw["source"]["schema"]
+                        }
+                        row["unmapped_source_tables"] = sorted(
+                            {c["table"] for c in catalog} - mapped_tables
+                        )
+                        if row["unmapped_source_tables"] and self.env.get("run", {}).get(
+                            "fail_on_unmapped"
+                        ):
+                            row["status"] = "FAIL"
+                            row["detail"] = (
+                                "run.fail_on_unmapped: source tables without workbook mappings"
+                            )
+                            return row
+                        row["source_metadata"] = [
+                            c for c in catalog if c["table"] == contract.raw["source"]["table"]
+                        ]
                 row["source_count"] = source.row_count()
                 if not row["source_count"] and not self.env.get("run", {}).get(
                     "allow_empty", False

@@ -129,6 +129,7 @@ _SAFE_FUNCS: dict = {
     "enc": lambda v: _demo_cipher(v, _key()),
     "dec": lambda v: _demo_decipher(v, _key()),
     "ifnull": _ifnull,
+    "literal": lambda v: v,
     "casewhen": _casewhen,
     "band": _band,
     "lpad": _lpad,

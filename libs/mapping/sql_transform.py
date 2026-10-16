@@ -73,9 +73,9 @@ def _predicate(node) -> tuple[str, str]:
     """
     if isinstance(node, exp.EQ):
         left, right = node.left, node.right
-        if isinstance(right, (exp.Literal, exp.Boolean)):
+        if isinstance(right, exp.Literal | exp.Boolean):
             return _emit(left), _lit(right)
-        if isinstance(left, (exp.Literal, exp.Boolean)):
+        if isinstance(left, exp.Literal | exp.Boolean):
             return _emit(right), _lit(left)
         raise ValueError("CASE WHEN comparison must be against a literal")
     if isinstance(node, exp.NEQ):
@@ -145,6 +145,10 @@ def _emit(node) -> str:
         if length is not None:
             parts.append(_emit(length))
         return f"substr({', '.join(parts)})"
+    if isinstance(node, exp.Left):
+        return f"substr({_emit(node.this)}, 0, {_emit(node.expression)})"
+    if isinstance(node, exp.Right):
+        return f"substr({_emit(node.this)}, -{_emit(node.expression)})"
     if type(node).__name__ in _SIMPLE_FUNCS:
         return f"{_SIMPLE_FUNCS[type(node).__name__]}({_emit(node.this)})"
     if isinstance(node, exp.Anonymous) and node.name.upper() == "TO_DATE":
@@ -157,10 +161,7 @@ def _emit(node) -> str:
                 raise ValueError(f"TO_DATE literal not parseable: {args[0].this!r}") from exc
             return repr(dt.strftime("%Y-%m-%d"))
         if len(args) == 2 and isinstance(args[1], exp.Literal) and args[1].is_string:
-            return (
-                f"date_fmt({_emit(args[0])}, '%Y-%m-%d', "
-                f"{repr(_strftime(args[1].this))})"
-            )
+            return f"date_fmt({_emit(args[0])}, '%Y-%m-%d', " f"{repr(_strftime(args[1].this))})"
         raise ValueError("TO_DATE requires (value, 'format') arguments")
     raise ValueError(
         f"Unsupported SQL construct in transform: {type(node).__name__} ({node.sql()})"

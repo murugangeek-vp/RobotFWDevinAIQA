@@ -49,9 +49,7 @@ class SqlToTransform(unittest.TestCase):
 
     def test_regexp_case(self):
         self.assertEqual(
-            sql_to_transform(
-                "CASE WHEN REGEXP_LIKE(C, '^[A-Za-z]{2}$') THEN C ELSE 'US' END"
-            ),
+            sql_to_transform("CASE WHEN REGEXP_LIKE(C, '^[A-Za-z]{2}$') THEN C ELSE 'US' END"),
             "casewhen(regexp_match(C, '^[A-Za-z]{2}$'), 'True', C, 'US')",
         )
 
