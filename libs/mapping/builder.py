@@ -30,8 +30,23 @@ def _source_columns(fields: list, code_mappings: dict) -> list:
         add(f.source_column)
         if f.transformation:
             for name in sorted(transform_inputs(f.transformation, code_mappings)):
-                add(name)
+                if not name.startswith("__"):
+                    add(name)
     return cols
+
+
+def _param_refs(fields: list, code_mappings: dict) -> set:
+    """`__name` pseudo-column refs inside transforms — resolved from declared
+    run params at eval time, never fetched from the source table."""
+    from libs.engine.mapping_transforms import transform_inputs
+
+    refs: set = set()
+    for f in fields:
+        if f.transformation:
+            refs |= {
+                n for n in transform_inputs(f.transformation, code_mappings) if n.startswith("__")
+            }
+    return refs
 
 
 def build_contract(
@@ -40,6 +55,7 @@ def build_contract(
     source_cfg: dict,
     target_cfg: dict,
     workbook_path: str = "",
+    params: dict | None = None,
 ) -> Contract:
     """Build the validated Contract for one TableMapping.
 
@@ -49,6 +65,12 @@ def build_contract(
     fields = [f for f in tm.fields if f.enabled]
     if len(set(tm.keys)) != len(tm.keys):
         raise ValueError("Duplicate reconciliation key columns")
+    undeclared = _param_refs(fields, code_mappings) - {f"__{k}" for k in (params or {})}
+    if undeclared:
+        raise ValueError(
+            f"Transforms reference undeclared run params: {sorted(undeclared)} "
+            "(declare them in env run: block, e.g. load_date)"
+        )
     source = {
         **source_cfg,
         "schema": tm.source_schema,
@@ -110,6 +132,8 @@ def build_contract(
         "keys": tm.keys,
         "columns": columns,
     }
+    if params:
+        raw["params"] = {k: str(v) for k, v in params.items()}
     if code_mappings:
         raw["mappings"] = code_mappings
     if tm.controls:

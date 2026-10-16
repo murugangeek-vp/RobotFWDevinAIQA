@@ -94,6 +94,31 @@ jobs:
             GRANT SELECT ON ALL TABLES IN SCHEMA public TO recon_ro;
             ALTER DEFAULT PRIVILEGES FOR ROLE recon_rw IN SCHEMA public GRANT SELECT ON TABLES TO recon_ro;
           SQL
+          # Phase-2 multi-hop demo databases (csv->stage->integration->target)
+          psql -h localhost -U postgres -c "CREATE DATABASE wdr_uat_active_stage;"
+          psql -h localhost -U postgres -c "CREATE DATABASE wdr_uat_integration;"
+          psql -h localhost -U postgres -c "CREATE DATABASE wdr_uat_consumption;"
+          psql -h localhost -U postgres -d wdr_uat_active_stage <<'SQL'
+            CREATE SCHEMA signature;
+            GRANT CONNECT ON DATABASE wdr_uat_active_stage TO recon_rw, recon_ro;
+            GRANT USAGE, CREATE ON SCHEMA signature TO recon_rw;
+            GRANT USAGE ON SCHEMA signature TO recon_ro;
+            ALTER DEFAULT PRIVILEGES FOR ROLE recon_rw IN SCHEMA signature GRANT SELECT ON TABLES TO recon_ro;
+          SQL
+          psql -h localhost -U postgres -d wdr_uat_integration <<'SQL'
+            CREATE SCHEMA wdr_il_core;
+            GRANT CONNECT ON DATABASE wdr_uat_integration TO recon_rw, recon_ro;
+            GRANT USAGE, CREATE ON SCHEMA wdr_il_core TO recon_rw;
+            GRANT USAGE ON SCHEMA wdr_il_core TO recon_ro;
+            ALTER DEFAULT PRIVILEGES FOR ROLE recon_rw IN SCHEMA wdr_il_core GRANT SELECT ON TABLES TO recon_ro;
+          SQL
+          psql -h localhost -U postgres -d wdr_uat_consumption <<'SQL'
+            CREATE SCHEMA wdr_cl_fds_core;
+            GRANT CONNECT ON DATABASE wdr_uat_consumption TO recon_rw, recon_ro;
+            GRANT USAGE, CREATE ON SCHEMA wdr_cl_fds_core TO recon_rw;
+            GRANT USAGE ON SCHEMA wdr_cl_fds_core TO recon_ro;
+            ALTER DEFAULT PRIVILEGES FOR ROLE recon_rw IN SCHEMA wdr_cl_fds_core GRANT SELECT ON TABLES TO recon_ro;
+          SQL
 
       - name: Seed migration demo (webster source + emulated Santander target)
         # Migration suites are verify-only — the emulated target is loaded

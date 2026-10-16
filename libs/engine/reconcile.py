@@ -72,6 +72,25 @@ def _band(v, lo, hi, low_label, mid_label, high_label):
     return str(high_label) if d > Decimal(str(hi)) else str(mid_label)
 
 
+def _lpad(v, n, fill="0"):
+    """lpad(col, 5, '0') — SQL LPAD equivalent."""
+    s = "" if pd.isna(v) else str(v)
+    return s.rjust(int(n), str(fill))[: max(int(n), len(s))]
+
+
+def _concat(*args):
+    """concat({a}, {b}, ...) — SQL || semantics; nulls render as empty."""
+    return "".join("" if pd.isna(a) else str(a) for a in args)
+
+
+def _regexp_match(v, pattern):
+    """regexp_match(col, '^[A-Za-z]{2}$') -> 'True'/'False' — composes with
+    casewhen for CASE WHEN REGEXP_LIKE(...) THEN ... ELSE ... END."""
+    if pd.isna(v):
+        return "False"
+    return "True" if re.fullmatch(str(pattern), str(v)) else "False"
+
+
 def _date_fmt(v, out_fmt, in_fmt=None):
     """Date/timestamp -> strftime'd string ('%d/%m/%Y' etc.).
 
@@ -112,6 +131,9 @@ _SAFE_FUNCS: dict = {
     "ifnull": _ifnull,
     "casewhen": _casewhen,
     "band": _band,
+    "lpad": _lpad,
+    "concat": _concat,
+    "regexp_match": _regexp_match,
     "mul": lambda a, b: Decimal(str(a)) * Decimal(str(b)),
     "date_fmt": _date_fmt,
 }

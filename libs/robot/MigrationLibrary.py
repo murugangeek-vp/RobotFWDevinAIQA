@@ -114,8 +114,11 @@ class MigrationLibrary:
             ]
             if not chosen:
                 raise ValueError("No enabled mappings match the QA selection")
+            params = {"load_date": str(run["load_date"])} if run.get("load_date") else {}
             self.contracts = [
-                builder.build_contract(t, codes, self.env["source"], self.env["target"], workbook)
+                builder.build_contract(
+                    t, codes, self.env["source"], self.env["target"], workbook, params=params
+                )
                 for t in chosen
             ]
             self.meta.update(
@@ -123,6 +126,7 @@ class MigrationLibrary:
                     "environment": self.env["environment"],
                     "emulated_target": bool(self.env["target"].get("fake")),
                     "snapshot_id": run.get("snapshot_id", ""),
+                    "load_date": str(run.get("load_date", "")),
                     "workbook_sha256": hashlib.sha256(Path(workbook).read_bytes()).hexdigest(),
                     "selected": [c.name for c in self.contracts],
                     "disabled": [t.mapping_id for t in tables if not t.enabled],

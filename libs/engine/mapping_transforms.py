@@ -74,7 +74,15 @@ def evaluate(tree, row, mappings):
                 raise ValueError("Unmapped source code")
             return table[str(value).strip()]
         args = [evaluate(arg, row, mappings) for arg in tree.args]
-        if any(value is None for value in args) and name != "ifnull":
+        # Null handling: ifnull needs the null to substitute; casewhen must
+        # still apply when/else even if a branch value is null (SQL CASE
+        # semantics); regexp_match on null is False. Everything else
+        # propagates null — including concat (SQL || semantics).
+        if any(value is None for value in args) and name not in {
+            "ifnull",
+            "casewhen",
+            "regexp_match",
+        }:
             return None
         return _SAFE_FUNCS[name](*args)
     raise ValueError("Unsupported transformation")
@@ -86,8 +94,9 @@ def mapped_rows(frame, contract):
         c["name"]: parse_expression(c["transform"]) for c in contract.columns if "transform" in c
     }
     output = []
+    run_params = {f"__{k}": v for k, v in contract.raw.get("params", {}).items()}
     for values in frame.itertuples(index=False, name=None):
-        row = dict(zip(frame.columns, values, strict=True))
+        row = {**run_params, **dict(zip(frame.columns, values, strict=True))}
         output.append(
             {
                 c["name"]: evaluate(parsed[c["name"]], row, maps)

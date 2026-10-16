@@ -129,6 +129,11 @@
         "delimiter": {"type": "string"}
       }
     },
+    "params": {
+      "type": "object",
+      "description": "Declared run parameters (e.g. load_date from run.load_date). Transforms resolve them as __name pseudo-columns — never fetched from the source table",
+      "additionalProperties": {"type": "string"}
+    },
     "target": {
       "type": "object",
       "required": ["type", "table"],
