@@ -19,12 +19,8 @@ output.xml
 log.html
 report.html
 
-# Generated migration artifacts (regenerate via scripts/generate_phase1_csv.py)
-data/trailer/*.csv
-
-# Phase-1 synthetic extracts (regenerate via scripts/generate_phase1_csv.py)
-data/phase1/csv/
-data/phase1/negative/
+# Phase-1 fixtures/trailers are committed for the showcase — they are
+# deterministic synthetic data, regenerable via scripts/generate_phase1_csv.py
 
 # Secrets / local env
 .env

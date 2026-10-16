@@ -1,0 +1,5 @@
+name,group,value
+cl_party_rows,,200
+cl_party_by_domain,Business,13
+cl_party_by_domain,Commercial,91
+cl_party_by_domain,Personal,96
