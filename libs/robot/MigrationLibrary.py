@@ -341,6 +341,18 @@ class MigrationLibrary:
                         }
                         for c in contract.columns
                     ]
+                    unmapped = len(row.get("unmapped_source_tables") or [])
+                    note = f"; {unmapped} unmapped source table(s) (insight)" if unmapped else ""
+                    if stage == "mapping":
+                        row["detail"] = (
+                            f"compiled {len(contract.columns)} field mappings, "
+                            f"keys={contract.keys}{note}"
+                        )
+                    else:
+                        row["detail"] = (
+                            f"{row['source_count']} source rows, "
+                            f"{len(live_columns)} columns verified against workbook{note}"
+                        )
                     return row
                 if stage == "dq":
                     failures = {}
@@ -375,6 +387,14 @@ class MigrationLibrary:
                     row["dq_failures"] = failures
                     if failures:
                         row["status"] = "FAIL"
+                        row["detail"] = "; ".join(
+                            f"{rid}: {n} row(s)" for rid, n in sorted(failures.items())
+                        )
+                    else:
+                        row["detail"] = (
+                            f"{row['source_count']} rows checked; "
+                            "0 source/derived DQ rule violations"
+                        )
                     return row
                 with closing(self._target(contract)) as target:
                     if stage == "schema":
@@ -436,6 +456,15 @@ class MigrationLibrary:
                                 )
                         if row["schema_errors"]:
                             row["status"] = "FAIL"
+                            row["detail"] = (
+                                f"{len(row['schema_errors'])} schema error(s) — "
+                                "see Diffs & Violations"
+                            )
+                        else:
+                            row["detail"] = (
+                                f"{len(contract.columns)} target columns validated "
+                                "(name, type, nullability, length, scale)"
+                            )
                         return row
                     if stage == "negative":
                         clean = self._compare(source, target, contract)
@@ -497,6 +526,10 @@ class MigrationLibrary:
                         row["control_mismatches"] = mismatches
                         if mismatches:
                             row["status"] = "FAIL"
+                            row["detail"] = (
+                                f"{len(mismatches)} control mismatch(es) — "
+                                "expected vs actual/trailer in Diffs & Violations"
+                            )
                         else:
                             row["detail"] = f"{len(specs)} controls certified"
                         return row
@@ -551,6 +584,12 @@ class MigrationLibrary:
                             )
                     if result.mismatch_count:
                         row["status"] = "FAIL"
+                        if not row["detail"]:
+                            row["detail"] = (
+                                f"{row['missing']} missing / {row['extra']} extra / "
+                                f"{row['diffs']} column diffs — bounded samples in "
+                                "Diffs & Violations"
+                            )
                     elif not row["detail"]:
                         row["detail"] = (
                             f"{result.target_count}/{result.source_count} rows match; "
@@ -647,7 +686,7 @@ class MigrationLibrary:
                             "orphan_samples": (tgt["samples"] or src["samples"])[:5]
                         }
                     else:
-                        row["detail"] = "no orphans on either side"
+                        row["detail"] = "0 source / 0 target orphans; FK integrity holds"
                 except Exception as exc:
                     row["status"] = "ERROR"
                     row["detail"] = f"{type(exc).__name__}: {exc}"[:500]

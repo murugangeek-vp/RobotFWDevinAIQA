@@ -427,8 +427,8 @@ def write_evidence(results, meta, out_dir):
         "",
         "Production sign-off: **not granted**. Evidence is scoped to the named run and selected stages.",
         "",
-        "| Mapping | Stage | Status | Source | Target | Mismatches | Seconds |",
-        "|---|---|---|---:|---:|---:|---:|",
+        "| Mapping | Stage | Status | Source | Target | Mismatches | Seconds | Proof |",
+        "|---|---|---|---:|---:|---:|---:|---|",
     ]
     for row in results:
         lines.append(
@@ -443,6 +443,7 @@ def write_evidence(results, meta, out_dir):
                     "target_count",
                     "mismatches",
                     "seconds",
+                    "detail",
                 )
             )
             + " |"
