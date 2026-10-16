@@ -1,4 +1,4 @@
-# Excel mapping workbook — `data/mapping/bank_mapping.xlsx`
+# Excel mapping workbooks — `data/mapping/phase1_*.xlsx`
 
 The workbook is the **single source of truth** for what migrates and how:
 table pairs, keys, scope filters, field renames, types and transformations.
@@ -7,20 +7,25 @@ validated contract at runtime.
 
 ## Which workbook is which
 
-| Workbook | Drives | Suite |
-|---|---|---|
-| `data/mapping/bank_mapping.xlsx` | Bank→bank DB migration scope: `Tables`, `FieldMap`, `Mapping`, `Relations`, `Controls` | `tests/migration` |
-| `data/rules/business_rules.xlsx` | Row-level business/DQ rules for file→DB feeds | `tests/pilot` |
+One workbook per hop of the Phase-1 pipeline — each pairs with the
+same-named `config/environments/phase1_*.yaml`:
 
-Both compile to the same contract model — a rule or mapping declared in
-either runs through the same engine regardless of source dialect
+| Workbook | Hop | Suite |
+|---|---|---|
+| `data/mapping/phase1_hop1_csv_to_stage.xlsx` | CSV extracts → `wdr_uat_active_stage.signature` | `tests/migration` |
+| `data/mapping/phase1_hop2_stage_to_il.xlsx` | `signature` → `wdr_uat_integration.wdr_il_core` | `tests/migration` |
+| `data/mapping/phase1_hop3_il_to_consumption.xlsx` | `wdr_il_core` → `wdr_uat_consumption.wdr_cl_fds_core` | `tests/migration` |
+
+All compile to the same contract model — a mapping declared in any workbook
+runs through the same engine regardless of source dialect
 (postgres/snowflake/mysql/oracle/mssql or CSV), which is what "unified
 rules" means here: adapters translate, the engine is unchanged.
 
-Regenerate the demo workbook:
+The workbooks are generated from the client spec
+(`data/trailer/Phase1.xlsx`); regenerate them:
 
 ```bash
-.venv/Scripts/python scripts/generate_mapping_workbook.py
+.venv/Scripts/python scripts/generate_phase1_workbooks.py
 ```
 
 ## Sheets
@@ -30,7 +35,7 @@ Regenerate the demo workbook:
 | Column | Required | Meaning |
 |---|---|---|
 | Mapping ID | yes | unique handle, used by `-v MAPPING_ID:...` |
-| Source Schema / Source Table | yes | e.g. `webster` / `customer` |
+| Source Schema / Source Table | yes | e.g. `signature` / `v_dim_customer_src` |
 | Target Schema / Target Table | yes | e.g. `PUBLIC` / `customer` |
 | Key Columns | yes | comma list of **target-side** key column names |
 | Where Clause | no | vetted SQL fragment scoping migrated rows |

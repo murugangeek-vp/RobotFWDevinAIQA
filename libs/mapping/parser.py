@@ -1,4 +1,4 @@
-"""Parse the migration mapping workbook (bank_mapping.xlsx).
+"""Parse the migration mapping workbook (data/mapping/phase1_*.xlsx).
 
 Sheets:
   Tables   — one row per source->target table pair:

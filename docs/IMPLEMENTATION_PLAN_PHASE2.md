@@ -88,7 +88,7 @@ expressions only. Two-part implementation:
 - `scripts/load_phase2_hop.py` — env-driven loader: CSV→landing (COPY),
   landing→integration and integration→target apply the workbook transforms
   through the real engine (`mapped_rows`) into the next database — mirrors
-  `load_migration_target.py`, refuses non-demo targets.
+  `load_phase2_hop.py`, refuses non-demo targets.
 - Grants stay least-privilege: loader uses `recon_rw`, suites use `recon_ro`.
 
 ### P2-5 — Suite wiring + chain evidence

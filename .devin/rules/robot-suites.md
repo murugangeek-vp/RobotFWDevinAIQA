@@ -18,17 +18,18 @@ globs: "tests/**/*.robot,resources/**/*.resource"
 
 ## Structure
 
-- Suites are numbered `NN_name.robot` under `tests/pilot/`; `90_` prefix is
-  reserved for negative-path self-tests that seed defects and assert exact
-  detection counts.
-- Suite Setup: `Recon Suite Setup` (Load Environment → Load Contract);
-  Suite Teardown: `Recon Suite Teardown` (Close Target). Per-suite loaders
-  wrap `Load Target From Source`.
-- Tests that write to or seed the target MUST be tagged `requires_write` so
-  verify-only runs (`RECON_SKIP_LOAD=true robot --exclude requires_write`)
-  skip them. Pure verification tests carry no write dependency.
-- Parameterize via variables (`${ENV_FILE}`, `${SOURCE_FILE}`) overridable
-  with `robot -v`; build paths with `${ROOT}${/}`.
+- Suites are numbered `NN_name.robot` under `tests/migration/`; `90_`
+  prefix is reserved for negative-path self-tests that seed defects and
+  assert exact detection counts.
+- Suite Setup: `Migration Suite Setup` (Configure Migration — env YAML +
+  workbook); Suite Teardown: `Migration Suite Teardown` (Write Migration
+  Evidence). The migration suites are verify-only — they never load the
+  target; loaders are scripts (`load_phase2_hop.py`) run out-of-band.
+- Tests that seed defects on streamed copies MUST stay read-only against
+  the databases — defect injection happens on in-memory frames only.
+- Parameterize via variables (`${MIGRATION_ENV}`, `${MAPPING_WORKBOOK}`,
+  `${MAPPING_ID}`) overridable with `robot -v`; build paths with
+  `${ROOT}${/}`.
 - Expected row counts are dynamic (rows the source delivered post-filter,
   post-transform) — never a literal in a test unless the contract declares
   `metadata.expected_row_count`.
@@ -39,14 +40,15 @@ globs: "tests/**/*.robot,resources/**/*.resource"
   workflow: `analyze_scenario` once → `find_keywords` for any unknown keyword
   (never guess names/args) → `execute_step` one keyword at a time →
   `build_test_suite` to finish.
-- Prefer existing `ReconciliationLibrary` keywords; call `find_keywords`
+- Prefer existing `MigrationLibrary` keywords; call `find_keywords`
   before inventing a new one (process rule X-01: the keyword library stays
   reusable and documented).
 
 ## Results & reporting
 
-- Runs write `results/{report.html,log.html,output.xml,run_summary.json}`;
-  `Write Rules Summary` adds `business_rules_summary.xlsx` (audit workbook —
-  keep its Run Info sheet fields).
-- A suite must leave the target verifiable afterwards: loaders are idempotent
-  (TRUNCATE+INSERT) and re-runnable; teardowns close connections.
+- Runs write `results/<hop>/{report.html,log.html,output.xml,
+  run_summary.json,migration_summary.xlsx,migration_report.md}` — the audit
+  workbook's Run Info sheet records timestamp, env, snapshot id, commit,
+  executor, verdict.
+- A suite must leave the target verifiable afterwards: verification is
+  read-only by construction; teardowns close connections and write evidence.

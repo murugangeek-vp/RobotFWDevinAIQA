@@ -12,21 +12,20 @@ allowed-tools:
 
 EXCEL-DRIVEN BUSINESS RULES
 
-`data/rules/business_rules.xlsx` is the source of truth — rules are DATA, not
-code. Never write per-rule test code. The suite is
-`tests/pilot/07_excel_rules.robot` (`Load Rule Workbook` →
+Business rules are DATA, not code — a rules workbook is the source of truth
+and never produces per-rule test code. The engine (`libs/excelrules/`) is
+exercised through `ReconciliationLibrary` keywords (`Load Rule Workbook` →
 `Run Business Rules Validation` → `Get Rule Violations` / `Write Rules
-Summary`).
+Summary`); create `data/rules/business_rules.xlsx` when a client supplies a
+rules sheet.
 
 ## Add a business rule (no code change)
 
-1. Edit the generator `scripts/generate_rules_workbook.py` — one row on the
-   **Rules** sheet: Test ID, Source Table(s), Source Column(s), Target
-   Table/Column, Rule Type, Transformation Logic, Expected, Severity, Where
-   Clause, Key Column, Enabled.
-2. Regenerate: `.venv/Scripts/python scripts/generate_rules_workbook.py`.
-3. Run `.venv/Scripts/robot -d results tests/pilot/07_excel_rules.robot` and
-   check `results/business_rules_summary.xlsx`.
+1. One row on the **Rules** sheet: Test ID, Source Table(s), Source
+   Column(s), Target Table/Column, Rule Type, Transformation Logic,
+   Expected, Severity, Where Clause, Key Column, Enabled.
+2. Run a suite that calls `Run Business Rules Validation` and check the
+   rules summary workbook written under `results/`.
 
 - Rule types (25): `MAX_LENGTH, MIN_LENGTH, UPPERCASE, LOWERCASE, TRIM,
   CONCAT, MAP, DIRECT_COMPARE, NULL_CHECK, DATE_FORMAT, DATE_TRANSFORM,
@@ -53,8 +52,7 @@ Summary`).
    workbook fields.
 4. `CUSTOM_SQL` must stay a SELECT `WHERE` predicate on the RO connection;
    `CUSTOM_PYTHON` stays sandboxed (no extra builtins). Do not loosen either.
-5. Add a sample column exercising it to `transform_lab` fixtures, a workbook
-   row, an engine unit test in `tests/pilot/test_excel_rules.py`, and
-   regenerate the workbook.
-6. Run: `python -m unittest discover -s tests/pilot -p "test_*.py" -v` then
-   `robot -d results tests/pilot`.
+5. Add a workbook row exercising it plus an engine unit test under
+   `tests/migration/`.
+6. Run: `python -m unittest discover -s tests/migration -p "test_*.py" -v`
+   then the hop suites (`tests/migration`).

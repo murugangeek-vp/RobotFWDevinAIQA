@@ -157,12 +157,17 @@ def _trailers(cup, leg, ref):
         ("cup01201_rows", "", len(leg)),
         ("dim_reference_rows", "", len(ref)),
     ]
-    # hop 2 — IL target row counts (LEFT JOINs preserve customer count)
+    # hop 2 — IL target row counts (LEFT JOINs preserve customer count) +
+    # customer_type_cd grouping (casewhen: cupers 'N' -> 'C', else trimmed)
+    by_type: dict = {}
+    for r in cup:
+        ctype = "C" if r[2].strip() == "N" else r[2].strip()
+        by_type[ctype] = by_type.get(ctype, 0) + 1
     hop2 = [
         ("dim_customer_rows", "", len(cup)),
         ("dim_address_rows", "", len(cup)),
         ("dim_ref_rows", "", len(ref)),
-    ]
+    ] + [("dim_customer_by_type", g, v) for g, v in sorted(by_type.items())]
     # hop 3 — consumption rows + business-domain grouping.
     # cupers N -> 'C' upstream (spec row 5), so domain = Personal/Commercial/
     # Business only.

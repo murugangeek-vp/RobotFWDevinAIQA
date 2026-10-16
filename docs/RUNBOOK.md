@@ -1,29 +1,40 @@
-# Runbook — Data Reconciliation Testing Framework
+# Runbook — Phase-1 Banking Data Migration Validation
+
+End-to-end validation of a three-hop migration pipeline defined by the
+client spec `data/trailer/Phase1.xlsx`:
+
+| Hop | Source | Target (PostgreSQL) | Env / workbook |
+|---|---|---|---|
+| 1 | CSV extracts (`source.dir`, one file per table) | `wdr_uat_active_stage.signature` | `phase1_hop1_csv_stage.yaml` / `phase1_hop1_csv_to_stage.xlsx` |
+| 2 | `signature` tables + `v_dim_customer_src` view | `wdr_uat_integration.wdr_il_core` | `phase1_hop2_stage_il.yaml` / `phase1_hop2_stage_to_il.xlsx` |
+| 3 | `wdr_il_core.v_party_snpsht_src` view | `wdr_uat_consumption.wdr_cl_fds_core` | `phase1_hop3_il_consumption.yaml` / `phase1_hop3_il_to_consumption.xlsx` |
+
+The same `tests/migration` suites run per hop — all 9 stages (mapping,
+source metadata, DQ, schema, recon, transforms, pipeline, controls,
+relations) plus the `90_` negative-path proof. `pipeline_id:
+phase1-uat-demo` in the evidence metadata links the three runs into one
+auditable chain.
 
 ## Prereqs
 
 - Python 3.11+ (3.12 preferred), `uv` or `pip`
-- A reachable PostgreSQL 16 with the `recon` database and `recon_rw` / `recon_ro`
-  roles. Local Docker:
+- A reachable PostgreSQL 16. Local Docker:
 
   ```bash
   docker run -d --name recon-db -e POSTGRES_PASSWORD=postgres_local -p 5432:5432 postgres:16-alpine
-  docker exec recon-db psql -U postgres -c "CREATE DATABASE recon;"
-  docker exec recon-db psql -U postgres -d recon -f /dev/stdin <<'SQL'   # see scripts/ or the CI workflow for the full grant block
-  SQL
   ```
 
-  Full role DDL is in `.github/workflows/reconciliation.yml` (the "Provision
-  recon database" step) — reuse it for any fresh environment.
+- The three `wdr_uat_*` databases, schemas, and least-privilege roles.
+  Full provisioning DDL is in `.github/workflows/reconciliation.yml` (the
+  "Provision phase-1 databases" step) — reuse it for any fresh environment.
+  Locally it was applied once via `psql`; the read-only join views are
+  (re)created by `scripts/provision_phase2.py` at each stage of the load.
 
 ## Setup (< 5 min)
 
 ```bash
 uv venv .venv && uv pip install --python .venv/Scripts/python -r requirements.txt
 # or: python -m venv .venv && .venv/Scripts/pip install -r requirements.txt
-
-# regenerate sample data if needed
-.venv/Scripts/python scripts/generate_samples.py
 ```
 
 ## Credentials (never committed)
@@ -44,268 +55,102 @@ export RECON_RW_USER=recon_rw   RECON_RW_PASSWORD=...
 
 Windows PowerShell: `$env:RECON_RO_USER="recon_ro"` etc.
 
-## Run everything (clean data → PASS, rc=0)
+Roles: `recon_ro` is SELECT-only and serves all verification; `recon_rw`
+is the fixture loader only. The suites never open a write connection —
+`allow_qa_load: true` exists on the demo envs solely so the *loader script*
+can populate the synthetic targets out-of-band, standing in for the bank's
+ETL.
+
+## Full chain (generate → load → verify)
 
 ```bash
-.venv/Scripts/robot -d results tests/pilot
+# 1. Regenerate artifacts (workbooks from spec, deterministic CSVs, trailers)
+.venv/Scripts/python scripts/generate_phase1_workbooks.py
+.venv/Scripts/python scripts/generate_phase1_csv.py
+
+# 2. Load each hop's target (RW role — the "ETL" for the demo)
+.venv/Scripts/python scripts/load_phase2_hop.py --hop 1     # CSV -> signature
+.venv/Scripts/python scripts/provision_phase2.py --views stage   # join view for hop 2
+.venv/Scripts/python scripts/load_phase2_hop.py --hop 2     # signature -> wdr_il_core
+.venv/Scripts/python scripts/provision_phase2.py --views il      # join view for hop 3
+.venv/Scripts/python scripts/load_phase2_hop.py --hop 3     # wdr_il_core -> wdr_cl_fds_core
+
+# 3. Verify each hop (RO role only)
+.venv/Scripts/robot -d results/phase1/hop1 \
+  -v MIGRATION_ENV:config/environments/phase1_hop1_csv_stage.yaml \
+  -v MAPPING_WORKBOOK:data/mapping/phase1_hop1_csv_to_stage.xlsx tests/migration
+.venv/Scripts/robot -d results/phase1/hop2 \
+  -v MIGRATION_ENV:config/environments/phase1_hop2_stage_il.yaml \
+  -v MAPPING_WORKBOOK:data/mapping/phase1_hop2_stage_to_il.xlsx tests/migration
+.venv/Scripts/robot -d results/phase1/hop3 \
+  -v MIGRATION_ENV:config/environments/phase1_hop3_il_consumption.yaml \
+  -v MAPPING_WORKBOOK:data/mapping/phase1_hop3_il_to_consumption.xlsx tests/migration
 ```
 
-Produces `results/{report.html,log.html,output.xml,run_summary.json}`.
+Evidence per hop lands in `results/phase1/hopN/`: `report.html`,
+`log.html`, `migration_report.md`, `migration_summary.xlsx`,
+`run_summary.json` (with `pipeline_id`, `hop`, snapshot id, git commit,
+verdict; `production_signoff` is never granted by a run).
 
-## Run against a corrupted file → expected FAIL
+## Snapshot / cutover semantics
 
-```bash
-robot -d results_neg -v SOURCE_FILE:data/samples/customer_bad_dq.csv tests/pilot/02_data_quality.robot
-robot -d results_neg -v SOURCE_FILE:data/samples/customer_missing_rows.csv tests/pilot/01_header_metadata.robot
-```
+- Hop 1 (CSV): `source.snapshot_column: load_date` applies the declared
+  watermark (`load_date <= run.snapshot_id`) as a real filter on the CSV
+  frame — the file's extract date acts as the frozen cut.
+- Hops 2–3 (Postgres): `run.snapshot_id` is a real `pg_export_snapshot`
+  id captured at load time — the verifier reads exactly the frozen
+  transaction state, provably identical to what the loader saw.
+- A non-fake target **requires** enforced snapshots — the library refuses
+  to verify live drift on production-like connections.
 
-`tests/pilot/90_negative_path.robot` proves detection end-to-end (it seeds defects
-into the target DB and asserts the exact mismatch counts).
+## Negative-path demo (expected FAIL)
 
-## Verify-only mode — `RECON_SKIP_LOAD` (production semantics)
-
-In normal Pilot runs the suite *is* the fixture loader: each test truncates and
-reloads expected rows as `recon_rw` before comparing. That keeps tests
-deterministic, but it also **overwrites whatever the target already holds** —
-a pre-existing defect is erased before it can be seen.
-
-Set `RECON_SKIP_LOAD=true` (shell env or `.env`) to run **verify-only**: every
-load is skipped and the suite validates the target as-is using only `recon_ro`.
-A missing or broken `RECON_RW_*` credential cannot fail verification.
-
-```powershell
-# .env
-RECON_SKIP_LOAD=true
-
-# then a plain run is verify-only:
-robot --exclude requires_write -d results tests/pilot
-```
-
-What changes in verify-only mode:
-
-- `Load Source Into Target` logs `target left untouched` and returns 0 — no
-  write connection is opened.
-- `Execute Write Sql` connects as `recon_ro`, so the engine itself rejects the
-  mutation. This still proves role enforcement (e.g. the Over-Length test now
-  fails with `permission denied` instead of `value too long` — either
-  rejection passes).
-- The 4 negative tests that *seed* defects via target writes are tagged
-  `requires_write` — seeding IS a write, so exclude them from verify-only
-  runs. To test detection in verify-only mode, tamper the target out-of-band
-  (e.g. `UPDATE ... SET city = lower(city)`) and watch the diffs appear.
-- `Run Summary Captures Result` (06) still works: the row-count assert only
-  applies when rows were actually loaded.
-
-To restore clean fixtures: remove `RECON_SKIP_LOAD` and run the suite once —
-the loaders truncate/reload every Pilot table.
-
-**Production verification:** verify-only is the intended mode — the suite
-validates the bank-loaded target as-is with a SELECT-only role.
-
-## Migration scope — `source.row_filter`
-
-Bank ETLs often migrate a *subset* of source rows (e.g. active accounts only).
-Declare the scope in the contract; rows outside it are out of scope, not
-defects — they are excluded from the expected set AND flagged as
-`extra_in_target` if the ETL leaks them:
-
-```yaml
-source:
-  row_filter:
-    column: status
-    in: [active, "1"]        # operators: in, not_in, eq, ne
-  # compound:  all: [{column: a, eq: x}, {column: b, in: [...]}]
-  #            any: [...]     allow_empty: true (permit a zero-row scope)
-```
-
-`config/contracts/customer_filtered.yaml` demonstrates it (the active subset).
-`Get Source Filter Stats` reports `{total, included, excluded}`; with a filter,
-the target row-count check expects the *included* count. A filter on an
-unknown column fails closed at `Load Contract`; a zero-row scope fails at
-`Read Source` unless `allow_empty: true`.
-
-**Row counts are dynamic**: expected target count = rows the source actually
-delivered (post-filter, post-transform) — never a contract literal. The
-optional `metadata.expected_row_count` remains for feeds with a contractual
-fixed size, but the pilot contracts don't use it.
-
-## Excel-driven rules — `tests/pilot/07_excel_rules.robot`
-
-A second, workbook-driven validation layer for migration rules delivered as a
-client spreadsheet. `data/rules/business_rules.xlsx` is the source of truth —
-**no per-rule test code**:
-
-- **Rules sheet** — one row per rule: Test ID, Source Table(s), Source
-  Column(s), Target Table/Column, Rule Type, Transformation Logic, Expected,
-  Severity, Where Clause, Key Column (`src=target` when names differ), Enabled.
-- **Mapping sheet** — code tables (`products: LN -> LOAN`, …) for `MAP` rules.
-- **Rule types (25)** — `MAX_LENGTH`, `MIN_LENGTH`, `UPPERCASE`, `LOWERCASE`,
-  `TRIM`, `CONCAT`, `MAP`, `DIRECT_COMPARE`, `NULL_CHECK`, `DATE_FORMAT`,
-  `DATE_TRANSFORM`, `NUMERIC_ROUND`, `DEFAULT_VALUE`, `LOOKUP`, `REGEX`,
-  `MASK`, `HASH`, `ENCRYPTION`, `DECRYPTION`, `SUBSTRING`, `PREFIX`, `SUFFIX`,
-  `CASE_WHEN`, `CUSTOM_SQL`, `CUSTOM_PYTHON`. Unknown types fail closed at load.
-- **Transform Logic** accepts engine expressions: `upper({c})`,
-  `substr(c, 12, 4)`, `mask(c)`, `sha256(c)`, `enc(c)`/`dec(c)` (demo cipher —
-  `RECON_RULES_KEY`, not for real secrets), `ifnull(c, 'X')`,
-  `date_fmt(c, '%d/%m/%Y')`, `round(c, 2)`, `{a}|{b}` templates.
-- `CASE_WHEN` syntax: `case(col) when 'v' then 'r' ... else 'd'`.
-- `CUSTOM_SQL` runs the Logic as a SQL predicate — `WHERE NOT (<logic>)`
-  selects the violating rows server-side.
-- `CUSTOM_PYTHON` evaluates the Logic as a Python expression over source
-  columns (sandboxed: no builtins beyond int/float/str/len/round/Decimal).
-- `LOOKUP` = `lookup(<joined_col>)` over a comma-listed multi-file Source Table
-  (e.g. `transform_lab,country_ref` joins on `country`). Added files either
-  auto-join on a shared column name or use an explicit
-  `file@acc_col=file_col` spec when the keys are named differently —
-  `transform_lab,region_ref@country=ctry` joins `transform_lab.country` to
-  `region_ref.ctry`.
-- The `transform_lab` fixture (`transform_lab.csv` + `country_ref.csv` +
-  `config/contracts/transform_lab.yaml`) carries one sample column per rule
-  type — regenerated by the suite setup in loader mode.
-- `Source Table` accepts a comma list (e.g. `account_extract,account_codes`) —
-  files auto-join on the shared key column.
-- `Severity` — HIGH/MEDIUM/CRITICAL violations fail; LOW reports only.
-- `Enabled=no` rows are parsed but skipped.
-
-Keywords: `Load Rule Workbook` → `Run Business Rules Validation` (all rules
-or one Test ID) → `Get Rule Violations` / `Get Rule Summary` → `Write Rules
-Summary` (writes `results/business_rules_summary.xlsx` — the audit workbook beside the
-Robot reports; the `Run Info` sheet records timestamp, environment, contract
-version, executor, commit, and the verdict, `Summary` has one row per rule,
-and `Violations` lists every breach in full). Target rows are fetched as `recon_ro` through dynamic,
-identifier-vetted SQL with an optional WHERE fragment. Regenerate the sample
-workbook with `scripts/generate_rules_workbook.py`.
-
-## Bank migration suite — `tests/migration/` (Postgres → Snowflake)
-
-Verify-only, workbook-driven bank-to-bank migration validation. The shipped
-scenario is **Webster Bank** (local Postgres `webster` schema, synthetic
-data) → **Santander Bank** (Snowflake `SANTANDER.PUBLIC`, emulated locally by
-fakesnow). **No loader runs in this suite** — it validates the target as-is.
-
-### One-time setup
-
-```bash
-.venv/Scripts/python scripts/generate_mapping_workbook.py        # data/mapping/bank_mapping.xlsx
-.venv/Scripts/python scripts/generate_bank_source.py --rows 10000 --confirm-synthetic  # webster.* tables + trailer
-.venv/Scripts/python scripts/load_migration_target.py            # expected rows -> emulated Santander target
-```
-
-The seeder also writes `data/trailer/webster_trailer.csv` — the bank trailer
-file certifying every `Controls`-sheet total (`name,group,value`); the
-`controls` stage fails when a declared control is uncertified or drifts.
-`data/trailer/` is git-ignored and regenerated with the source.
-
-The suite never loads the target — `load_migration_target.py` populates the
-fakesnow warehouse out-of-band (and **refuses non-fake targets**), standing
-in for the bank's ETL in demos. Re-run it after reseeding the source or
-changing the workbook.
-
-The seeder **refuses to run if `webster` already exists** and requires the
-`RECON_RW_*` admin credentials — reseeding a live schema must be a deliberate
-act. `--rows N` scales customer volume (accounts/txns/loans scale with it).
-
-### Run
-
-```bash
-.venv/Scripts/robot -d results/migration tests/migration          # all 5 mappings, all stages
-.venv/Scripts/robot -d results/m1 -v MAPPING_ID:account_migration tests/migration   # one mapping
-.venv/Scripts/robot -d results/r  --include recon tests/migration                   # compare+transform only
-.venv/Scripts/robot -d results/n  tests/migration/90_negative_path.robot            # defect-detection proof
-```
-
-Config: `config/environments/webster_santander.yaml` (`${MIGRATION_ENV}` and
-`${MAPPING_WORKBOOK}` variables override it). Evidence per run:
-`migration_summary.xlsx`, `migration_report.md`, `run_summary.json` inside
-the output dir — `run_summary.json` records `production_signoff: false`
-always; a green **emulated** run is not sign-off.
-
-### Fake vs real Snowflake
-
-`target.fake: true` runs the real `snowflake-connector-python` code path on
-fakesnow/DuckDB (state in `results/fakesnow/`). For a real account use
-`config/environments/webster_santander_live.yaml`: set `fake: false`,
-`SNOWFLAKE_*` env vars, and — mandatory for real runs — `run.snapshot_id`
-(an agreed frozen migration cut; the library refuses real-database runs
-without it). Known emulator gap: VARCHAR declared lengths are not in
-fakesnow's `information_schema`, so length checks report "not validated"
-locally and stay enforced on real Snowflake.
-
-### Scale notes
-
-Both sides stream in `run.batch_size` chunks through a canonical external
-sort (temp SQLite, auto-deleted) — RAM stays flat at million-row volumes;
-reserve temp disk ~projected row payload. `Recon Mode: hash` in the workbook
-switches a mapping to per-key SHA-256 comparison (client-side — it does not
-reduce transfer). Production runs need SELECT-only roles; writers are never
-opened by this suite.
-
-See `docs/EXCEL_MAPPING.md` (workbook spec) and `docs/ADAPTERS.md`
-(any-database extension points).
-
-## Phase-2 multi-hop pipeline — CSV → Stage → Integration → Consumption
-
-Spec: `data/trailer/Phase1.xlsx`. Three independent hop runs, one
-`pipeline_id` in evidence metadata links the chain.
-
-| Hop | Source | Target (postgres) | Env / workbook |
-|---|---|---|---|
-| 1 | CSV files (`source.dir`, one file/table) | `wdr_uat_active_stage.signature` | `phase1_hop1_csv_stage.yaml` / `phase1_hop1_csv_to_stage.xlsx` |
-| 2 | `signature` tables + `v_dim_customer_src` view | `wdr_uat_integration.wdr_il_core` | `phase1_hop2_stage_il.yaml` / `phase1_hop2_stage_to_il.xlsx` |
-| 3 | `wdr_il_core.v_party_snpsht_src` view | `wdr_uat_consumption.wdr_cl_fds_core` | `phase1_hop3_il_consumption.yaml` / `phase1_hop3_il_to_consumption.xlsx` |
-
-Provisioned locally via `scripts/provision_phase2.py` (databases/schemas
-live in `recon-db`; CI creates them in `reconciliation.yml`). Verification
-reads as `recon_ro`; loads use `recon_rw` (`target.load_user/load_password`)
-and only when `target.allow_qa_load: true` — set on demo envs only.
-
-Full chain:
-
-```bash
-.venv/Scripts/python scripts/generate_phase1_workbooks.py   # workbooks
-.venv/Scripts/python scripts/generate_phase1_csv.py         # csvs+trailers+negatives
-.venv/Scripts/python scripts/load_phase2_hop.py --env config/environments/phase1_hop1_csv_stage.yaml --workbook data/mapping/phase1_hop1_csv_to_stage.xlsx
-.venv/Scripts/python scripts/provision_phase2.py --views stage
-.venv/Scripts/python scripts/load_phase2_hop.py --env config/environments/phase1_hop2_stage_il.yaml --workbook data/mapping/phase1_hop2_stage_to_il.xlsx
-.venv/Scripts/python scripts/provision_phase2.py --views il
-.venv/Scripts/python scripts/load_phase2_hop.py --env config/environments/phase1_hop3_il_consumption.yaml --workbook data/mapping/phase1_hop3_il_to_consumption.xlsx
-.venv/Scripts/robot -d results/phase1/hop1 -v MIGRATION_ENV:config/environments/phase1_hop1_csv_stage.yaml -v MAPPING_WORKBOOK:data/mapping/phase1_hop1_csv_to_stage.xlsx tests/migration
-.venv/Scripts/robot -d results/phase1/hop2 -v MIGRATION_ENV:config/environments/phase1_hop2_stage_il.yaml -v MAPPING_WORKBOOK:data/mapping/phase1_hop2_stage_to_il.xlsx tests/migration
-.venv/Scripts/robot -d results/phase1/hop3 -v MIGRATION_ENV:config/environments/phase1_hop3_il_consumption.yaml -v MAPPING_WORKBOOK:data/mapping/phase1_hop3_il_to_consumption.xlsx tests/migration
-```
-
-Negative demo (expected FAIL — `missing_rows` drops 5 customers; recon
-reports `extra: 5`, controls fail vs trailer, relations flag FK orphans):
+`phase1_hop1_csv_stage_negative.yaml` points `source.dir` at
+`data/phase1/negative/missing_rows/` — the same suite against corrupted
+extracts must fail:
 
 ```bash
 .venv/Scripts/robot -d results/phase1/hop1_negative \
   -v MIGRATION_ENV:config/environments/phase1_hop1_csv_stage_negative.yaml \
   -v MAPPING_WORKBOOK:data/mapping/phase1_hop1_csv_to_stage.xlsx tests/migration
-# point source.dir at data/phase1/negative/<other-case> for other defects
 ```
 
-Spec-gap handling: `CUSIC`→APPL_KEY+NAICS_CD split (APPL_KEY='CBS'
-authoritative), CASE without ELSE → `ELSE 'UNSPECIFIED'`, `PARTY_TYPE`
-"complex logic" → `literal('PENDING_SPEC')` sentinel, DIM_REFERENCE lookup
-via `signature.v_dim_customer_src`. All documented in each workbook's
-README sheet.
+Observed: recon `src 195 / tgt 200 / extra: 5` (exact counts), trailer
+controls FAIL vs certified totals, relations flag 4 FK orphans. Other
+corruption cases live under `data/phase1/negative/` — point `source.dir`
+at any of them.
 
-## Switching environment / contract
+## Spec-gap resolutions (documented in each workbook README)
 
-`config/environments/dev.yaml` points at the local Docker database. For another
-Postgres environment, copy it, adjust host/port/database, and pass it in:
+- `CUSIC` maps to two target columns — split resolved: `APPL_KEY='CBS'`
+  (authoritative), `CUSIC` feeds `NAICS_CD` only.
+- `DIM_REFERENCE` is a lookup, not a table map — resolved via the
+  read-only `signature.v_dim_customer_src` join view.
+- CASE arms without ELSE get `ELSE 'UNSPECIFIED'` (declared, not silent).
+- `PARTY_TYPE` "complex logic" is pending spec — emitted as the visible
+  sentinel `literal('PENDING_SPEC')`, never silently dropped.
+- `LOAD_DATE` is an auditable run parameter (`run.load_date` →
+  `__load_date` pseudo-column in transforms), not a source fetch.
 
-```bash
-robot -d results -v ENV_FILE:config/environments/dev.yaml tests/pilot
-```
+## Onboarding real UAT data
+
+Swap the env yamls to the client hosts/credentials, set `run.snapshot_id`
+to the agreed frozen cut, drop `allow_qa_load`, replace the workbooks with
+the client-authored mapping (same sheet format), and point `source.dir` /
+`control_file` at the real extracts and certified trailer. No code changes
+— that is the point of the design.
 
 ## Common failures
 
 | Symptom | Likely layer |
-| --- | --- |
-| Header/metadata errors in 01 | source extract |
+|---|---|
+| Mapping compile errors in 01 | workbook (fail-closed spec gaps surface here) |
+| `unmapped_source_tables` insights in 01 | extra CSV files or scope leak |
 | Rule failures in 02 | source data quality |
 | `table ... does not exist` / type mismatch in 03 | target schema drift |
-| `missing_in_target` / `extra_in_target` in 04 | load layer |
-| `Get Transform Diffs` non-empty in 05 | transform/mapping layer |
-| `permission denied` | wrong role — verification must run as `recon_ro`, loader as `recon_rw` |
+| `missing_in_target` / `extra_in_target` in 04 | load layer / incomplete extract |
+| `Get Transform Diffs` non-empty in 05 | transform logic mismatch |
+| Control mismatches in 07 | trailer totals vs loaded data |
+| Orphans in 08 | referential integrity broken by load |
+| `password authentication failed` | wrong role — verification must run as `recon_ro`, loader as `recon_rw` |
+| `snapshot required` on a real target | `run.snapshot_id` unset — mandatory for non-demo runs |

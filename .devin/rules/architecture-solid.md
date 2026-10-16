@@ -63,5 +63,5 @@ tests/*.robot ──► libs/robot ──► libs/engine ◄── libs/adapters
   already uses them (docstrings on public functions are the norm here).
 - New dependencies: pin versions in requirements.txt, prefer ≥7-day-old
   releases, justify heavyweight deps for a test tool.
-- Engine unit tests live beside suites as `tests/pilot/test_*.py`
+- Engine unit tests live beside suites as `tests/migration/test_*.py`
   (unittest discovery) — add coverage when changing engine logic.

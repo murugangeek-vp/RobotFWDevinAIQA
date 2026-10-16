@@ -28,9 +28,9 @@ globs: "data/**,scripts/generate_*.py"
 - Keep fixtures small and readable (tens/hundreds of rows). Large-volume
   benchmarks (PROD-08, 1M-row ceiling) are generated at run time, not
   committed.
-- `data/rules/business_rules.xlsx` and `data/mapping/bank_mapping.xlsx` are
-  workbooks-as-config: regenerate via `scripts/generate_rules_workbook.py` /
-  `generate_mapping_workbook.py`; don't edit binary workbooks ad hoc — the
+- `data/mapping/phase1_*.xlsx` workbooks are config-as-code: regenerate via
+  `scripts/generate_phase1_workbooks.py` from the client spec
+  (`data/trailer/Phase1.xlsx`); don't edit binary workbooks ad hoc — the
   generator is the reviewable source.
 - `results/` (robot reports, run_summary, fakesnow DBs) is output, not
   fixture — git-ignored; never commit run artifacts.

@@ -11,13 +11,20 @@ Safeguards:
   - Source reads always use the env's read-only credential; target writes
     use target.load_user/load_password (${RECON_RW_*}).
   - `snapshot: exported` is verifier-only and stripped before opening the
-    source, matching load_migration_target.py semantics.
+    source — the loader reads live data, verification reads the frozen cut.
 
 Usage:
+    .venv/Scripts/python.exe scripts/load_phase2_hop.py --hop 1
     .venv/Scripts/python.exe scripts/load_phase2_hop.py \
         --env config/environments/phase1_hop1_csv_stage.yaml \
         --workbook data/mapping/phase1_hop1_csv_to_stage.xlsx
 """
+
+HOPS = {
+    1: ("phase1_hop1_csv_stage.yaml", "phase1_hop1_csv_to_stage.xlsx"),
+    2: ("phase1_hop2_stage_il.yaml", "phase1_hop2_stage_to_il.xlsx"),
+    3: ("phase1_hop3_il_consumption.yaml", "phase1_hop3_il_to_consumption.xlsx"),
+}
 
 import argparse
 import sys
@@ -39,10 +46,17 @@ _DIALECTS = {"postgres": "postgres", "snowflake": "snowflake"}
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--env", required=True)
-    ap.add_argument("--workbook", required=True)
+    ap.add_argument("--hop", type=int, choices=sorted(HOPS), help="phase-1 hop shortcut")
+    ap.add_argument("--env")
+    ap.add_argument("--workbook")
     ap.add_argument("--mapping", default="", help="one Mapping ID (default: all enabled)")
     args = ap.parse_args()
+    if args.hop:
+        env_name, wb_name = HOPS[args.hop]
+        args.env = args.env or f"config/environments/{env_name}"
+        args.workbook = args.workbook or f"data/mapping/{wb_name}"
+    if not args.env or not args.workbook:
+        ap.error("--hop or both --env and --workbook are required")
 
     load_credentials(Path(".env"))
     env = _expand_env(yaml.safe_load(Path(args.env).read_text(encoding="utf-8")))

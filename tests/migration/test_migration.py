@@ -22,7 +22,7 @@ from libs.reporting.report import write_evidence
 from libs.robot.MigrationLibrary import MigrationLibrary
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKBOOK = ROOT / "data/mapping/bank_mapping.xlsx"
+WORKBOOK = ROOT / "data/mapping/phase1_hop2_stage_to_il.xlsx"
 
 
 class MappingTests(unittest.TestCase):
@@ -39,14 +39,14 @@ class MappingTests(unittest.TestCase):
 
     def test_all_enabled_mappings_compile(self):
         enabled = [t for t in self.tables if t.enabled]
-        self.assertEqual(len(enabled), 5)
+        self.assertEqual(len(enabled), 3)
         for t in enabled:
             self.assertEqual(self.compile(t).name, t.mapping_id)
 
     def test_composite_key_does_not_require_individually_unique_columns(self):
         table = copy.deepcopy(self.tables[0])
-        table.keys = ["customer_id", "first_name"]
-        self.assertFalse(self.compile(table).column("first_name")["unique"])
+        table.keys = ["involved_party_key", "load_date"]
+        self.assertFalse(self.compile(table).column("load_date")["unique"])
 
     def test_band_transform_buckets_scores(self):
         from libs.engine.reconcile import apply_transform
@@ -131,9 +131,15 @@ class MappingTests(unittest.TestCase):
                     )
 
     def test_disabled_mapping_cannot_be_selected(self):
-        self.assertFalse(
-            next(t for t in self.tables if t.mapping_id == "legacy_card_migration").enabled
-        )
+        with tempfile.TemporaryDirectory() as tmp:
+            wb = openpyxl.load_workbook(WORKBOOK)
+            wb["Tables"]["J2"] = "no"  # Enabled column
+            path = Path(tmp) / "disabled.xlsx"
+            wb.save(path)
+            wb.close()
+            tables, _ = parser.load_workbook(str(path))
+            disabled = next(t for t in tables if not t.enabled)
+            self.assertEqual(disabled.mapping_id, tables[0].mapping_id)
 
 
 class StagingTests(unittest.TestCase):
@@ -399,10 +405,38 @@ class SnapshotTests(unittest.TestCase):
 
 class ControlsTests(unittest.TestCase):
     def setUp(self):
-        tables, codes = parser.load_workbook(str(WORKBOOK))
-        self.account = next(t for t in tables if t.mapping_id == "account_migration")
-        self.contract = builder.build_contract(
-            self.account, codes, {"type": "postgres"}, {"type": "snowflake"}
+        from libs.engine.schema import contract_from_dict
+
+        self.contract = contract_from_dict(
+            {
+                "contract_name": "controls_test",
+                "version": "1",
+                "source": {
+                    "type": "csv",
+                    "path": "x.csv",
+                    "columns": ["account_id", "customer_id", "branch_id", "balance", "status"],
+                },
+                "target": {"type": "postgres", "table": "T"},
+                "keys": ["account_id"],
+                "columns": [
+                    {"name": "account_id", "type": "integer", "nullable": False},
+                    {"name": "customer_id", "type": "integer", "nullable": False},
+                    {"name": "branch_id", "type": "integer", "nullable": False},
+                    {"name": "balance", "type": "decimal", "nullable": True},
+                    {"name": "status", "type": "string", "nullable": False},
+                ],
+                "controls": [
+                    {"id": "account_rows", "type": "count"},
+                    {"id": "balance_total", "type": "sum", "column": "balance"},
+                    {
+                        "id": "balance_by_branch",
+                        "type": "sum",
+                        "column": "balance",
+                        "group_by": ["branch_id"],
+                    },
+                    {"id": "distinct_customers", "type": "count_distinct", "column": "customer_id"},
+                ],
+            }
         )
 
     def _frame(self, rows):
@@ -411,9 +445,15 @@ class ControlsTests(unittest.TestCase):
         )
 
     def test_workbook_controls_compile_and_validate(self):
-        specs = engine_controls.validate_controls(self.contract)
-        self.assertEqual(len(specs), 4)
-        self.assertIn("balance_by_branch", {s["id"] for s in specs})
+        tables, codes = parser.load_workbook(str(WORKBOOK))
+        t = next(t for t in tables if t.mapping_id == "dim_customer_migration")
+        contract = builder.build_contract(t, codes, {"type": "postgres"}, {"type": "postgres"})
+        specs = engine_controls.validate_controls(contract)
+        self.assertEqual({s["id"] for s in specs}, {"dim_customer_rows", "dim_customer_by_type"})
+        self.assertEqual(
+            next(s for s in specs if s["id"] == "dim_customer_by_type")["group_by"],
+            ["customer_type_cd"],
+        )
 
     def test_validate_controls_fails_closed(self):
         contract = copy.deepcopy(self.contract)
@@ -500,16 +540,13 @@ class RelationsTests(unittest.TestCase):
         self.rels = {t.mapping_id: t.relations for t in tables if t.relations}
 
     def test_workbook_relations_parse_and_attach_to_children(self):
+        self.assertEqual(set(self.rels), {"dim_customer_address_migration"})
         self.assertEqual(
-            set(self.rels), {"account_migration", "transaction_migration", "loan_migration"}
-        )
-        self.assertEqual(len(self.rels["account_migration"]), 2)
-        self.assertEqual(
-            self.rels["transaction_migration"][0],
+            self.rels["dim_customer_address_migration"][0],
             {
-                "parent_mapping": "account_migration",
-                "parent_column": "account_id",
-                "child_column": "account_id",
+                "parent_mapping": "dim_customer_migration",
+                "parent_column": "involved_party_key",
+                "child_column": "involved_party_key",
             },
         )
 

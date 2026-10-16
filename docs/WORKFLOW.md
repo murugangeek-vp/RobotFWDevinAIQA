@@ -1,185 +1,147 @@
-# Workflow — Banking Migration Verification Framework
+# Workflow — Phase-1 Banking Data Migration Validation
 
-End-to-end operator guide: how the project runs, what each suite proves, and
-where the evidence lands. Complements `RUNBOOK.md` (setup detail) and
-`EXCEL_MAPPING.md` (workbook authoring).
+Operator flow for the three-hop pipeline in `data/trailer/Phase1.xlsx`.
+Everything here is reproducible from scratch; see `docs/RUNBOOK.md` for
+setup detail and `docs/EXCEL_MAPPING.md` for workbook authoring.
 
-## Big picture
+## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  SOURCE BANK (read-only)                                        │
-│  demo: webster schema ──┐   demo2: bank1 schema (ent_*)         │
-│  real: ${BANK_*} env refs │                                     │
-│                         ▼                                       │
-│         PostgresSource / MysqlSource / OracleSource / ...       │
-│         (snapshot: exported → pg_export_snapshot pinning,       │
-│          or snapshot_column watermark for other engines)        │
-│                         │                                       │
-│      ┌──────────────────┼──────────────────┐                    │
-│      ▼                  ▼                  ▼                    │
-│  Mapping workbook   Transform engine   Controls engine          │
-│  (Tables/FieldMap/  (safe expressions) (counts/sums/trailer)     │
-│   Mapping/Controls/                                             │
-│   Relations)                                                    │
-│      │                                                          │
-│      ▼                                                          │
-│  Comparison engine (external canonical sort → exact counts      │
-│  missing / extra / column diffs)                                │
-│      ▲                                                          │
-│      │        TARGET BANK (read-only)                           │
-│      └──── SnowflakeTarget (or emulated fakesnow for demo)      │
-│                         │                                       │
-│                         ▼                                       │
-│   Evidence → run_summary.json / migration_summary.xlsx /        │
-│              migration_report.md / Robot report+log             │
-└─────────────────────────────────────────────────────────────────┘
+CSV extracts (one file/table)        PostgreSQL 16 (local recon-db)
+data/phase1/csv/*.csv                ┌──────────────────────────────┐
+        │                            │ wdr_uat_active_stage         │
+        │  hop 1                     │   signature.cup00301         │
+        ▼                            │   signature.cup01201         │
+   signature (landing) ─── hop 2 ──► │ wdr_uat_integration          │
+        │  via v_dim_customer_src    │   wdr_il_core.dim_*          │
+        │       (CUP00301+CUP01201   │                              │
+        │        +DIM_REFERENCE join)│ wdr_uat_consumption          │
+        │                            │   wdr_cl_fds_core            │
+        └── hop 3 via                │     .cl_party_snpsht         │
+            v_party_snpsht_src view  └──────────────────────────────┘
+                     │
+                     ▼
+        tests/migration — same 9-stage verify-only suite per hop
+                     │
+                     ▼
+        results/phase1/hopN/ — evidence (html/md/xlsx/json)
 ```
 
-Two demo migrations ship with the repo:
+Each hop compiles its workbook into a contract at runtime: schema →
+source reads → canonical sort → chunked recon → transform recompute →
+controls/trailer → relations → evidence. Verification is `recon_ro`
+(SELECT-only); loading is `recon_rw` out-of-band — same split as a real
+engagement where the bank's ETL owns target writes.
 
-| Scenario | Source | Target | Env | Workbook |
-|---|---|---|---|---|
-| Webster→Santander | `webster` schema (10k customers) | emulated `SANTANDER` | `webster_santander.yaml` | `bank_mapping.xlsx` |
-| Bank1→MSS | `bank1` schema (ent_* enterprise) | emulated `MSS_CORE` | `bank1_to_mss.yaml` | `bank1_to_mss.xlsx` |
+## Roles
 
-## Prerequisites (once)
+| Role | Used by | Rights |
+|---|---|---|
+| `recon_ro` | `tests/migration` suites, all source/target reads | SELECT only |
+| `recon_rw` | `scripts/load_phase2_hop.py`, `provision_phase2.py` | schema + data writes on the `wdr_uat_*` demo DBs |
+| `postgres` | one-time DB/role provisioning | admin — CI/local setup only |
 
-1. Docker Desktop running with `recon-db` (Postgres 16, port 5432).
-   Role DDL: `.github/workflows/reconciliation.yml` "Provision recon database".
-2. `.venv` with `requirements.txt` installed — or the global Python 3.11
-   (both work; `.venv/Scripts/robot` is canonical).
-3. `.env` with `RECON_RO_USER`, `RECON_RO_PASSWORD`, `RECON_RW_USER`,
-   `RECON_RW_PASSWORD` (git-ignored).
+## Daily workflow
 
-## Daily workflow — three phases
-
-### Phase 1 — Seed the source bank(s)
+### 1. Regenerate artifacts (spec → workbooks, deterministic fixtures)
 
 ```bash
-export RECON_ADMIN_USER=postgres RECON_ADMIN_PASSWORD=postgres_local
-
-# Webster (10k customers, scales with --rows)
-.venv/Scripts/python scripts/generate_bank_source.py --rows 10000 --confirm-synthetic
-
-# Bank-1 enterprise ent_* schema
-.venv/Scripts/python scripts/generate_bank1_source.py --rows 500 --confirm-synthetic
+.venv/Scripts/python scripts/generate_phase1_workbooks.py   # 3 workbooks from Phase1.xlsx spec
+.venv/Scripts/python scripts/generate_phase1_csv.py         # csvs + 7 negative cases + 3 trailers
 ```
 
-Seeder safety: refuses to overwrite an existing schema — drop first:
+Fixtures are synthetic and seeded — 200 customers / 160 legal entities /
+3 reference rows, same every run. `data/phase1/` and `data/trailer/*.csv`
+are git-ignored; regenerate, never commit.
+
+### 2. Load targets (the "ETL" — RW role)
 
 ```bash
-docker exec recon-db psql -U postgres -d recon \
-  -c "DROP SCHEMA webster CASCADE; DROP SCHEMA bank1 CASCADE;"
+.venv/Scripts/python scripts/load_phase2_hop.py --hop 1
+.venv/Scripts/python scripts/provision_phase2.py --views stage
+.venv/Scripts/python scripts/load_phase2_hop.py --hop 2
+.venv/Scripts/python scripts/provision_phase2.py --views il
+.venv/Scripts/python scripts/load_phase2_hop.py --hop 3
 ```
 
-Each run also regenerates the certified bank trailer
-(`data/trailer/*_trailer.csv`) that the controls stage validates against.
+Views between loads: hop-2 reads `signature.v_dim_customer_src` (the
+spec's DIM_REFERENCE lookup); hop-3 reads `wdr_il_core.v_party_snpsht_src`
+(customer ⨝ address). Both are `CREATE OR REPLACE`, read-only consumers.
 
-### Phase 2 — Load the target bank(s) (demo only)
-
-Verification is read-only; in a real migration the bank's ETL loads the
-target. For demos, `load_migration_target.py` plays ETL — it refuses
-non-emulated targets:
+### 3. Verify each hop (RO role — the release gate)
 
 ```bash
-.venv/Scripts/python scripts/load_migration_target.py          # webster -> SANTANDER
-.venv/Scripts/python scripts/load_migration_target.py \
-  --env config/environments/bank1_to_mss.yaml \
-  --workbook data/mapping/bank1_to_mss.xlsx                    # bank1 -> MSS_CORE
+.venv/Scripts/robot -d results/phase1/hop1 \
+  -v MIGRATION_ENV:config/environments/phase1_hop1_csv_stage.yaml \
+  -v MAPPING_WORKBOOK:data/mapping/phase1_hop1_csv_to_stage.xlsx tests/migration
+# same pattern for hop2 / hop3
 ```
 
-To start targets from zero: delete `results/fakesnow*` before loading.
-
-### Phase 3 — Run the verification suites
+### 4. Negative-path proof
 
 ```bash
-# Webster -> Santander
-.venv/Scripts/robot -d results/migration tests/migration
-
-# Bank-1 -> MSS (same suites, different env + workbook)
-.venv/Scripts/robot -d results/mss \
-  -v MIGRATION_ENV:config/environments/bank1_to_mss.yaml \
-  -v MAPPING_WORKBOOK:data/mapping/bank1_to_mss.xlsx \
-  tests/migration
-
-# Pilot suites (CSV -> postgres feeds + business rules)
-.venv/Scripts/robot -d results/pilot tests/pilot
-
-# Unit tests
-.venv/Scripts/python -m unittest discover -s tests/pilot -p "test_*.py"
-.venv/Scripts/python -m unittest discover -s tests/migration -p "test_*.py"
+.venv/Scripts/robot -d results/phase1/hop1_negative \
+  -v MIGRATION_ENV:config/environments/phase1_hop1_csv_stage_negative.yaml \
+  -v MAPPING_WORKBOOK:data/mapping/phase1_hop1_csv_to_stage.xlsx tests/migration
+# expected FAIL: recon extra:5, trailer controls fail, 4 FK orphans
 ```
 
-## What each migration suite proves
+CI (`.github/workflows/reconciliation.yml`) runs all of the above and
+treats a *passing* negative run as an error — detection is the feature.
 
-| Suite | Checks |
+## What each suite proves (per hop)
+
+| Suite | Stage | Proves |
+|---|---|---|
+| 01 | mapping, source | workbook compiles; source metadata matches; unmapped inputs surfaced |
+| 02 | dq | source DQ rules (nulls, lengths, patterns) |
+| 03 | schema | target columns/types/nullability match the workbook |
+| 04 | recon | exact row sets — missing/extra/duplicates/diffs, bounded samples |
+| 05 | transform | every declared transform recomputes on target rows |
+| 06 | pipeline | all stages PASS in one pass; evidence `coverage == COMPLETE` |
+| 07 | controls | certified trailer totals (`name,group,value`) vs actuals |
+| 08 | relations | FK orphans on both sides of each declared/derived relation |
+| 90 | negative | tampered streamed copies are caught — DBs untouched |
+
+## Evidence map
+
+| Artifact | Audience |
 |---|---|
-| `01_mapping_and_source` | Workbook compiles; mapped tables/columns exist; unmapped tables listed |
-| `02_source_data_quality` | Contract types/nullability/unique keys + row_filter scope |
-| `03_target_schema` | Column names, order, types, scale, nullability vs workbook |
-| `04_record_comparison` | **Exact counts** — missing / extra keys / per-column diffs |
-| `05_transformations` | Recomputed transforms vs stored target values |
-| `06_pipeline` | End-to-end gate + evidence coverage must be `COMPLETE` |
-| `07_controls` | Counts/sums/min/max + certified bank-trailer file match |
-| `08_relations` | FK orphans across mappings, **source and target** sides |
-| `90_negative_path` | Injects missing/tamper/duplicate/extra on streamed copies — detection proof |
-
-## Reading the evidence
-
-| Artifact | Use |
-|---|---|
-| `results/*/migration_report.md` | Human-readable verdict per mapping |
-| `results/*/migration_summary.xlsx` | Run Info + Stage Results + Diffs + Controls + Insights — the audit packet |
-| `results/*/run_summary.json` | Same data, machine-readable (`results[]` rows keyed `mapping`/`stage`) |
-| `results/*/report.html`, `log.html` | Robot PASS/FAIL + keyword-level detail |
-| `results/pilot/report.html` | Pilot gate |
-
-Key fields: `verdict` (PASS only when every executed check passed),
-`coverage` (must be `COMPLETE`), `meta.source_snapshot` (live
-`pg_export_snapshot` id = cutover binding), `production_signoff`
-(always `false` — never auto-granted).
-
-In `Stage Results`, counts fill progressively: `mapping`/`source` rows are
-source-side only; `recon` rows carry Source/Target Rows + Missing/Extra/
-Column Diffs and a self-describing detail like
-`10000/10000 rows match; 0 missing / 0 extra / 0 column diffs`.
+| `results/phase1/hopN/migration_report.md` | business/finance sign-off |
+| `results/phase1/hopN/migration_summary.xlsx` | audit — Run Info has timestamp, snapshot id, commit, executor, verdict |
+| `results/phase1/hopN/run_summary.json` | automation/CI — per-stage counts, `pipeline_id`, `hop` |
+| `results/phase1/hopN/report.html`, `log.html` | release gate / debugging |
+| `results/phase1/hopN/output.xml` | CI parsing |
 
 ## Failure triage
 
-| Symptom | Look at | Typical cause |
+| Symptom | Where to look | Typical cause |
 |---|---|---|
-| `configuration/setup: ERROR` | `run_summary.json` setup row detail | Docker down / Postgres unreachable / bad env ref |
-| All target stages `ERROR` | first target-stage row `detail` | Missing driver (`fakesnow`, `snowflake-connector`) or target DB down |
-| `unmapped_source_tables` non-empty | source stage rows | Source table without workbook mapping — declare or `fail_on_unmapped` |
-| `missing`/`extra` > 0 | Diffs sheet + recon row | Rows lost/duplicated by the loader |
-| `column diffs` > 0 | Diffs sheet (PII-redacted samples) | Wrong transform or drifted column |
-| `control_mismatches` | controls row + trailer file | Financial totals don't reconcile or trailer is stale |
-| `orphans` in relations | relations row — source vs target side | Source data defect vs migration integrity break |
-| `post_snapshot_arrivals` > 0 | recon row | Rows landed after the pinned cut — delta migration needed |
+| Workbook compile error | hopN `log.html` → suite 01 | spec gap in Phase1.xlsx (fail-closed is correct) |
+| `extra: N` on recon | `run_summary.json` stage `recon` | source rows never landed (loader or extract) |
+| `missing: N` | same | target holds rows outside the extract |
+| Control FAIL | suite 07 evidence | trailer vs loaded data drift |
+| FK orphans | suite 08 evidence | child rows loaded without parents |
+| `password authentication failed` | — | wrong role/credential; verification is RO-only |
 
-## Full rebuild (what "fresh run" means)
+## Full rebuild (clean slate)
 
 ```bash
-rm -rf results
-docker exec recon-db psql -U postgres -d recon \
-  -c "DROP SCHEMA IF EXISTS webster CASCADE; DROP SCHEMA IF EXISTS bank1 CASCADE;"
-# then Phase 1 -> 2 -> 3 above
+rm -rf results/phase1 data/phase1 data/trailer/phase1_*.csv
+# databases persist; loaders truncate-and-reload their own tables
+# (drop the wdr_uat_* schemas to reset fully, then re-apply the CI
+#  provisioning block, then the chain above)
 ```
 
-## Onboarding a real bank migration
+## Real UAT onboarding
 
-1. DBA grants a **SELECT-only** role on source and target.
-2. Create `config/environments/<name>.yaml` — connection literals only,
-   credentials as `${ENV_VAR}` refs.
-3. Business fills the workbook: Tables → FieldMap → Mapping → Relations →
-   Controls. Columns with no source stay unmapped (they surface as gaps).
-4. Provide the certified trailer file and set `run.snapshot_id` to the
-   agreed migration cut (+ `snapshot_column` for non-Postgres sources).
-5. Run the suite — verify-only, no writes to either bank.
-6. Iterate the workbook until `verdict: PASS` + `coverage: COMPLETE`,
-   then route `migration_summary.xlsx` + `migration_report.md` to the
-   business/finance/risk/technology sign-off owners.
-
-Details: `docs/EXCEL_MAPPING.md` (workbook authoring), `docs/ADAPTERS.md`
-(other engines), `docs/RUNBOOK.md` (setup/troubleshooting).
+1. Client delivers the real spec workbook, extracts, and trailer —
+   same sheet formats, no code changes.
+2. Point `config/environments/phase1_*.yaml` at client hosts; credentials
+   stay in `.env`/env vars (`${VAR}` refs only).
+3. Set `run.snapshot_id` to the agreed frozen cut; drop `allow_qa_load`.
+4. Regenerate or author the three mapping workbooks; unresolved spec
+   items fail closed at compile — that IS the spec-gap report.
+5. Run the three hops; evidence carries client `pipeline_id`/`hop`.
+6. `production_signoff` is never auto-granted — evidence goes to the
+   sign-off authority.

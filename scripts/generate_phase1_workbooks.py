@@ -379,6 +379,15 @@ HOP2_FIELDMAP = [
 HOP2_CONTROLS = [
     ["dim_customer_migration", "dim_customer_rows", "count", "", "", "dim_customer_rows", "yes"],
     [
+        "dim_customer_migration",
+        "dim_customer_by_type",
+        "count",
+        "",
+        "customer_type_cd",
+        "dim_customer_by_type",
+        "yes",
+    ],
+    [
         "dim_customer_address_migration",
         "dim_address_rows",
         "count",
@@ -432,7 +441,9 @@ HOP3_TABLES = [
 ]
 
 HOP3_FIELDMAP = [
-    _fm("cl_party_snpsht_migration", "involved_party_key", "party_identifier", "string", "no", "60"),
+    _fm(
+        "cl_party_snpsht_migration", "involved_party_key", "party_identifier", "string", "no", "60"
+    ),
     _fm("cl_party_snpsht_migration", "load_date", "as_of_date", "date", "no"),
     _fm(
         "cl_party_snpsht_migration",

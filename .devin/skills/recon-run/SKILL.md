@@ -1,7 +1,7 @@
 ---
 name: recon-run
-description: Run the reconciliation suites (full, single, tagged, verify-only, negative-path) and interpret results
-argument-hint: "[suite-or-test] [--verify-only] [--negative]"
+description: Run the migration validation suites (full, single, tagged, per-hop, negative-path) and interpret results
+argument-hint: "[hop|suite|test] [--negative]"
 allowed-tools:
   - read
   - grep
@@ -9,70 +9,65 @@ allowed-tools:
   - exec
 ---
 
-RUN THE RECONCILIATION SUITES
+RUN THE MIGRATION VALIDATION SUITES
 
 All commands run from the repo root using the venv executables
-(`.venv/Scripts/robot`, `.venv/Scripts/python` on Windows). Prereq: PostgreSQL
-`recon` reachable + `.env` filled (see docs/RUNBOOK.md).
+(`.venv/Scripts/robot`, `.venv/Scripts/python` on Windows). Prereq: the
+three `wdr_uat_*` PostgreSQL databases provisioned + `.env` filled (see
+docs/RUNBOOK.md). Verification is read-only (`recon_ro`); only the loader
+script uses `recon_rw`.
 
-## Pick the run
+## Phase-1 three-hop pipeline
 
-1. **Full suite (default):** `.venv/Scripts/robot -d results tests/pilot`
-   Clean fixtures → expect all PASS, rc=0.
-2. **One suite:** `robot -d results tests/pilot/04_record_comparison.robot`
-3. **One test:** `robot -d results --test "No Records Missing In Target" tests/pilot/04_record_comparison.robot`
-4. **Different source:** add `-v SOURCE_FILE:data/samples/<file>.csv`
-5. **Different env/contract:** `-v ENV_FILE:config/environments/<env>.yaml`
-6. **Verify-only (production semantics):** set `RECON_SKIP_LOAD=true` in
-   `.env`, then `robot --exclude requires_write -d results tests/pilot`.
-   The target is validated as-is via `recon_ro` only — no writes, no RW
-   credential needed.
-7. **Negative path (prove detection):**
-   `robot -d results_neg -v SOURCE_FILE:data/samples/customer_bad_dq.csv tests/pilot/02_data_quality.robot`
-   and `tests/pilot/90_negative_path.robot` (seeds defects, asserts exact counts).
-8. **Engine unit tests:**
-   `python -m unittest discover -s tests/pilot -p "test_*.py" -v` and
-   `python -m unittest discover -s tests/migration -p "test_*.py" -v`
+One env + one workbook per hop; the same `tests/migration` suites run all:
 
-## Migration suites (`tests/migration/` — verify-only, DB→DB)
+1. **Hop 1 — CSV → landing:**
+   `robot -d results/phase1/hop1 -v MIGRATION_ENV:config/environments/phase1_hop1_csv_stage.yaml -v MAPPING_WORKBOOK:data/mapping/phase1_hop1_csv_to_stage.xlsx tests/migration`
+2. **Hop 2 — landing → integration:**
+   `robot -d results/phase1/hop2 -v MIGRATION_ENV:config/environments/phase1_hop2_stage_il.yaml -v MAPPING_WORKBOOK:data/mapping/phase1_hop2_stage_to_il.xlsx tests/migration`
+3. **Hop 3 — integration → consumption:**
+   `robot -d results/phase1/hop3 -v MIGRATION_ENV:config/environments/phase1_hop3_il_consumption.yaml -v MAPPING_WORKBOOK:data/mapping/phase1_hop3_il_to_consumption.xlsx tests/migration`
 
-Prereq: webster source schema seeded (`scripts/generate_bank_source.py
---confirm-synthetic`) and the emulated target loaded
-(`scripts/load_migration_target.py`). No loader runs in the suite itself.
+All three PASS → expect 11/11 each, rc=0.
 
-1. **All mappings/stages:** `robot -d results/migration tests/migration`
-2. **One mapping:** `robot -d results/m1 -v MAPPING_ID:account_migration tests/migration`
-3. **Compare+transform only:** `robot -d results/r --include recon tests/migration`
-4. **Defect-detection proof:** `robot -d results/n tests/migration/90_negative_path.robot`
-5. **Env/workbook overrides:** `-v MIGRATION_ENV:<env>.yaml -v MAPPING_WORKBOOK:<wb>.xlsx`
+## Pick a narrower run
 
-Evidence lands in the output dir: `migration_summary.xlsx` (audit),
-`migration_report.md`, `run_summary.json` (`production_signoff` is always
-false — a green emulated run is not sign-off).
+- **One suite:** `robot -d results/x -v MIGRATION_ENV:<env>.yaml -v MAPPING_WORKBOOK:<wb>.xlsx tests/migration/04_record_comparison.robot`
+- **One mapping:** add `-v MAPPING_ID:dim_customer_migration`
+- **Compare+transform only:** `robot -d results/r --include recon tests/migration`
+- **Negative path (prove detection):**
+  `robot -d results/phase1/hop1_negative -v MIGRATION_ENV:config/environments/phase1_hop1_csv_stage_negative.yaml -v MAPPING_WORKBOOK:data/mapping/phase1_hop1_csv_to_stage.xlsx tests/migration`
+  — expected FAIL: corrupted CSV fixtures must surface as exact counts
+  (recon `extra: 5`, trailer control FAILs, FK orphans). A passing negative
+  run is itself a defect.
+- **Engine unit tests:**
+  `python -m unittest discover -s tests/migration -p "test_*.py" -v`
+
+## Evidence
+
+Per run dir: `migration_summary.xlsx` (audit — Run Info / Stage Results /
+Diffs & Violations), `migration_report.md`, `run_summary.json`
+(`pipeline_id`, `hop`, `snapshot_id`, git commit, `verdict`,
+`coverage` — must be COMPLETE), Robot `report.html`/`log.html`.
+`production_signoff` is always false — a green run is not sign-off.
 
 ## Interpret failures (map to layer first)
 
-| Failed suite | Layer to check |
+| Failed stage | Layer to check |
 | --- | --- |
-| 01_header_metadata | source extract — column names/order vs contract |
-| 02_data_quality | source data — read `rule_id` + samples in the message |
-| 03_schema_validation | target schema drift — type/nullability/PK |
-| 04_record_comparison | load layer — `missing_in_target` / `extra_in_target` keys |
-| 05_transformations | mapping layer — `Get Transform Diffs` output |
-| 06_pipeline | whole flow — read earlier failures first |
-| 07_excel_rules | business-rules workbook — check `results/business_rules_summary.xlsx` |
-| migration `mapping`/`source` | workbook compile or live source columns vs FieldMap |
-| migration `dq` | source rule violations — `dq_failures` in evidence |
-| migration `schema` | target DDL drift — `schema_errors` / `not_validated` (fakesnow gap) |
-| migration `recon`/`transform` | missing/extra keys, per-column diffs — bounded redacted samples |
-| `permission denied` | wrong role — verify must be `recon_ro`, loader `recon_rw` |
+| mapping / source | workbook compile — spec gaps fail closed here |
+| dq | source rule violations — `dq_failures` in evidence |
+| schema | target DDL drift — `schema_errors` |
+| recon / transform | `missing`/`extra`/per-column diffs — bounded redacted samples |
+| controls | trailer certification — `control_mismatches` |
+| relations | FK orphans on either side of a mapping relation |
+| negative | detection regression if tampered copies PASS |
+| `permission denied` / auth failed | wrong role — verify is `recon_ro`, loader `recon_rw` |
 
 ## Report
 
-- Artifacts: `results/{report.html,log.html,output.xml,run_summary.json}`.
-- Summarize: environment, contract, target count, mismatch count, rule
-  failures, final PASS/FAIL — the five headline metrics.
+- Summarize: hop, environment, per-stage counts, mismatch count, final
+  PASS/FAIL — the five headline metrics.
 - On FAIL: name the layer, the exact mismatch counts, and the first likely
-  cause. Never report a reconciliation result as "close enough" — a count is
-  either exact or it is a defect.
-- In verify-only mode, remember `requires_write` tests were excluded — say so.
+  cause. Never report a reconciliation result as "close enough" — a count
+  is either exact or it is a defect.

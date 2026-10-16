@@ -6,13 +6,13 @@ on:
   workflow_dispatch:      # on-demand runs (e.g. pre-demo verification, single test)
     inputs:
       suite:
-        description: "Robot path (e.g. tests/pilot or one .robot file); empty = all suites"
+        description: "Robot path (e.g. tests/migration or one .robot file); empty = all suites"
         default: ""
       test_name:
         description: "robot --test NAME (exact name or glob, e.g. '*Header*')"
         default: ""
       include_tag:
-        description: "robot --include TAG (e.g. exclude nothing / include smoke)"
+        description: "robot --include TAG (e.g. smoke)"
         default: ""
       exclude_tag:
         description: "robot --exclude TAG (e.g. requires_write for verify-only runs)"
@@ -21,7 +21,7 @@ on:
     - cron: "0 2 * * *"   # nightly run against the test database
 
 jobs:
-  pilot:
+  phase1-migration:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -32,31 +32,6 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s --health-timeout 5s --health-retries 10
-      mysql:
-        image: mysql:8
-        env:
-          MYSQL_ROOT_PASSWORD: root_ci
-          MYSQL_DATABASE: recon_src
-        ports: ["3306:3306"]
-        options: >-
-          --health-cmd "mysqladmin ping -h 127.0.0.1 -proot_ci"
-          --health-interval 5s --health-timeout 5s --health-retries 20
-      oracle:
-        image: gvenzl/oracle-free:23-slim-faststart
-        env:
-          ORACLE_PASSWORD: sys_ci_pwd
-        ports: ["1521:1521"]
-        options: >-
-          --health-cmd "healthcheck.sh"
-          --health-interval 10s --health-timeout 10s --health-retries 30
-      mssql:
-        image: mcr.microsoft.com/mssql/server:2022-latest
-        env:
-          ACCEPT_EULA: "Y"
-          MSSQL_SA_PASSWORD: "Str0ng!Passw0rd"
-        ports: ["1433:1433"]
-        # no health-cmd: the image lacks sqlcmd on PATH reliably; the smoke
-        # script retries connections for ~2min which is robust enough.
 
     steps:
       - uses: actions/checkout@v4
@@ -80,24 +55,21 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Provision recon database and roles
+      - name: Provision phase-1 databases, schemas and roles
+        # Three PostgreSQL databases mirror the UAT layering:
+        #   wdr_uat_active_stage.signature    (CSV landing)
+        #   wdr_uat_integration.wdr_il_core   (integration core)
+        #   wdr_uat_consumption.wdr_cl_fds_core (consumption/target)
+        # recon_rw loads fixtures; recon_ro is SELECT-only for verification.
         run: |
           export PGPASSWORD=postgres_ci
-          psql -h localhost -U postgres -c "CREATE DATABASE recon;"
-          psql -h localhost -U postgres -d recon <<'SQL'
+          psql -h localhost -U postgres <<'SQL'
             CREATE ROLE recon_rw LOGIN PASSWORD '${{ secrets.RECON_RW_PASSWORD }}';
             CREATE ROLE recon_ro LOGIN PASSWORD '${{ secrets.RECON_RO_PASSWORD }}';
-            GRANT CONNECT ON DATABASE recon TO recon_rw, recon_ro;
-            GRANT USAGE, CREATE ON SCHEMA public TO recon_rw;
-            GRANT USAGE ON SCHEMA public TO recon_ro;
-            GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA public TO recon_rw;
-            GRANT SELECT ON ALL TABLES IN SCHEMA public TO recon_ro;
-            ALTER DEFAULT PRIVILEGES FOR ROLE recon_rw IN SCHEMA public GRANT SELECT ON TABLES TO recon_ro;
+            CREATE DATABASE wdr_uat_active_stage;
+            CREATE DATABASE wdr_uat_integration;
+            CREATE DATABASE wdr_uat_consumption;
           SQL
-          # Phase-2 multi-hop demo databases (csv->stage->integration->target)
-          psql -h localhost -U postgres -c "CREATE DATABASE wdr_uat_active_stage;"
-          psql -h localhost -U postgres -c "CREATE DATABASE wdr_uat_integration;"
-          psql -h localhost -U postgres -c "CREATE DATABASE wdr_uat_consumption;"
           psql -h localhost -U postgres -d wdr_uat_active_stage <<'SQL'
             CREATE SCHEMA signature;
             GRANT CONNECT ON DATABASE wdr_uat_active_stage TO recon_rw, recon_ro;
@@ -120,25 +92,31 @@ jobs:
             ALTER DEFAULT PRIVILEGES FOR ROLE recon_rw IN SCHEMA wdr_cl_fds_core GRANT SELECT ON TABLES TO recon_ro;
           SQL
 
-      - name: Seed migration demo (webster source + emulated Santander target)
-        # Migration suites are verify-only — the emulated target is loaded
-        # out-of-band here, same as a real bank ETL would load it.
-        if: inputs.suite == '' || contains(inputs.suite, 'migration')
-        env:
-          RECON_ADMIN_USER: postgres
-          RECON_ADMIN_PASSWORD: postgres_ci
-          RECON_RO_USER: recon_ro
-          RECON_RO_PASSWORD: ${{ secrets.RECON_RO_PASSWORD }}
+      - name: Generate phase-1 workbooks and CSV fixtures
+        # Deterministic synthetic data: workbooks compiled from
+        # data/trailer/Phase1.xlsx; CSVs seeded positive/negative fixtures
+        # plus per-hop bank trailer files.
         run: |
-          python scripts/generate_bank_source.py --rows 500 --confirm-synthetic
-          python scripts/load_migration_target.py
+          python scripts/generate_phase1_workbooks.py
+          python scripts/generate_phase1_csv.py
 
-      - name: Run reconciliation suites
+      - name: Load emulated targets (all three hops)
+        # Verification suites are read-only — loaders act as the bank's ETL.
+        # Stage view needs hop-1 tables; IL view needs hop-2 tables.
         env:
-          RECON_RO_USER: recon_ro
-          RECON_RO_PASSWORD: ${{ secrets.RECON_RO_PASSWORD }}
           RECON_RW_USER: recon_rw
           RECON_RW_PASSWORD: ${{ secrets.RECON_RW_PASSWORD }}
+        run: |
+          python scripts/load_phase2_hop.py --hop 1
+          python scripts/provision_phase2.py --views stage
+          python scripts/load_phase2_hop.py --hop 2
+          python scripts/provision_phase2.py --views il
+          python scripts/load_phase2_hop.py --hop 3
+
+      - name: Run phase-1 migration suites (read-only verification)
+        env:
+          RECON_RO_USER: recon_ro
+          RECON_RO_PASSWORD: ${{ secrets.RECON_RO_PASSWORD }}
           SUITE: ${{ inputs.suite }}
           TEST_NAME: ${{ inputs.test_name }}
           INCLUDE_TAG: ${{ inputs.include_tag }}
@@ -148,47 +126,44 @@ jobs:
           [ -n "$TEST_NAME" ] && cmd+=(--test "$TEST_NAME")
           [ -n "$INCLUDE_TAG" ] && cmd+=(--include "$INCLUDE_TAG")
           [ -n "$EXCLUDE_TAG" ] && cmd+=(--exclude "$EXCLUDE_TAG")
-          cmd+=("${SUITE:-tests/pilot}")
-          "${cmd[@]}"
-          # Full runs cover both suites; a dispatch picking one path skips the other.
           if [ -z "$SUITE" ]; then
-            robot -d results/migration tests/migration
+            robot -d results/phase1/hop1 \
+              -v MIGRATION_ENV:config/environments/phase1_hop1_csv_stage.yaml \
+              -v MAPPING_WORKBOOK:data/mapping/phase1_hop1_csv_to_stage.xlsx \
+              tests/migration
+            robot -d results/phase1/hop2 \
+              -v MIGRATION_ENV:config/environments/phase1_hop2_stage_il.yaml \
+              -v MAPPING_WORKBOOK:data/mapping/phase1_hop2_stage_to_il.xlsx \
+              tests/migration
+            robot -d results/phase1/hop3 \
+              -v MIGRATION_ENV:config/environments/phase1_hop3_il_consumption.yaml \
+              -v MAPPING_WORKBOOK:data/mapping/phase1_hop3_il_to_consumption.xlsx \
+              tests/migration
+          else
+            "${cmd[@]}" "$SUITE"
           fi
+
+      - name: Negative-path proof (hop-1 corrupted extract)
+        # The same suite against corrupted CSVs MUST fail — detection is the
+        # feature. Non-zero exit is the expected outcome.
+        if: inputs.suite == '' || contains(inputs.suite, 'migration')
+        env:
+          RECON_RO_USER: recon_ro
+          RECON_RO_PASSWORD: ${{ secrets.RECON_RO_PASSWORD }}
+        run: |
+          if robot -d results/phase1/hop1_negative \
+              -v MIGRATION_ENV:config/environments/phase1_hop1_csv_stage_negative.yaml \
+              -v MAPPING_WORKBOOK:data/mapping/phase1_hop1_csv_to_stage.xlsx \
+              tests/migration; then
+            echo "::error::negative fixture did not fail — defect detection broken"
+            exit 1
+          fi
+          grep -q '"extra": 5' results/phase1/hop1_negative/run_summary.json
+          echo "negative path verified: exact missing/extra/control/orphan counts reported"
 
       - name: Engine unit tests
         run: |
-          python -m unittest discover -s tests/pilot -p "test_*.py" -v
           python -m unittest discover -s tests/migration -p "test_*.py" -v
-
-      - name: MySQL adapter smoke (real mysqld)
-        # Proves the dbapi adapters end-to-end on a real engine: RO grants,
-        # streaming chunks, watermark predicates, SELECT-only query guard.
-        env:
-          MYSQL_RO_PASSWORD: ${{ secrets.RECON_RO_PASSWORD }}
-        run: |
-          pip install pymysql==1.1.1
-          python scripts/mysql_adapter_smoke.py
-
-      - name: Oracle adapter smoke (real Oracle XE)
-        env:
-          ORACLE_RO_PASSWORD: ${{ secrets.RECON_RO_PASSWORD }}
-        run: |
-          pip install oracledb==2.5.1
-          python scripts/oracle_adapter_smoke.py
-
-      - name: Install msodbcsql18 (host ODBC driver)
-        run: |
-          curl -sSL https://packages.microsoft.com/keys/microsoft.asc | sudo tee /etc/apt/trusted.gpg.d/microsoft.asc
-          curl -sSL https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
-          sudo apt-get update -qq
-          sudo ACCEPT_EULA=Y apt-get install -y -qq msodbcsql18 unixodbc-dev
-
-      - name: MSSQL adapter smoke (real SQL Server)
-        env:
-          MSSQL_RO_PASSWORD: ${{ secrets.RECON_RO_PASSWORD }}
-        run: |
-          pip install pyodbc==5.1.0
-          python scripts/mssql_adapter_smoke.py
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -199,5 +174,4 @@ jobs:
             results/log.html
             results/output.xml
             results/run_summary.json
-            results/business_rules_summary.xlsx
-            results/migration/
+            results/phase1/

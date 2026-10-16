@@ -52,8 +52,8 @@ existing impl (`postgres_target.py` / `csv_source.py` /
 
 ## Validate
 
-- `python -m unittest discover -s tests/pilot -p "test_*.py" -v`
-- `robot -d results -v ENV_FILE:config/environments/<env-using-it>.yaml tests/pilot`
+- `python -m unittest discover -s tests/migration -p "test_*.py" -v`
+- `robot -d results/phase1/<hop> -v MIGRATION_ENV:<env-using-it>.yaml -v MAPPING_WORKBOOK:<wb>.xlsx tests/migration`
 - Prove least privilege: the RO path cannot mutate (mirror
   `Read Only Role Cannot Mutate Target` in 90_negative_path.robot if the
   backend supports role enforcement).
