@@ -103,7 +103,10 @@ jobs:
       - name: Load emulated targets (all three hops)
         # Verification suites are read-only — loaders act as the bank's ETL.
         # Stage view needs hop-1 tables; IL view needs hop-2 tables.
+        # Source reads authenticate as recon_ro; target writes as recon_rw.
         env:
+          RECON_RO_USER: recon_ro
+          RECON_RO_PASSWORD: ${{ secrets.RECON_RO_PASSWORD }}
           RECON_RW_USER: recon_rw
           RECON_RW_PASSWORD: ${{ secrets.RECON_RW_PASSWORD }}
         run: |
