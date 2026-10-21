@@ -492,6 +492,7 @@ class MigrationLibrary:
                     return row
                 if stage == "dq":
                     failures = {}
+                    samples = {}
 
                     def _dq_pass():
                         # One source read serves both checks: contract rules
@@ -506,6 +507,10 @@ class MigrationLibrary:
                                 failures[failure.rule_id] = (
                                     failures.get(failure.rule_id, 0) + failure.failing_rows
                                 )
+                                bucket = samples.setdefault(failure.rule_id, [])
+                                for s in failure.samples:
+                                    if len(bucket) < 5 and s not in bucket:
+                                        bucket.append(s)
                             yield expected
 
                     previous = None
@@ -521,15 +526,22 @@ class MigrationLibrary:
                                     raise ValueError("Duplicate composite reconciliation keys")
                                 previous = key
                     row["dq_failures"] = failures
+                    rtypes = rules.contract_rule_types(contract)
+                    scope = (
+                        f"{len(rtypes)} rule type(s) [{', '.join(rtypes)}] on "
+                        f"{sum(1 for c in contract.columns if c.get('source_name'))} source + "
+                        f"{sum(1 for c in contract.columns if 'transform' in c)} derived columns"
+                    )
                     if failures:
                         row["status"] = "FAIL"
                         row["detail"] = "; ".join(
-                            f"{rid}: {n} row(s)" for rid, n in sorted(failures.items())
+                            f"{rid}: {n} row(s) e.g. {samples.get(rid, [])[:5]}"
+                            for rid, n in sorted(failures.items())
                         )
                     else:
                         row["detail"] = (
-                            f"{row['source_count']} rows checked; "
-                            "0 source/derived DQ rule violations"
+                            f"{row['source_count']} rows checked; {scope}; "
+                            "composite key uniqueness verified; 0 violations"
                         )
                     return row
                 with closing(self._target(contract)) as target:
