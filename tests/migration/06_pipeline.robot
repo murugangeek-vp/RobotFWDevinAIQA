@@ -3,6 +3,7 @@ Documentation    Read-only end-to-end gate; continues across mappings and preser
 Resource         ../../resources/keywords/migration.resource
 Suite Setup      Migration Suite Setup
 Suite Teardown   Migration Suite Teardown
+Test Timeout     30 minutes
 
 *** Test Cases ***
 All Selected Mappings Pass The Migration Gate

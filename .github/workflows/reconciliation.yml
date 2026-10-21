@@ -55,6 +55,11 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Dry-run suite parse check
+        # Cheap pre-flight: catches .robot syntax/config breakage in seconds
+        # before databases are provisioned. Keywords are no-ops in dryrun.
+        run: robot --dryrun -d results/dryrun tests/migration
+
       - name: Provision phase-1 databases, schemas and roles
         # Three PostgreSQL databases mirror the UAT layering:
         #   wdr_uat_active_stage.signature    (CSV landing)
@@ -130,18 +135,23 @@ jobs:
           [ -n "$INCLUDE_TAG" ] && cmd+=(--include "$INCLUDE_TAG")
           [ -n "$EXCLUDE_TAG" ] && cmd+=(--exclude "$EXCLUDE_TAG")
           if [ -z "$SUITE" ]; then
-            robot -d results/phase1/hop1 \
+            robot -d results/phase1/hop1 --xunit xunit.xml \
               -v MIGRATION_ENV:config/environments/phase1_hop1_csv_stage.yaml \
               -v MAPPING_WORKBOOK:data/mapping/phase1_hop1_csv_to_stage.xlsx \
               tests/migration
-            robot -d results/phase1/hop2 \
+            robot -d results/phase1/hop2 --xunit xunit.xml \
               -v MIGRATION_ENV:config/environments/phase1_hop2_stage_il.yaml \
               -v MAPPING_WORKBOOK:data/mapping/phase1_hop2_stage_to_il.xlsx \
               tests/migration
-            robot -d results/phase1/hop3 \
+            robot -d results/phase1/hop3 --xunit xunit.xml \
               -v MIGRATION_ENV:config/environments/phase1_hop3_il_consumption.yaml \
               -v MAPPING_WORKBOOK:data/mapping/phase1_hop3_il_to_consumption.xlsx \
               tests/migration
+            # One combined pipeline report for the whole migration chain
+            rebot --merge -d results/phase1/merged --name "Phase-1 Migration" \
+              results/phase1/hop1/output.xml \
+              results/phase1/hop2/output.xml \
+              results/phase1/hop3/output.xml
           else
             "${cmd[@]}" "$SUITE"
           fi

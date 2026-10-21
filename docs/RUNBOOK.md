@@ -9,9 +9,9 @@ client spec `data/trailer/Phase1.xlsx`:
 | 2 | `signature` tables + `v_dim_customer_src` view | `wdr_uat_integration.wdr_il_core` | `phase1_hop2_stage_il.yaml` / `phase1_hop2_stage_to_il.xlsx` |
 | 3 | `wdr_il_core.v_party_snpsht_src` view | `wdr_uat_consumption.wdr_cl_fds_core` | `phase1_hop3_il_consumption.yaml` / `phase1_hop3_il_to_consumption.xlsx` |
 
-The same `tests/migration` suites run per hop — all 9 stages (mapping,
-source metadata, DQ, schema, recon, transforms, pipeline, controls,
-relations) plus the `90_` negative-path proof. `pipeline_id:
+The same `tests/migration` suites run per hop — all 10 stages (mapping,
+source metadata, DQ, schema, profile, recon, transforms, pipeline,
+controls, relations) plus the `90_` negative-path proof. `pipeline_id:
 phase1-uat-demo` in the evidence metadata links the three runs into one
 auditable chain.
 
@@ -89,8 +89,40 @@ ETL.
 
 Evidence per hop lands in `results/phase1/hopN/`: `report.html`,
 `log.html`, `migration_report.md`, `migration_summary.xlsx`,
-`run_summary.json` (with `pipeline_id`, `hop`, snapshot id, git commit,
-verdict; `production_signoff` is never granted by a run).
+`run_summary.json`, `test_evidence_map.json` (links every Robot test to
+the evidence rows it produced), and `xunit.xml` when run with `--xunit`.
+Every Robot report embeds suite metadata — environment, hop,
+`snapshot_id`, workbook sha256, git commit — so an artifact always states
+what it verified.
+
+## Re-run failed tests, merged pipeline report
+
+After fixing target data, re-run only the failures and merge:
+
+```bash
+robot --rerunfailed results/phase1/hop1/output.xml \
+  -d results/phase1/hop1_rerun \
+  -v MIGRATION_ENV:config/environments/phase1_hop1_csv_stage.yaml \
+  -v MAPPING_WORKBOOK:data/mapping/phase1_hop1_csv_to_stage.xlsx tests/migration
+rebot --merge results/phase1/hop1/output.xml results/phase1/hop1_rerun/output.xml \
+  -d results/phase1/hop1
+```
+
+One combined report for the whole chain:
+
+```bash
+rebot --merge -d results/phase1/merged --name "Phase-1 Migration" \
+  results/phase1/hop1/output.xml results/phase1/hop2/output.xml \
+  results/phase1/hop3/output.xml
+```
+
+## Optional run tuning
+
+- `run.stage_seconds_warn: 60` — any stage slower than the budget is
+  WARN-logged and flagged `slow_seconds`/`slow_budget` in evidence.
+- `09_profile.robot` — per-column profiling (nulls, distinct, min/max)
+  compared source vs target; catches distribution drift row-recon can
+  miss on sampled/hash comparisons.
 
 ## Snapshot / cutover semantics
 

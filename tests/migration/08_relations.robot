@@ -5,6 +5,7 @@ Documentation    Referential integrity across mappings — every child FK value
 Resource         ../../resources/keywords/migration.resource
 Suite Setup      Migration Suite Setup
 Suite Teardown   Migration Suite Teardown
+Test Timeout     30 minutes
 
 *** Test Cases ***
 No Orphaned Foreign Keys On Either Side

@@ -3,6 +3,7 @@ Documentation    Exact-count defect detection on streamed copies; no database mu
 Resource         ../../resources/keywords/migration.resource
 Suite Setup      Migration Suite Setup
 Suite Teardown   Migration Suite Teardown
+Test Timeout     30 minutes
 
 *** Test Cases ***
 Detect Missing Tampered And Duplicate Rows

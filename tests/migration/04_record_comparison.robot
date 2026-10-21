@@ -3,6 +3,7 @@ Documentation    Exact counts, missing/extra keys and every mapped field; bounde
 Resource         ../../resources/keywords/migration.resource
 Suite Setup      Migration Suite Setup
 Suite Teardown   Migration Suite Teardown
+Test Timeout     30 minutes
 
 *** Test Cases ***
 Selected Mappings Reconcile Every Record

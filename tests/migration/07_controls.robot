@@ -5,6 +5,7 @@ Documentation    Declared aggregate controls (counts, sums, min/max, distincts,
 Resource         ../../resources/keywords/migration.resource
 Suite Setup      Migration Suite Setup
 Suite Teardown   Migration Suite Teardown
+Test Timeout     30 minutes
 
 *** Test Cases ***
 Declared Controls Reconcile And Match The Bank Trailer

@@ -14,6 +14,7 @@ if _REPO_ROOT not in sys.path:
 import yaml
 from robot.api import logger
 from robot.api.deco import keyword
+from robot.libraries.BuiltIn import BuiltIn
 
 from libs.adapters.registry import create_source, create_target
 from libs.adapters.staging import ordered_chunks
@@ -50,12 +51,45 @@ class MigrationLibrary:
     ROBOT_AUTO_KEYWORDS = False
 
     def __init__(self):
+        self.ROBOT_LIBRARY_LISTENER = self
         self.evidence = []
         self.contracts = []
         self.env = {}
         self.meta = {}
         self.signature = None
         self._snapshot_holder = None
+        self._test_marks = {}
+        self._test_map = []
+
+    # ---- listener v3: link every test to the evidence rows it produced ----
+    def start_test(self, data, result):
+        self._test_marks[data.longname] = len(self.evidence)
+
+    def end_test(self, data, result):
+        start = self._test_marks.pop(data.longname, 0)
+        self._test_map.append(
+            {
+                "test": data.longname,
+                "status": result.status,
+                "checks": [
+                    {
+                        "mapping": r["mapping"],
+                        "stage": r["stage"],
+                        "status": r["status"],
+                        "detail": (r.get("detail") or "")[:300],
+                    }
+                    for r in self.evidence[start:]
+                ],
+            }
+        )
+
+    def close(self):
+        if not self._test_map:
+            return
+        out_dir = BuiltIn().get_variable_value("${OUTPUT DIR}") or "."
+        Path(out_dir, "test_evidence_map.json").write_text(
+            json.dumps(self._test_map, indent=2), encoding="utf-8"
+        )
 
     def _bind_snapshot(self):
         """Enforce the declared migration cut on the source side.
@@ -152,6 +186,7 @@ class MigrationLibrary:
                     "environment": self.env["environment"],
                     "emulated_target": bool(self.env["target"].get("fake")),
                     "snapshot_id": run.get("snapshot_id", ""),
+                    "env_file": str(env_file),
                     "load_date": str(run.get("load_date", "")),
                     "pipeline_id": str(run.get("pipeline_id", "")),
                     "hop": str(run.get("hop", "")),
@@ -167,6 +202,19 @@ class MigrationLibrary:
                     "evidence_values": "redacted; exact totals with bounded samples",
                 }
             )
+            # Stamp the run identity into output.xml/report.html so the Robot
+            # report itself states env, workbook hash, and the frozen cut.
+            for key in (
+                "environment",
+                "pipeline_id",
+                "hop",
+                "snapshot_id",
+                "load_date",
+                "workbook_sha256",
+                "git_commit",
+                "read_only",
+            ):
+                BuiltIn().set_suite_metadata(key, str(self.meta[key]))
             self.signature = signature
         except Exception as exc:
             self.evidence.append(
@@ -502,6 +550,35 @@ class MigrationLibrary:
                                 "(name, type, nullability, length, scale); no diffs"
                             )
                         return row
+                    if stage == "profile":
+                        from libs.engine import profile as engine_profile
+
+                        batch = self._batch(contract)
+                        cols = [c["name"] for c in contract.columns]
+                        src_rows, src_prof = engine_profile.profile_chunks(
+                            self._mapped(source.read_chunks(batch), contract)
+                        )
+                        tgt_rows, tgt_prof = engine_profile.profile_chunks(
+                            target.read_chunks(contract.table, columns=cols, size=batch)
+                        )
+                        diffs = engine_profile.compare_profiles(
+                            src_rows, src_prof, tgt_rows, tgt_prof
+                        )
+                        row["profile_diffs"] = diffs
+                        if diffs:
+                            row["status"] = "FAIL"
+                            shown = "; ".join(
+                                f"{d.get('column')}.{d.get('stat', '-')}: "
+                                f"src={d.get('source', '-')} tgt={d.get('target', '-')}"
+                                for d in diffs[:5]
+                            )
+                            row["detail"] = f"{len(diffs)} profile diff(s): {shown}"
+                        else:
+                            row["detail"] = (
+                                f"profiled {len(src_prof)} columns over {src_rows} rows: "
+                                "nulls, distinct counts, min/max identical"
+                            )
+                        return row
                     if stage == "negative":
                         clean = self._compare(source, target, contract)
                         if clean.mismatch_count:
@@ -668,6 +745,10 @@ class MigrationLibrary:
             )
         finally:
             row["seconds"] = round(time.perf_counter() - started, 3)
+            budget = self.env.get("run", {}).get("stage_seconds_warn")
+            if budget and row["seconds"] > float(budget):
+                row["slow_seconds"] = row["seconds"]
+                row["slow_budget"] = float(budget)
             self.evidence.append(row)
         return row
 
@@ -807,10 +888,21 @@ class MigrationLibrary:
                 if isinstance(m, dict)
             ][:5]
             defects.append(f"control mismatches: {names}")
+        if row.get("profile_diffs"):
+            shown = [
+                f"{d.get('column')}.{d.get('stat', d.get('issue', '-'))}: "
+                f"src={d.get('source', '-')} tgt={d.get('target', '-')}"
+                for d in row["profile_diffs"][:5]
+            ]
+            defects.append(f"profile diffs: {shown}")
         if defects:
             parts.append("; ".join(defects))
+        if row.get("slow_seconds"):
+            parts.append(
+                f"SLOW: {row['seconds']}s exceeds stage_seconds_warn={row['slow_budget']}s"
+            )
         msg = " | ".join(parts)
-        if row["status"] == "PASS":
+        if row["status"] == "PASS" and not row.get("slow_seconds"):
             logger.info(msg)
         else:
             logger.warn(msg)
@@ -822,6 +914,7 @@ class MigrationLibrary:
             "source",
             "dq",
             "schema",
+            "profile",
             "recon",
             "controls",
             "transform",
@@ -831,7 +924,7 @@ class MigrationLibrary:
         ):
             raise ValueError("Unknown migration stage")
         stages = (
-            ("source", "dq", "schema", "recon", "controls", "transform")
+            ("source", "dq", "schema", "profile", "recon", "controls", "transform")
             if stage == "e2e"
             else (stage,)
         )

@@ -244,7 +244,7 @@ def write_evidence(results, meta, out_dir):
         if not results
         else ("PASS" if all(r["status"] == "PASS" for r in results) else "FAIL")
     )
-    base = {"source", "dq", "schema", "recon", "controls", "transform"}
+    base = {"source", "dq", "schema", "profile", "recon", "controls", "transform"}
     relation_children = set(meta.get("relation_children") or [])
     coverage = {
         name: sorted(
@@ -366,6 +366,7 @@ def write_evidence(results, meta, out_dir):
             "extra_samples",
             "diff_samples",
             "control_mismatches",
+            "profile_diffs",
         ):
             if row.get(key):
                 sheets["Diffs & Violations"].append(
@@ -479,6 +480,13 @@ def write_evidence(results, meta, out_dir):
                     )
             for e in (row.get("schema_errors") or [])[:10]:
                 lines.append(f"- schema: {e}")
+            for d in (row.get("profile_diffs") or [])[:10]:
+                lines.append(
+                    f"- profile `{d.get('column')}.{d.get('stat', '-')}`: "
+                    f"source={d.get('source', '-')}, target={d.get('target', '-')}"
+                )
+            if row.get("slow_seconds"):
+                lines.append(f"- slow: {row['slow_seconds']}s exceeds budget {row['slow_budget']}s")
             for rid, n in (row.get("dq_failures") or {}).items():
                 if isinstance(n, list):
                     lines.append(f"- {rid}: `{n}`")
