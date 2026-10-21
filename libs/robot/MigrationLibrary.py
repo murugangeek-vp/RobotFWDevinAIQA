@@ -562,10 +562,13 @@ class MigrationLibrary:
                         row["control_mismatches"] = mismatches
                         if mismatches:
                             row["status"] = "FAIL"
-                            row["detail"] = (
-                                f"{len(mismatches)} control mismatch(es) — "
-                                "expected vs actual/trailer in Diffs & Violations"
+                            shown = "; ".join(
+                                f"{m.get('control')}: expected {m.get('expected')}, "
+                                f"got {m.get('actual')}"
+                                for m in mismatches[:5]
+                                if isinstance(m, dict)
                             )
+                            row["detail"] = f"{len(mismatches)} control mismatch(es): {shown}"
                         else:
                             row["detail"] = f"{len(specs)} controls certified"
                         return row
@@ -816,12 +819,14 @@ class MigrationLibrary:
                 row = self._one(step, contract)
                 self._log_row(row)
                 if row["status"] != "PASS":
-                    failed.append(f"{contract.name}/{step}: {row['status']}")
+                    why = f" — {row['detail'][:200]}" if row.get("detail") else ""
+                    failed.append(f"{contract.name}/{step}: {row['status']}{why}")
         if stage in ("relations", "e2e"):
             for row in self._relations():
                 self._log_row(row)
                 if row["status"] != "PASS":
-                    failed.append(f"{row['mapping']}/relations: {row['status']}")
+                    why = f" — {row['detail'][:200]}" if row.get("detail") else ""
+                    failed.append(f"{row['mapping']}/relations: {row['status']}{why}")
         if not self.contracts:
             raise AssertionError("No mappings configured")
         if failed:

@@ -455,6 +455,41 @@ def write_evidence(results, meta, out_dir):
             )
             + " |"
         )
+    defects = [r for r in results if r["status"] != "PASS"]
+    if defects:
+        lines += ["", "## Defects (bounded samples)", ""]
+        for row in defects:
+            lines.append(f"### {row['mapping']} / {row['stage']} — {row['status']}")
+            if row.get("detail"):
+                lines.append(f"- {escaped(row['detail'])}")
+            if row.get("missing_samples"):
+                lines.append(f"- missing keys in target: `{row['missing_samples']}`")
+            if row.get("extra_samples"):
+                lines.append(f"- extra keys in target: `{row['extra_samples']}`")
+            for d in (row.get("diff_samples") or [])[:10]:
+                lines.append(
+                    f"- key `{d['key']}` col `{d['column']}`: "
+                    f"expected {d['expected']}, got {d['actual']}"
+                )
+            for m in (row.get("control_mismatches") or [])[:10]:
+                if isinstance(m, dict):
+                    lines.append(
+                        f"- control `{m.get('control')}` ({m.get('group', '')}): "
+                        f"expected {m.get('expected')}, got {m.get('actual')}"
+                    )
+            for e in (row.get("schema_errors") or [])[:10]:
+                lines.append(f"- schema: {e}")
+            for rid, n in (row.get("dq_failures") or {}).items():
+                if isinstance(n, list):
+                    lines.append(f"- {rid}: `{n}`")
+                else:
+                    lines.append(f"- dq `{rid}`: {n} failing rows")
+            if "target_orphans" in row and (row["target_orphans"] or row.get("source_orphans")):
+                lines.append(
+                    f"- orphan rows: source={row.get('source_orphans')} "
+                    f"target={row['target_orphans']}"
+                )
+            lines.append("")
     lines += [
         "",
         "## Cutover",
