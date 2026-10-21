@@ -301,6 +301,7 @@ def write_evidence(results, meta, out_dir):
             ]
         ],
         "Metadata": [["Mapping", "Stage", "Source", "Target", "Observed Metadata"]],
+        "Manual Validation": [["Mapping", "Source Query", "Target Query"]],
         "Column Profile": [
             [
                 "Mapping",
@@ -374,6 +375,12 @@ def write_evidence(results, meta, out_dir):
                     json.dumps(observed, default=str),
                 ]
             )
+        if row.get("source_query") or row.get("target_query"):
+            pair = (row.get("source_query", ""), row.get("target_query", ""))
+            dedup = (row["mapping"],) + pair
+            if dedup not in seen_defects:
+                seen_defects.add(dedup)
+                sheets["Manual Validation"].append([row["mapping"], pair[0], pair[1]])
         for p in row.get("column_profile") or []:
             vals = (
                 row["mapping"],

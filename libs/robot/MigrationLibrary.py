@@ -338,6 +338,35 @@ class MigrationLibrary:
             return "***"
         return f"{s[0]}***{s[-1]} ({len(s)} chars)"
 
+    def _queries(self, contract):
+        """Representative read queries a tester can re-run manually.
+
+        Values here are for audit — the real reads use the adapters'
+        parameterized, identifier-vetted statements; this string shows the
+        same scope (columns, table, snapshot predicate) plainly.
+        """
+        src = contract.raw["source"]
+        s_cols = ", ".join(c.get("source_name") or c["name"] for c in contract.columns)
+        if src.get("type") == "csv":
+            sq = f"-- file extract\nCOPY FROM '{src.get('path', src.get('table'))}'"
+            if src.get("snapshot_column"):
+                sq += f"\nWHERE {src['snapshot_column']} <= '{src.get('snapshot_value', self.env.get('run', {}).get('snapshot_id', ''))}'"
+        else:
+            sq = f"SELECT {s_cols}\nFROM {src['schema']}.{src['table']}"
+            snap = src.get("snapshot")
+            if snap and snap != "exported":
+                sq += f"\n-- pinned to exported snapshot {snap} (SET TRANSACTION SNAPSHOT)"
+            elif src.get("snapshot_column"):
+                sid = src.get("snapshot_value") or self.env.get("run", {}).get("snapshot_id", "")
+                sq += f"\nWHERE {src['snapshot_column']} <= '{sid}'"
+            sq += f"\nORDER BY {', '.join(contract.keys)}"
+        t_cols = ", ".join(c["name"] for c in contract.columns)
+        tq = (
+            f"SELECT {t_cols}\nFROM {contract.schema}.{contract.table}"
+            f"\nORDER BY {', '.join(contract.keys)}"
+        )
+        return sq, tq
+
     def _one(self, stage, contract):
         row = {
             "mapping": contract.name,
@@ -347,6 +376,7 @@ class MigrationLibrary:
             "source": f"{contract.raw['source']['schema']}.{contract.raw['source']['table']}",
             "target": f"{contract.schema}.{contract.table}",
         }
+        row["source_query"], row["target_query"] = self._queries(contract)
         started = time.perf_counter()
         try:
             with closing(self._source(contract)) as source:
