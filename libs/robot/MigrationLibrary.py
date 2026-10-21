@@ -591,6 +591,7 @@ class MigrationLibrary:
                             "mismatches": result.mismatch_count,
                             "diff_samples": [
                                 {
+                                    "key": str(d.key),
                                     "column": d.column,
                                     "expected": (
                                         "[REDACTED]" if pii.get(d.column, True) else str(d.expected)
@@ -752,6 +753,11 @@ class MigrationLibrary:
         diff_cols = sorted({d["column"] for d in (row.get("diff_samples") or [])})
         if diff_cols:
             defects.append(f"columns with diffs: {diff_cols}")
+            rec = [
+                f"{d['key']}.{d['column']} expected={d['expected']} actual={d['actual']}"
+                for d in (row.get("diff_samples") or [])[:5]
+            ]
+            defects.append(f"record diffs: {rec}")
         if row.get("control_mismatches"):
             names = [
                 f"{m.get('control')}: expected {m.get('expected')} got {m.get('actual')}"
