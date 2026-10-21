@@ -454,14 +454,40 @@ class MigrationLibrary:
                     unmapped = len(row.get("unmapped_source_tables") or [])
                     note = f"; {unmapped} unmapped source table(s) (insight)" if unmapped else ""
                     if stage == "mapping":
+                        transforms = [
+                            (c["name"], c["transform"])
+                            for c in contract.columns
+                            if c.get("transform")
+                        ]
+                        direct = len(contract.columns) - len(transforms)
+                        t_show = ", ".join(f"{n}<-{t}" for n, t in transforms[:6])
+                        if len(transforms) > 6:
+                            t_show += f", +{len(transforms) - 6} more"
+                        pii_cols = [c["name"] for c in contract.columns if c.get("pii")]
                         row["detail"] = (
-                            f"compiled {len(contract.columns)} field mappings, "
-                            f"keys={contract.keys}{note}"
+                            f"compiled {len(contract.columns)} field mappings "
+                            f"({direct} direct, {len(transforms)} transform"
+                            f"{f': {t_show}' if t_show else ''}); keys={contract.keys}"
+                            f"{f'; PII columns masked in evidence: {pii_cols}' if pii_cols else ''}"
+                            f"{note}"
                         )
                     else:
+                        cap = 20
+                        col_show = ", ".join(live_columns[:cap])
+                        if len(live_columns) > cap:
+                            col_show += f", +{len(live_columns) - cap} more"
+                        unmapped_cols = sorted(set(live_columns) - set(contract.source_columns))
+                        wm = ""
+                        if src_cfg.get("snapshot_column"):
+                            sid = src_cfg.get("snapshot_value") or self.env.get("run", {}).get(
+                                "snapshot_id", ""
+                            )
+                            wm = f"; watermark {src_cfg['snapshot_column']} <= {sid}"
                         row["detail"] = (
-                            f"{row['source_count']} source rows, "
-                            f"{len(live_columns)} columns verified against workbook{note}"
+                            f"{row['source_count']} source rows; {len(live_columns)} "
+                            f"columns verified against workbook: [{col_show}]{wm}"
+                            f"{f'; not consumed by this mapping: {unmapped_cols}' if unmapped_cols else ''}"
+                            f"{note}"
                         )
                     return row
                 if stage == "dq":
