@@ -475,16 +475,20 @@ class MigrationLibrary:
                                 row["schema_errors"].append(
                                     f"{spec['name']}: numeric scale differs from workbook"
                                 )
+                        schema_diff = (
+                            f"schema diff source cols={len(live_columns)}, "
+                            f"target cols={len(row['target_metadata'])}"
+                        )
                         if row["schema_errors"]:
                             row["status"] = "FAIL"
+                            shown = "; ".join(row["schema_errors"][:5])
                             row["detail"] = (
-                                f"{len(row['schema_errors'])} schema error(s) — "
-                                "see Diffs & Violations"
+                                f"{schema_diff}: {len(row['schema_errors'])} error(s) — {shown}"
                             )
                         else:
                             row["detail"] = (
-                                f"{len(contract.columns)} target columns validated "
-                                "(name, type, nullability, length, scale)"
+                                f"{schema_diff}: {len(contract.columns)} mapped columns validated "
+                                "(name, type, nullability, length, scale); no diffs"
                             )
                         return row
                     if stage == "negative":
