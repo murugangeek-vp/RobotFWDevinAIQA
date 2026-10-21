@@ -12,6 +12,7 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 import yaml
+from robot.api import logger
 from robot.api.deco import keyword
 
 from libs.adapters.registry import create_source, create_target
@@ -723,6 +724,45 @@ class MigrationLibrary:
                     rows.append(row)
         return rows
 
+    @staticmethod
+    def _log_row(row):
+        """Emit one log.html line per evidence row — PASS rows as INFO,
+        FAIL/ERROR as WARN — with record counts and bounded defect detail."""
+        parts = [f"{row['mapping']}/{row['stage']}: {row['status']}"]
+        if "source_count" in row:
+            tgt = row.get("target_count")
+            parts.append(
+                f"source rows={row['source_count']}, target rows={tgt if tgt is not None else 'n/a'}"
+            )
+        if "source_orphans" in row:
+            parts.append(
+                f"source orphans={row['source_orphans']}, target orphans={row['target_orphans']}"
+            )
+        if row.get("detail"):
+            parts.append(row["detail"])
+        defects = []
+        if row.get("missing_samples"):
+            defects.append(f"missing keys: {row['missing_samples']}")
+        if row.get("extra_samples"):
+            defects.append(f"extra keys: {row['extra_samples']}")
+        diff_cols = sorted({d["column"] for d in (row.get("diff_samples") or [])})
+        if diff_cols:
+            defects.append(f"columns with diffs: {diff_cols}")
+        if row.get("control_mismatches"):
+            names = [
+                f"{m.get('control')}: expected {m.get('expected')} got {m.get('actual')}"
+                for m in row["control_mismatches"]
+                if isinstance(m, dict)
+            ][:5]
+            defects.append(f"control mismatches: {names}")
+        if defects:
+            parts.append("; ".join(defects))
+        msg = " | ".join(parts)
+        if row["status"] == "PASS":
+            logger.info(msg)
+        else:
+            logger.warn(msg)
+
     @keyword("Run Migration Stage")
     def run_stage(self, stage):
         if stage not in (
@@ -749,10 +789,12 @@ class MigrationLibrary:
                 if step == "relations":
                     continue  # cross-mapping — handled after the per-contract loop
                 row = self._one(step, contract)
+                self._log_row(row)
                 if row["status"] != "PASS":
                     failed.append(f"{contract.name}/{step}: {row['status']}")
         if stage in ("relations", "e2e"):
             for row in self._relations():
+                self._log_row(row)
                 if row["status"] != "PASS":
                     failed.append(f"{row['mapping']}/relations: {row['status']}")
         if not self.contracts:
