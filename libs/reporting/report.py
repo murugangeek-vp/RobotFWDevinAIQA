@@ -301,6 +301,20 @@ def write_evidence(results, meta, out_dir):
             ]
         ],
         "Metadata": [["Mapping", "Stage", "Source", "Target", "Observed Metadata"]],
+        "Column Profile": [
+            [
+                "Mapping",
+                "Column",
+                "Src Nulls",
+                "Tgt Nulls",
+                "Src Distinct",
+                "Tgt Distinct",
+                "Src Min",
+                "Tgt Min",
+                "Src Max",
+                "Tgt Max",
+            ]
+        ],
         "Diffs & Violations": [
             ["Mapping", "Stage", "Type", "Key / Name", "Column", "Expected", "Actual / Detail"]
         ],
@@ -360,6 +374,22 @@ def write_evidence(results, meta, out_dir):
                     json.dumps(observed, default=str),
                 ]
             )
+        for p in row.get("column_profile") or []:
+            vals = (
+                row["mapping"],
+                p["column"],
+                p["src_nulls"],
+                p["tgt_nulls"],
+                p["src_distinct"],
+                p["tgt_distinct"],
+                p["src_min"],
+                p["tgt_min"],
+                p["src_max"],
+                p["tgt_max"],
+            )
+            if vals not in seen_defects:
+                seen_defects.add(vals)
+                sheets["Column Profile"].append(list(vals))
 
         def defect(kind, key="", column="", expected="", actual="", _row=row):
             entry = (_row["mapping"], _row["stage"], kind, key, column, expected, actual)

@@ -565,6 +565,20 @@ class MigrationLibrary:
                             src_rows, src_prof, tgt_rows, tgt_prof
                         )
                         row["profile_diffs"] = diffs
+                        row["column_profile"] = [
+                            {
+                                "column": c,
+                                "src_nulls": src_prof.get(c, {}).get("nulls"),
+                                "tgt_nulls": tgt_prof.get(c, {}).get("nulls"),
+                                "src_distinct": len(src_prof.get(c, {}).get("distinct", ())),
+                                "tgt_distinct": len(tgt_prof.get(c, {}).get("distinct", ())),
+                                "src_min": str(src_prof.get(c, {}).get("min")),
+                                "tgt_min": str(tgt_prof.get(c, {}).get("min")),
+                                "src_max": str(src_prof.get(c, {}).get("max")),
+                                "tgt_max": str(tgt_prof.get(c, {}).get("max")),
+                            }
+                            for c in sorted(set(src_prof) | set(tgt_prof))
+                        ]
                         if diffs:
                             row["status"] = "FAIL"
                             shown = "; ".join(
