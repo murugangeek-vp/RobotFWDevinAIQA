@@ -279,6 +279,17 @@ class MigrationLibrary:
             if hasattr(chunks, "close"):
                 chunks.close()
 
+    @staticmethod
+    def _masked(value):
+        """PII-safe preview — enough to see values differ, never the full
+        payload: first+last char and length. Fully masks short values."""
+        if value is None:
+            return "<null>"
+        s = str(value)
+        if len(s) <= 3:
+            return "***"
+        return f"{s[0]}***{s[-1]} ({len(s)} chars)"
+
     def _one(self, stage, contract):
         row = {
             "mapping": contract.name,
@@ -594,10 +605,14 @@ class MigrationLibrary:
                                     "key": str(d.key),
                                     "column": d.column,
                                     "expected": (
-                                        "[REDACTED]" if pii.get(d.column, True) else str(d.expected)
+                                        self._masked(d.expected)
+                                        if pii.get(d.column, True)
+                                        else str(d.expected)
                                     ),
                                     "actual": (
-                                        "[REDACTED]" if pii.get(d.column, True) else str(d.actual)
+                                        self._masked(d.actual)
+                                        if pii.get(d.column, True)
+                                        else str(d.actual)
                                     ),
                                 }
                                 for d in result.diffs
