@@ -55,11 +55,7 @@ def compare_profiles(src_rows, src, tgt_rows, tgt):
         )
         for stat, sv, tv in checks:
             if sv != tv:
-                diffs.append(
-                    {"column": col, "stat": stat, "source": sv, "target": tv}
-                )
+                diffs.append({"column": col, "stat": stat, "source": sv, "target": tv})
     if src_rows != tgt_rows:
-        diffs.append(
-            {"column": "*", "stat": "rows", "source": src_rows, "target": tgt_rows}
-        )
+        diffs.append({"column": "*", "stat": "rows", "source": src_rows, "target": tgt_rows})
     return diffs[:200]
