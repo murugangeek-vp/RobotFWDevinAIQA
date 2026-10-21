@@ -8,6 +8,7 @@ migration_report.md    — the same content as a readable QA report, plus
                          Suggestions for the review meeting.
 """
 
+from datetime import datetime
 from pathlib import Path
 
 from openpyxl import Workbook
@@ -15,6 +16,26 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 _FILL = {"PASS": "C6EFCE", "WARN": "FFEB9C", "FAIL": "FFC7CE", "ERROR": "FFC7CE", "SKIP": "DDDDDD"}
+
+
+def _warn(msg: str) -> None:
+    try:
+        from robot.api import logger
+
+        logger.warn(msg)
+    except ImportError:
+        print(f"WARN: {msg}")
+
+
+def _save_workbook(wb, path: Path) -> None:
+    """Save the audit workbook; if the canonical name is locked (e.g. open in
+    Excel) fall back to a timestamped copy instead of failing the run."""
+    try:
+        wb.save(path)
+    except PermissionError:
+        fallback = path.with_name(f"{path.stem}_{datetime.now():%Y%m%d_%H%M%S_%f}{path.suffix}")
+        wb.save(fallback)
+        _warn(f"{path.name} is locked (open in Excel?) — wrote {fallback.name} instead")
 
 
 def _bold_header(ws) -> None:
@@ -185,7 +206,7 @@ def write_migration_report(
         ws.append(["suggestion", s])
     _autofit(ws)
 
-    wb.save(xlsx)
+    _save_workbook(wb, xlsx)
 
     lines = [
         "# Migration Reconciliation Report",
@@ -498,7 +519,7 @@ def write_evidence(results, meta, out_dir):
         ws.freeze_panes = "A2"
         ws.auto_filter.ref = ws.dimensions
         _autofit(ws)
-    wb.save(out / "migration_summary.xlsx")
+    _save_workbook(wb, out / "migration_summary.xlsx")
 
     def escaped(value):
         return str(value).replace("|", "\\|").replace("\n", " ")

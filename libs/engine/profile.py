@@ -12,12 +12,17 @@ _DISTINCT_CAP = 50_000
 
 
 def _accumulate(state, col, series):
-    st = state.setdefault(col, {"nulls": 0, "distinct": set(), "min": None, "max": None})
+    st = state.setdefault(
+        col,
+        {"nulls": 0, "distinct": set(), "capped": False, "min": None, "max": None},
+    )
     st["nulls"] += int(series.isna().sum())
     vals = series.dropna()
     if not vals.empty:
-        if len(st["distinct"]) < _DISTINCT_CAP:
+        if not st["capped"]:
             st["distinct"].update(vals.astype(str).unique())
+            if len(st["distinct"]) >= _DISTINCT_CAP:
+                st["capped"] = True
         lo, hi = vals.min(), vals.max()
         if st["min"] is None or (lo is not None and lo < st["min"]):
             st["min"] = lo
@@ -49,13 +54,32 @@ def compare_profiles(src_rows, src, tgt_rows, tgt):
             continue
         checks = (
             ("nulls", s["nulls"], t["nulls"]),
-            ("distinct", len(s["distinct"]), len(t["distinct"])),
             ("min", str(s["min"]), str(t["min"])),
             ("max", str(s["max"]), str(t["max"])),
         )
         for stat, sv, tv in checks:
             if sv != tv:
                 diffs.append({"column": col, "stat": stat, "source": sv, "target": tv})
+        if s["capped"] and t["capped"]:
+            diffs.append(
+                {
+                    "column": col,
+                    "stat": "distinct",
+                    "source": f">={_DISTINCT_CAP}",
+                    "target": f">={_DISTINCT_CAP}",
+                    "issue": "both sides exceed distinct cap — equality unverifiable "
+                    "in memory; needs SQL COUNT(DISTINCT) pushdown",
+                }
+            )
+        elif s["capped"] != t["capped"] or len(s["distinct"]) != len(t["distinct"]):
+            diffs.append(
+                {
+                    "column": col,
+                    "stat": "distinct",
+                    "source": len(s["distinct"]),
+                    "target": len(t["distinct"]),
+                }
+            )
     if src_rows != tgt_rows:
         diffs.append({"column": "*", "stat": "rows", "source": src_rows, "target": tgt_rows})
     return diffs[:200]
