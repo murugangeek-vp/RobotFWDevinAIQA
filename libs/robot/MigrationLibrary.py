@@ -529,7 +529,9 @@ class MigrationLibrary:
                         else:
                             raise ValueError("Duplicate defect was not detected")
                         row["detail"] = (
-                            "Exact missing/extra/tamper/duplicate detection on streamed copies; databases untouched"
+                            "injected defects on streamed copies detected exactly: "
+                            "missing=1 row, tamper=1 field, extra=1 row, duplicate key "
+                            "rejected; databases untouched"
                         )
                         return row
                     if stage == "controls":
@@ -570,7 +572,8 @@ class MigrationLibrary:
                             )
                             row["detail"] = f"{len(mismatches)} control mismatch(es): {shown}"
                         else:
-                            row["detail"] = f"{len(specs)} controls certified"
+                            names = ", ".join(s["id"] for s in specs)
+                            row["detail"] = f"{len(specs)} control(s) certified: {names}"
                         return row
                     check = contract
                     if stage == "transform":
@@ -642,11 +645,19 @@ class MigrationLibrary:
                                 "Diffs & Violations"
                             )
                     elif not row["detail"]:
-                        row["detail"] = (
-                            f"{result.target_count}/{result.source_count} rows match; "
-                            f"{row['missing']} missing / {row['extra']} extra / "
-                            f"{row['diffs']} column diffs"
-                        )
+                        if stage == "transform":
+                            tcols = [c["name"] for c in check.columns if "transform" in c]
+                            row["detail"] = (
+                                f"{len(tcols)} transform column(s) recomputed {tcols}; "
+                                f"{result.target_count}/{result.source_count} rows match, "
+                                "0 diffs"
+                            )
+                        else:
+                            row["detail"] = (
+                                f"{result.target_count}/{result.source_count} rows match; "
+                                f"{row['missing']} missing / {row['extra']} extra / "
+                                f"{row['diffs']} column diffs"
+                            )
         except Exception as exc:
             row["status"] = "ERROR"
             # Bounded message — enough to diagnose (which module, which
@@ -726,18 +737,29 @@ class MigrationLibrary:
                             "source_null_fk": src["null_fk"],
                             "target_orphans": tgt["orphans"],
                             "target_null_fk": tgt["null_fk"],
+                            "parent_keys_source": len(pkeys_src),
+                            "parent_keys_target": len(pkeys_tgt),
                         }
+                    )
+                    rel_desc = (
+                        f"FK {child.name}.{rel['child_column']} -> "
+                        f"{rel['parent_mapping']}.{rel['parent_column']}"
                     )
                     if src["orphans"] or tgt["orphans"]:
                         row["status"] = "FAIL"
+                        samples = (tgt["samples"] or src["samples"])[:5]
                         row["detail"] = (
-                            f"{src['orphans']} source / {tgt['orphans']} target orphan rows"
+                            f"{rel_desc}: {src['orphans']} source / {tgt['orphans']} "
+                            f"target orphan rows (null FK src={src['null_fk']} "
+                            f"tgt={tgt['null_fk']}); orphan keys: {samples}"
                         )
-                        row["dq_failures"] = {
-                            "orphan_samples": (tgt["samples"] or src["samples"])[:5]
-                        }
+                        row["dq_failures"] = {"orphan_samples": samples}
                     else:
-                        row["detail"] = "0 source / 0 target orphans; FK integrity holds"
+                        row["detail"] = (
+                            f"{rel_desc}: {len(pkeys_src)} source / {len(pkeys_tgt)} "
+                            f"target parent keys; 0 orphans both sides (null FK "
+                            f"src={src['null_fk']} tgt={tgt['null_fk']}); integrity holds"
+                        )
                 except Exception as exc:
                     row["status"] = "ERROR"
                     row["detail"] = f"{type(exc).__name__}: {exc}"[:500]
@@ -752,6 +774,8 @@ class MigrationLibrary:
         """Emit one log.html line per evidence row — PASS rows as INFO,
         FAIL/ERROR as WARN — with record counts and bounded defect detail."""
         parts = [f"{row['mapping']}/{row['stage']}: {row['status']}"]
+        if row.get("source") and row.get("target"):
+            parts.append(f"{row['source']} -> {row['target']}")
         if "source_count" in row:
             tgt = row.get("target_count")
             parts.append(
