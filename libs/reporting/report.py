@@ -302,7 +302,7 @@ def write_evidence(results, meta, out_dir):
         ],
         "Metadata": [["Mapping", "Stage", "Source", "Target", "Observed Metadata"]],
         "Diffs & Violations": [
-            ["Mapping", "Stage", "Evidence (redacted samples; totals in Stage Results)"]
+            ["Mapping", "Stage", "Type", "Key / Name", "Column", "Expected", "Actual / Detail"]
         ],
         "Insights": [["Type", "Detail"]],
     }
@@ -312,6 +312,7 @@ def write_evidence(results, meta, out_dir):
         )
     for key, value in cutover.items():
         sheets["Run Info"].append([f"cutover.{key}", json.dumps(value, default=str)])
+    seen_defects = set()
     for row in results:
         sheets["Stage Results"].append(
             [
@@ -359,19 +360,56 @@ def write_evidence(results, meta, out_dir):
                     json.dumps(observed, default=str),
                 ]
             )
-        for key in (
-            "dq_failures",
-            "schema_errors",
-            "missing_samples",
-            "extra_samples",
-            "diff_samples",
-            "control_mismatches",
-            "profile_diffs",
-        ):
-            if row.get(key):
-                sheets["Diffs & Violations"].append(
-                    [row["mapping"], row["stage"], json.dumps(row[key], default=str)]
+
+        def defect(kind, key="", column="", expected="", actual="", _row=row):
+            entry = (_row["mapping"], _row["stage"], kind, key, column, expected, actual)
+            if entry in seen_defects:
+                return
+            seen_defects.add(entry)
+            sheets["Diffs & Violations"].append(list(entry))
+
+        for k in row.get("missing_samples") or []:
+            defect("missing_in_target", str(k), actual="absent in target")
+        for k in row.get("extra_samples") or []:
+            defect("extra_in_target", str(k), actual="absent in source")
+        for d in row.get("diff_samples") or []:
+            defect(
+                "value_diff",
+                str(d.get("key", "")),
+                d.get("column", ""),
+                str(d.get("expected", "")),
+                str(d.get("actual", "")),
+            )
+        for m in row.get("control_mismatches") or []:
+            if isinstance(m, dict):
+                defect(
+                    "control_mismatch",
+                    str(m.get("control", "")),
+                    str(m.get("group", "")),
+                    str(m.get("expected", "")),
+                    str(m.get("actual", "")),
                 )
+        for d in row.get("profile_diffs") or []:
+            defect(
+                "profile_diff",
+                str(d.get("column", "")),
+                str(d.get("stat", d.get("issue", ""))),
+                str(d.get("source", "")),
+                str(d.get("target", "")),
+            )
+        for e in row.get("schema_errors") or []:
+            defect("schema_error", actual=str(e))
+        for rid, n in (row.get("dq_failures") or {}).items():
+            if isinstance(n, list):
+                defect("dq_samples", rid, actual=", ".join(str(x) for x in n))
+            else:
+                defect("dq_failure", rid, actual=f"{n} failing row(s)")
+        for t in row.get("unmapped_source_tables") or []:
+            defect("unmapped_source_table", str(t), actual="no workbook mapping")
+        for t in row.get("unmapped_target_tables") or []:
+            defect("unmapped_target_table", str(t), actual="no workbook mapping")
+        for e in row.get("not_validated") or []:
+            defect("not_validated", actual=str(e))
     insights = [
         "Results cover only the selected mappings and executed stages; no unmapped table is implicitly certified.",
         "Millions-of-rows production scale and real Snowflake role enforcement require separate environment validation.",
