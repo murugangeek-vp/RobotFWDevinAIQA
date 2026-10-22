@@ -52,9 +52,10 @@ def _dec(v):
     if v is None:
         return None
     try:
-        return Decimal(str(v).strip())
+        d = Decimal(str(v).strip())
     except (InvalidOperation, ValueError, AttributeError):
         return None
+    return d if d.is_finite() else None
 
 
 def _gcanon(v) -> str:

@@ -151,12 +151,21 @@ def _negatives(cup, leg, ref):
 def _trailers(cup, leg, ref):
     """Certified totals — derived from the same deterministic data the loader
     transforms, mirroring each hop's Controls sheet."""
-    # hop 1 — file row counts
+    # hop 1 — file row counts plus the workbook's certified aggregates:
+    # distinct keys, tax-id nulls, NAICS total, max country code and the
+    # per-CUPERS grouped count.
+    by_pers: dict = {}
+    for r in cup:
+        by_pers[r[2].strip()] = by_pers.get(r[2].strip(), 0) + 1
     hop1 = [
         ("cup00301_rows", "", len(cup)),
         ("cup01201_rows", "", len(leg)),
         ("dim_reference_rows", "", len(ref)),
-    ]
+        ("cup00301_distinct_cunbr", "", len({r[1] for r in cup})),
+        ("cup00301_taxid_nulls", "", sum(1 for r in cup if not r[8].strip())),
+        ("cup00301_naics_sum", "", sum(int(r[4]) for r in cup if r[4].strip())),
+        ("cup00301_max_country", "", max(int(r[3]) for r in cup)),
+    ] + [("cup00301_by_pers", g, v) for g, v in sorted(by_pers.items())]
     # hop 2 — IL target row counts (LEFT JOINs preserve customer count) +
     # customer_type_cd grouping (casewhen: cupers 'N' -> 'C', else trimmed)
     by_type: dict = {}

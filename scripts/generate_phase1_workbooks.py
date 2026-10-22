@@ -131,6 +131,11 @@ HOP1_CONTROLS = [
     ["csv_cup00301", "cup00301_rows", "count", "", "", "cup00301_rows", "yes"],
     ["csv_cup01201", "cup01201_rows", "count", "", "", "cup01201_rows", "yes"],
     ["csv_dim_reference", "dim_reference_rows", "count", "", "", "dim_reference_rows", "yes"],
+    ["csv_cup00301", "cup00301_distinct_cunbr", "count_distinct", "cunbr", "", "", "yes"],
+    ["csv_cup00301", "cup00301_taxid_nulls", "null_count", "cussnr", "", "", "yes"],
+    ["csv_cup00301", "cup00301_naics_sum", "sum", "cusic", "", "", "yes"],
+    ["csv_cup00301", "cup00301_max_country", "max", "cucncd", "", "", "yes"],
+    ["csv_cup00301", "cup00301_by_pers", "count", "", "cupers", "", "yes"],
 ]
 
 HOP1_RELATIONS = [
@@ -143,7 +148,9 @@ HOP1_README = [
     [""],
     ["Validates raw landing: one CSV file per table under env source.dir,"],
     ["exact row counts, schema/types/nullability, FK integrity of cup01201"],
-    ["against cup00301, and certified row counts vs phase1_hop1_trailer.csv."],
+    ["against cup00301, and certified aggregates vs phase1_hop1_trailer.csv:"],
+    ["row counts, distinct keys, tax-id nulls, NAICS sum, max country code,"],
+    ["and the per-customer-type (CUPERS) grouped count."],
     [""],
     ["Direct copies only — all transformation happens at hop 2 per spec."],
 ]
