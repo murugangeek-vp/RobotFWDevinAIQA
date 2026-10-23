@@ -79,6 +79,26 @@ def load_credentials(path: Path) -> None:
 _ENV_REF = re.compile(r"^\$\{([A-Z0-9_]+)\}$")
 
 
+_LOADER_CRED_KEYS = {"load_user", "load_password"}
+
+
+def _strip_loader_credentials(node):
+    """Remove loader-only credential keys before env expansion.
+
+    Verification never writes to a target, so a missing RECON_RW_* env var
+    must not fail the run — and write credentials should never even be
+    loaded into the verifier's process. Only `load_phase1_hop.py` consumes
+    these keys, and it expands the raw env file itself.
+    """
+    if isinstance(node, dict):
+        return {
+            k: _strip_loader_credentials(v) for k, v in node.items() if k not in _LOADER_CRED_KEYS
+        }
+    if isinstance(node, list):
+        return [_strip_loader_credentials(v) for v in node]
+    return node
+
+
 def _expand_env(obj):
     """Resolve whole-value environment references; missing values fail closed."""
     if isinstance(obj, dict):
@@ -142,7 +162,8 @@ class ReconciliationLibrary:
     def load_environment(self, env_file: str):
         """Load configuration and optional local database credentials."""
         load_credentials(Path(_REPO_ROOT) / ".env")
-        self.env = _expand_env(yaml.safe_load(Path(env_file).read_text(encoding="utf-8")))
+        raw = yaml.safe_load(Path(env_file).read_text(encoding="utf-8"))
+        self.env = _expand_env(_strip_loader_credentials(raw))
         self.env_name = self.env["environment"]
         logger.info(f"environment: {self.env_name}")
         return self.env_name
