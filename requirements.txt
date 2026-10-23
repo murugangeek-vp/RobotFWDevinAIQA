@@ -4,6 +4,7 @@ pandas==2.2.3
 pyyaml==6.0.3
 jsonschema==4.26.0
 openpyxl==3.1.5
+reportlab==4.4.10
 snowflake-connector-python==4.7.5
 sqlglot==30.17.0            # single-SELECT vetting in SnowflakeTarget.query (direct import)
 fakesnow==0.11.18    # local Snowflake emulation (target.fake: true); unused against real accounts

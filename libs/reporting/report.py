@@ -6,8 +6,11 @@ migration_summary.xlsx — Run Info / Stage Results / Diffs & Violations /
 migration_report.md    — the same content as a readable QA report, plus
                          auto-generated Insights and Improvement
                          Suggestions for the review meeting.
+end_to_end_report.pdf  — plain-English review report (test cases, evidence,
+                         follow-up actions) for QA, managers and clients.
 """
 
+import logging
 from datetime import datetime
 from pathlib import Path
 
@@ -255,7 +258,7 @@ def write_migration_report(
     return {"xlsx": str(xlsx), "md": str(md), "verdict": verdict}
 
 
-def write_evidence(results, meta, out_dir):
+def write_evidence(results, meta, out_dir, test_outcomes=None, rule_results=None):
     import json
 
     out = Path(out_dir)
@@ -617,4 +620,18 @@ def write_evidence(results, meta, out_dir):
         "- `output.xml`, `report.html`, `log.html`: Robot execution evidence.",
     ]
     (out / "migration_report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    from .review_pdf import write_review_pdf
+
+    try:
+        write_review_pdf(
+            out,
+            summary,
+            rule_results=rule_results,
+            test_outcomes=test_outcomes,
+        )
+    except Exception as exc:  # noqa: BLE001 — reviewer PDF must never mask the gate
+        logging.getLogger(__name__).warning(
+            "end_to_end_report.pdf not written: %s (close the file if it is open)", exc
+        )
     return summary["verdict"]

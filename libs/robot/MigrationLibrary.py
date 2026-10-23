@@ -190,6 +190,7 @@ class MigrationLibrary:
                     "load_date": str(run.get("load_date", "")),
                     "pipeline_id": str(run.get("pipeline_id", "")),
                     "hop": str(run.get("hop", "")),
+                    "workbook": Path(workbook).name,
                     "workbook_sha256": hashlib.sha256(Path(workbook).read_bytes()).hexdigest(),
                     "selected": [c.name for c in self.contracts],
                     "disabled": [t.mapping_id for t in tables if not t.enabled],
@@ -1033,7 +1034,19 @@ class MigrationLibrary:
 
     @keyword("Write Migration Evidence")
     def write_report(self, out_dir):
-        return write_evidence(self.evidence, self.meta, out_dir)
+        rule_results = None
+        try:
+            rules_lib = BuiltIn().get_library_instance("ReconciliationLibrary")
+            rule_results = getattr(rules_lib, "rule_results", None) or None
+        except Exception:  # noqa: BLE001 — rules library absent in verify-only suites
+            pass
+        return write_evidence(
+            self.evidence,
+            self.meta,
+            out_dir,
+            test_outcomes=self._test_map,
+            rule_results=rule_results,
+        )
 
     @keyword("Validate Migration Evidence")
     def validate_report(self, out_dir):
