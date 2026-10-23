@@ -31,11 +31,15 @@ _RULE_COLS = {
     "where clause": "where",
     "enabled": "enabled",
     "key column": "key_column",
+    "business rule": "business_rule",
+    "requirement id": "requirement_id",
 }
 _MAP_COLS = {
     "mapping name": "mapping_name",
     "source value": "source_value",
     "target value": "target_value",
+    "code": "source_value",
+    "value": "target_value",
 }
 _REQUIRED = ("test_id", "rule_type", "target_table", "target_column")
 
@@ -101,6 +105,8 @@ def load_rules(path: "str | Path") -> list[Rule]:
                 where=raw.get("where"),
                 key_column=raw.get("key_column"),
                 enabled=_enabled(row.get("enabled")),
+                business_rule=raw.get("business_rule"),
+                requirement_id=raw.get("requirement_id"),
             )
         )
     return rules

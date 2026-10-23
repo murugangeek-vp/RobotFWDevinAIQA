@@ -64,6 +64,7 @@ TABLES_HEADERS = [
     "Recon Mode",
     "Batch Size",
     "Enabled",
+    "Requirement ID",
 ]
 FIELDMAP_HEADERS = [
     "Mapping ID",
@@ -76,6 +77,8 @@ FIELDMAP_HEADERS = [
     "Transformation",
     "PII",
     "Enabled",
+    "Business Rule",
+    "Requirement ID",
 ]
 MAPPING_HEADERS = ["Mapping Name", "Code", "Value"]
 CONTROLS_HEADERS = [
@@ -86,6 +89,7 @@ CONTROLS_HEADERS = [
     "Group By",
     "File Name",
     "Enabled",
+    "Requirement ID",
 ]
 RELATIONS_HEADERS = [
     "Parent Mapping",
@@ -93,17 +97,259 @@ RELATIONS_HEADERS = [
     "Child Mapping",
     "Child Column",
     "Enabled",
+    "Requirement ID",
+]
+RULES_HEADERS = [
+    "Test ID",
+    "Rule Type",
+    "Source Table",
+    "Source Column(s)",
+    "Target Table",
+    "Target Column",
+    "Transformation Logic",
+    "Expected",
+    "Severity",
+    "Where Clause",
+    "Key Column",
+    "Enabled",
+    "Business Rule",
+    "Requirement ID",
+]
+
+# Complex business rules — live on the hop-1 workbook's Rules sheet so the
+# end-to-end lifecycle suite needs only the one input template. They exercise the
+# excelrules engine's complex-check surface against the hop-1 landed data
+# (signature schema) and its read-only join view v_dim_customer_src
+# (CUP00301 LEFT JOIN CUP01201 LEFT JOIN DIM_REFERENCE): aggregation via
+# inner select, correlated EXISTS, multi-file joins, lookup + default
+# logic, conditional and cross-file business rules.
+HOP1_RULES = [
+    [
+        "BR-AGG-UNIQ-CUNBR",
+        "CUSTOM_SQL",
+        "",
+        "",
+        "cup00301",
+        "cunbr",
+        "cunbr IN (SELECT cunbr FROM signature.cup00301 " "GROUP BY cunbr HAVING COUNT(*) = 1)",
+        "",
+        "CRITICAL",
+        "",
+        "cunbr",
+        "yes",
+        "customer number must be unique across the landed customer table",
+        "REQ-DI-103",
+    ],
+    [
+        "BR-AGG-BANK-CAP",
+        "CUSTOM_SQL",
+        "",
+        "",
+        "cup00301",
+        "cubk",
+        "(SELECT COUNT(*) FROM signature.cup00301 x WHERE x.cubk = cup00301.cubk) <= 80",
+        "",
+        "HIGH",
+        "",
+        "cunbr",
+        "yes",
+        "no single bank may supply more than 80 landed customers",
+        "REQ-DA-104",
+    ],
+    [
+        "BR-FK-CUNBR-EXISTS",
+        "CUSTOM_SQL",
+        "",
+        "",
+        "cup01201",
+        "cunbr",
+        "EXISTS (SELECT 1 FROM signature.cup00301 p WHERE p.cunbr = cup01201.cunbr)",
+        "",
+        "CRITICAL",
+        "",
+        "cunbr",
+        "yes",
+        "every legal-entity row must reference a customer that landed",
+        "REQ-DI-102",
+    ],
+    [
+        "BR-TAXID-FORMAT",
+        "CUSTOM_SQL",
+        "",
+        "",
+        "cup00301",
+        "cussnr",
+        "cussty IS NULL OR cussty <> 'S' OR cussnr IS NULL OR cussnr ~ '^[0-9]{9}$'",
+        "",
+        "HIGH",
+        "",
+        "cunbr",
+        "yes",
+        "tax ids declared as SSN-type ('S') must be exactly 9 digits when present",
+        "REQ-DI-104",
+    ],
+    [
+        "BR-JOIN-LEGAL-ENTITY",
+        "DIRECT_COMPARE",
+        "cup00301, cup01201",
+        "culegenty",
+        "v_dim_customer_src",
+        "culegenty",
+        "",
+        "",
+        "HIGH",
+        "",
+        "cunbr",
+        "yes",
+        "legal-entity code in the join view must match the CUP01201 extract per customer",
+        "REQ-DA-105",
+    ],
+    [
+        "BR-LOOKUP-TAXID-DESC",
+        "LOOKUP",
+        "cup00301, dim_reference@cussty=attribute_cd",
+        "",
+        "v_dim_customer_src",
+        "attribute_value_desc",
+        "lookup(attribute_value_desc)",
+        "",
+        "HIGH",
+        "cussty IS NOT NULL",
+        "cunbr",
+        "yes",
+        "tax-id-type description must match the DIM_REFERENCE decode for declared types",
+        "REQ-DA-106",
+    ],
+    [
+        "BR-DEFAULT-TAXID-DESC",
+        "CUSTOM_PYTHON",
+        "cup00301, cup01201, dim_reference@cussty=attribute_cd",
+        "",
+        "v_dim_customer_src",
+        "attribute_value_desc",
+        "attribute_value_desc if attribute_value_desc is not None " "else 'SOCIAL SECURITY NUMBER'",
+        "",
+        "HIGH",
+        "",
+        "cunbr",
+        "yes",
+        "a blank tax-id type decodes to 'SOCIAL SECURITY NUMBER' (spec default)",
+        "REQ-DA-106",
+    ],
+    [
+        "BR-EXTRACT-CUT-DATE",
+        "CUSTOM_PYTHON",
+        "cup00301, cup01201",
+        "load_date",
+        "cup01201",
+        "load_date",
+        "load_date",
+        "",
+        "MEDIUM",
+        "",
+        "cunbr",
+        "yes",
+        "legal-entity extract cut date must equal the customer extract cut date",
+        "REQ-DC-105",
+    ],
+    [
+        "BR-STATE-FORMAT",
+        "REGEX",
+        "",
+        "",
+        "cup00301",
+        "cuadst",
+        "",
+        "^[A-Z]{2}$",
+        "MEDIUM",
+        "",
+        "cunbr",
+        "yes",
+        "state code must be two uppercase letters",
+        "REQ-DI-105",
+    ],
+    [
+        "BR-JOBDATE-FORMAT",
+        "DATE_FORMAT",
+        "",
+        "",
+        "cup00301",
+        "cujbdt",
+        "",
+        "%Y%m%d",
+        "MEDIUM",
+        "",
+        "cunbr",
+        "yes",
+        "birth date must be a valid 8-digit YYYYMMDD value",
+        "REQ-DI-106",
+    ],
+    [
+        "BR-SCOPED-NOTNULL",
+        "NULL_CHECK",
+        "",
+        "",
+        "cup01201",
+        "culegenty",
+        "",
+        "",
+        "HIGH",
+        "EXISTS (SELECT 1 FROM signature.cup00301 c WHERE c.cunbr = cup01201.cunbr)",
+        "cunbr",
+        "yes",
+        "legal-entity rows whose customer landed must have a non-null entity type",
+        "REQ-DI-107",
+    ],
 ]
 
 
-def _fm(mid, src, tgt, ttype, nullable, maxlen="", scale="", transform="", pii="no"):
-    return [mid, src, tgt, ttype, nullable, maxlen, scale, transform, pii, "yes"]
+def _fm(
+    mid,
+    src,
+    tgt,
+    ttype,
+    nullable,
+    maxlen="",
+    scale="",
+    transform="",
+    pii="no",
+    desc="",
+    req="",
+):
+    """One FieldMap row. `desc` is a plain-English explanation of the rule
+    (or 'direct copy') for reviewers — documentation only, not executed.
+    `req` is the optional Requirement ID used for RTM traceability."""
+    return [mid, src, tgt, ttype, nullable, maxlen, scale, transform, pii, "yes", desc, req]
 
 
 # ---------------------------------------------------------------- hop 1
 HOP1_TABLES = [
-    ["csv_cup00301", "csv", "cup00301", "signature", "cup00301", "cunbr", "", "full", "", "yes"],
-    ["csv_cup01201", "csv", "cup01201", "signature", "cup01201", "cunbr", "", "full", "", "yes"],
+    [
+        "csv_cup00301",
+        "csv",
+        "cup00301",
+        "signature",
+        "cup00301",
+        "cunbr",
+        "",
+        "full",
+        "",
+        "yes",
+        "REQ-DC-101",
+    ],
+    [
+        "csv_cup01201",
+        "csv",
+        "cup01201",
+        "signature",
+        "cup01201",
+        "cunbr",
+        "",
+        "full",
+        "",
+        "yes",
+        "REQ-DC-102",
+    ],
     [
         "csv_dim_reference",
         "csv",
@@ -115,53 +361,96 @@ HOP1_TABLES = [
         "full",
         "",
         "yes",
+        "REQ-DC-103",
     ],
 ]
 
 HOP1_FIELDMAP = [
-    # cup00301 — customer master extract
-    _fm("csv_cup00301", "cubk", "cubk", "integer", "no"),
-    _fm("csv_cup00301", "cunbr", "cunbr", "string", "no", "20"),
-    _fm("csv_cup00301", "cupers", "cupers", "string", "no", "1"),
-    _fm("csv_cup00301", "cucncd", "cucncd", "integer", "no"),
-    _fm("csv_cup00301", "cusic", "cusic", "integer", "yes"),
-    _fm("csv_cup00301", "cuna1", "cuna1", "string", "no", "40", "", "", "yes"),
-    _fm("csv_cup00301", "cucfnm", "cucfnm", "string", "yes", "60", "", "", "yes"),
-    _fm("csv_cup00301", "cuclnm", "cuclnm", "string", "yes", "60", "", "", "yes"),
-    _fm("csv_cup00301", "cussnr", "cussnr", "string", "yes", "11", "", "", "yes"),
-    _fm("csv_cup00301", "cussty", "cussty", "string", "yes", "1"),
-    _fm("csv_cup00301", "cujbdt", "cujbdt", "string", "yes", "8"),
-    _fm("csv_cup00301", "cuadl1", "cuadl1", "string", "yes", "80", "", "", "yes"),
-    _fm("csv_cup00301", "cuadl2", "cuadl2", "string", "yes", "80", "", "", "yes"),
-    _fm("csv_cup00301", "cuadct", "cuadct", "string", "yes", "60", "", "", "yes"),
-    _fm("csv_cup00301", "cuadst", "cuadst", "string", "yes", "30", "", "", "yes"),
-    _fm("csv_cup00301", "cuadpc", "cuadpc", "string", "yes", "15", "", "", "yes"),
-    _fm("csv_cup00301", "load_date", "load_date", "date", "no"),
+    # cup00301 — customer master extract (raw landing: direct copies only)
+    _fm("csv_cup00301", "cubk", "cubk", "integer", "no", desc="direct copy"),
+    _fm("csv_cup00301", "cunbr", "cunbr", "string", "no", "20", desc="direct copy"),
+    _fm("csv_cup00301", "cupers", "cupers", "string", "no", "1", desc="direct copy"),
+    _fm("csv_cup00301", "cucncd", "cucncd", "integer", "no", desc="direct copy"),
+    _fm("csv_cup00301", "cusic", "cusic", "integer", "yes", desc="direct copy"),
+    _fm("csv_cup00301", "cuna1", "cuna1", "string", "no", "40", "", "", "yes", "direct copy"),
+    _fm("csv_cup00301", "cucfnm", "cucfnm", "string", "yes", "60", "", "", "yes", "direct copy"),
+    _fm("csv_cup00301", "cuclnm", "cuclnm", "string", "yes", "60", "", "", "yes", "direct copy"),
+    _fm("csv_cup00301", "cussnr", "cussnr", "string", "yes", "11", "", "", "yes", "direct copy"),
+    _fm("csv_cup00301", "cussty", "cussty", "string", "yes", "1", desc="direct copy"),
+    _fm("csv_cup00301", "cujbdt", "cujbdt", "string", "yes", "8", desc="direct copy"),
+    _fm("csv_cup00301", "cuadl1", "cuadl1", "string", "yes", "80", "", "", "yes", "direct copy"),
+    _fm("csv_cup00301", "cuadl2", "cuadl2", "string", "yes", "80", "", "", "yes", "direct copy"),
+    _fm("csv_cup00301", "cuadct", "cuadct", "string", "yes", "60", "", "", "yes", "direct copy"),
+    _fm("csv_cup00301", "cuadst", "cuadst", "string", "yes", "30", "", "", "yes", "direct copy"),
+    _fm("csv_cup00301", "cuadpc", "cuadpc", "string", "yes", "15", "", "", "yes", "direct copy"),
+    _fm("csv_cup00301", "load_date", "load_date", "date", "no", desc="direct copy"),
     # cup01201 — legal entity extract
-    _fm("csv_cup01201", "cunbr", "cunbr", "string", "no", "20"),
-    _fm("csv_cup01201", "culegenty", "culegenty", "string", "no", "50"),
-    _fm("csv_cup01201", "load_date", "load_date", "date", "no"),
+    _fm("csv_cup01201", "cunbr", "cunbr", "string", "no", "20", desc="direct copy"),
+    _fm("csv_cup01201", "culegenty", "culegenty", "string", "no", "50", desc="direct copy"),
+    _fm("csv_cup01201", "load_date", "load_date", "date", "no", desc="direct copy"),
     # dim_reference — reference codes extract
-    _fm("csv_dim_reference", "attribute_cd", "attribute_cd", "string", "no", "50"),
-    _fm("csv_dim_reference", "attribute_value_desc", "attribute_value_desc", "string", "no", "256"),
-    _fm("csv_dim_reference", "load_date", "load_date", "date", "no"),
-    _fm("csv_dim_reference", "attribute_map_cd", "attribute_map_cd", "string", "yes", "50"),
+    _fm(
+        "csv_dim_reference",
+        "attribute_cd",
+        "attribute_cd",
+        "string",
+        "no",
+        "50",
+        desc="direct copy",
+    ),
+    _fm(
+        "csv_dim_reference",
+        "attribute_value_desc",
+        "attribute_value_desc",
+        "string",
+        "no",
+        "256",
+        desc="direct copy",
+    ),
+    _fm("csv_dim_reference", "load_date", "load_date", "date", "no", desc="direct copy"),
+    _fm(
+        "csv_dim_reference",
+        "attribute_map_cd",
+        "attribute_map_cd",
+        "string",
+        "yes",
+        "50",
+        desc="direct copy",
+    ),
 ]
 
 HOP1_CONTROLS = [
-    ["csv_cup00301", "cup00301_rows", "count", "", "", "cup00301_rows", "yes"],
-    ["csv_cup01201", "cup01201_rows", "count", "", "", "cup01201_rows", "yes"],
-    ["csv_dim_reference", "dim_reference_rows", "count", "", "", "dim_reference_rows", "yes"],
-    ["csv_cup00301", "cup00301_distinct_cunbr", "count_distinct", "cunbr", "", "", "yes"],
-    ["csv_cup00301", "cup00301_taxid_nulls", "null_count", "cussnr", "", "", "yes"],
-    ["csv_cup00301", "cup00301_naics_sum", "sum", "cusic", "", "", "yes"],
-    ["csv_cup00301", "cup00301_max_country", "max", "cucncd", "", "", "yes"],
-    ["csv_cup00301", "cup00301_by_pers", "count", "", "cupers", "", "yes"],
+    ["csv_cup00301", "cup00301_rows", "count", "", "", "cup00301_rows", "yes", "REQ-DC-101"],
+    ["csv_cup01201", "cup01201_rows", "count", "", "", "cup01201_rows", "yes", "REQ-DC-102"],
+    [
+        "csv_dim_reference",
+        "dim_reference_rows",
+        "count",
+        "",
+        "",
+        "dim_reference_rows",
+        "yes",
+        "REQ-DC-103",
+    ],
+    [
+        "csv_cup00301",
+        "cup00301_distinct_cunbr",
+        "count_distinct",
+        "cunbr",
+        "",
+        "",
+        "yes",
+        "REQ-DI-101",
+    ],
+    ["csv_cup00301", "cup00301_taxid_nulls", "null_count", "cussnr", "", "", "yes", "REQ-DC-104"],
+    ["csv_cup00301", "cup00301_naics_sum", "sum", "cusic", "", "", "yes", "REQ-DA-101"],
+    ["csv_cup00301", "cup00301_max_country", "max", "cucncd", "", "", "yes", "REQ-DA-102"],
+    ["csv_cup00301", "cup00301_by_pers", "count", "", "cupers", "", "yes", "REQ-DA-103"],
 ]
 
 HOP1_RELATIONS = [
     # every legal-entity row must reference an existing customer
-    ["csv_cup00301", "cunbr", "csv_cup01201", "cunbr", "yes"],
+    ["csv_cup00301", "cunbr", "csv_cup01201", "cunbr", "yes", "REQ-DI-102"],
 ]
 
 HOP1_README = [
@@ -178,6 +467,12 @@ HOP1_README = [
     ["key on the NAICS code for the hop-3 CUSTOMER_CATEGORY join."],
     [""],
     ["Direct copies only — all transformation happens at hop 2 per spec."],
+    [""],
+    ["Rules sheet: 11 complex business rules (aggregation via inner select,"],
+    ["correlated EXISTS, multi-file joins, lookup + default logic, format"],
+    ["checks) run by the end-to-end lifecycle suite — this workbook is the single"],
+    ["input template. 'Business Rule' columns explain each rule in plain"],
+    ["English (documentation only — not executed)."],
 ]
 
 
@@ -194,6 +489,7 @@ HOP2_TABLES = [
         "full",
         "",
         "yes",
+        "REQ-DA-201",
     ],
     [
         "dim_customer_address_migration",
@@ -206,6 +502,7 @@ HOP2_TABLES = [
         "full",
         "",
         "yes",
+        "REQ-DA-202",
     ],
     [
         "dim_reference_migration",
@@ -218,6 +515,7 @@ HOP2_TABLES = [
         "full",
         "",
         "yes",
+        "REQ-DA-203",
     ],
 ]
 
@@ -232,8 +530,10 @@ HOP2_FIELDMAP = [
         "60",
         "",
         "concat('CBS', 'CUST', cubk, cunbr)",
+        desc="party key = 'CBS' + 'CUST' + bank number + customer number",
+        req="REQ-DA-205",
     ),
-    _fm("dim_customer_migration", "load_date", "load_date", "date", "no"),
+    _fm("dim_customer_migration", "load_date", "load_date", "date", "no", desc="direct copy"),
     _fm(
         "dim_customer_migration",
         "cupers",
@@ -243,8 +543,18 @@ HOP2_FIELDMAP = [
         "1",
         "",
         "casewhen(trim(cupers), 'N', 'C', trim(cupers))",
+        desc="recode customer type 'N' to 'C'; otherwise keep the trimmed code",
+        req="REQ-DA-206",
     ),
-    _fm("dim_customer_migration", "culegenty", "legal_entity_cd", "string", "yes", "50"),
+    _fm(
+        "dim_customer_migration",
+        "culegenty",
+        "legal_entity_cd",
+        "string",
+        "yes",
+        "50",
+        desc="direct copy",
+    ),
     _fm(
         "dim_customer_migration",
         "cubk",
@@ -254,6 +564,8 @@ HOP2_FIELDMAP = [
         "3",
         "",
         "lpad(trim(cubk), 3, '0')",
+        desc="bank number, zero-padded to 3 digits",
+        req="REQ-DA-207",
     ),
     _fm(
         "dim_customer_migration",
@@ -264,6 +576,8 @@ HOP2_FIELDMAP = [
         "60",
         "",
         "literal('CBS')",
+        desc="constant 'CBS' — every row carries the CBS application key",
+        req="REQ-DA-208",
     ),
     _fm(
         "dim_customer_migration",
@@ -274,6 +588,8 @@ HOP2_FIELDMAP = [
         "6",
         "",
         "lpad(cusic, 6, '0')",
+        desc="NAICS industry code, zero-padded to 6 digits",
+        req="REQ-DA-209",
     ),
     _fm(
         "dim_customer_migration",
@@ -285,6 +601,8 @@ HOP2_FIELDMAP = [
         "",
         "trim(cuna1)",
         "yes",
+        "customer name, whitespace trimmed",
+        req="REQ-DA-210",
     ),
     _fm(
         "dim_customer_migration",
@@ -296,6 +614,8 @@ HOP2_FIELDMAP = [
         "",
         "casewhen(cupers, 'P', cucfnm, None)",
         "yes",
+        "first name kept for persons ('P') only; NULL otherwise",
+        req="REQ-DA-211",
     ),
     _fm(
         "dim_customer_migration",
@@ -307,6 +627,8 @@ HOP2_FIELDMAP = [
         "",
         "lpad(cussnr, 9, '0')",
         "yes",
+        "tax id, zero-padded to 9 digits",
+        req="REQ-DA-212",
     ),
     _fm(
         "dim_customer_migration",
@@ -317,6 +639,8 @@ HOP2_FIELDMAP = [
         "1",
         "",
         "casewhen(ifnull(cussty, ''), '', 'S', cussty)",
+        desc="blank tax-id type defaults to 'S' (SSN)",
+        req="REQ-DA-213",
     ),
     _fm(
         "dim_customer_migration",
@@ -328,6 +652,8 @@ HOP2_FIELDMAP = [
         "",
         "date_fmt(cujbdt, '%Y-%m-%d', '%Y%m%d')",
         "yes",
+        "birth date reformatted from YYYYMMDD to YYYY-MM-DD",
+        req="REQ-DA-214",
     ),
     _fm(
         "dim_customer_migration",
@@ -339,6 +665,8 @@ HOP2_FIELDMAP = [
         "",
         "casewhen(cupers, 'P', cuclnm, None)",
         "yes",
+        "last name kept for persons ('P') only; NULL otherwise",
+        req="REQ-DA-211",
     ),
     _fm(
         "dim_customer_migration",
@@ -347,6 +675,8 @@ HOP2_FIELDMAP = [
         "string",
         "yes",
         "256",
+        desc="tax-id-type description carried from the join view (DIM_REFERENCE decode)",
+        req="REQ-DA-215",
     ),
     # cup00301 -> dim_customer_address (spec row 6 + carried address columns)
     _fm(
@@ -358,6 +688,8 @@ HOP2_FIELDMAP = [
         "60",
         "",
         "concat('CBS', 'CUST', cubk, cunbr)",
+        desc="party key = 'CBS' + 'CUST' + bank number + customer number",
+        req="REQ-DA-205",
     ),
     _fm(
         "dim_customer_address_migration",
@@ -368,6 +700,8 @@ HOP2_FIELDMAP = [
         "5",
         "",
         "lpad(cucncd, 5, '0')",
+        desc="country code, zero-padded to 5 digits",
+        req="REQ-DA-216",
     ),
     _fm(
         "dim_customer_address_migration",
@@ -379,6 +713,8 @@ HOP2_FIELDMAP = [
         "",
         "trim(cuadl1)",
         "yes",
+        "address line 1, whitespace trimmed",
+        req="REQ-DA-217",
     ),
     _fm(
         "dim_customer_address_migration",
@@ -390,13 +726,57 @@ HOP2_FIELDMAP = [
         "",
         "trim(cuadl2)",
         "yes",
+        "address line 2, whitespace trimmed",
+        req="REQ-DA-218",
     ),
-    _fm("dim_customer_address_migration", "cuadct", "city", "string", "yes", "60", "", "", "yes"),
-    _fm("dim_customer_address_migration", "cuadst", "state_cd", "string", "yes", "30"),
-    _fm("dim_customer_address_migration", "cuadpc", "postal_cd", "string", "yes", "15"),
-    _fm("dim_customer_address_migration", "load_date", "load_date", "date", "no"),
+    _fm(
+        "dim_customer_address_migration",
+        "cuadct",
+        "city",
+        "string",
+        "yes",
+        "60",
+        "",
+        "",
+        "yes",
+        "direct copy",
+    ),
+    _fm(
+        "dim_customer_address_migration",
+        "cuadst",
+        "state_cd",
+        "string",
+        "yes",
+        "30",
+        desc="direct copy",
+    ),
+    _fm(
+        "dim_customer_address_migration",
+        "cuadpc",
+        "postal_cd",
+        "string",
+        "yes",
+        "15",
+        desc="direct copy",
+    ),
+    _fm(
+        "dim_customer_address_migration",
+        "load_date",
+        "load_date",
+        "date",
+        "no",
+        desc="direct copy",
+    ),
     # dim_reference -> dim_reference (reference data lands in IL unchanged)
-    _fm("dim_reference_migration", "attribute_cd", "attribute_cd", "string", "no", "50"),
+    _fm(
+        "dim_reference_migration",
+        "attribute_cd",
+        "attribute_cd",
+        "string",
+        "no",
+        "50",
+        desc="direct copy",
+    ),
     _fm(
         "dim_reference_migration",
         "attribute_value_desc",
@@ -404,8 +784,9 @@ HOP2_FIELDMAP = [
         "string",
         "no",
         "256",
+        desc="direct copy",
     ),
-    _fm("dim_reference_migration", "load_date", "load_date", "date", "no"),
+    _fm("dim_reference_migration", "load_date", "load_date", "date", "no", desc="direct copy"),
     _fm(
         "dim_reference_migration",
         "attribute_map_cd",
@@ -413,11 +794,43 @@ HOP2_FIELDMAP = [
         "string",
         "yes",
         "50",
+        desc="direct copy",
     ),
 ]
 
+# Post-transform format check on the integration layer — cujbdt lands as
+# YYYYMMDD on hop-1 (covered by BR-JOBDATE-FORMAT); the hop-2 transform
+# date_fmt(cujbdt,'%Y-%m-%d','%Y%m%d') must produce ISO YYYY-MM-DD birth_dt.
+HOP2_RULES = [
+    [
+        "BR-BIRTHDT-ISO",
+        "DATE_FORMAT",
+        "",
+        "",
+        "dim_customer",
+        "birth_dt",
+        "",
+        "%Y-%m-%d",
+        "MEDIUM",
+        "",
+        "involved_party_key",
+        "yes",
+        "birth date must be ISO YYYY-MM-DD after the hop-2 reformat",
+        "REQ-DI-202",
+    ],
+]
+
 HOP2_CONTROLS = [
-    ["dim_customer_migration", "dim_customer_rows", "count", "", "", "dim_customer_rows", "yes"],
+    [
+        "dim_customer_migration",
+        "dim_customer_rows",
+        "count",
+        "",
+        "",
+        "dim_customer_rows",
+        "yes",
+        "REQ-DC-201",
+    ],
     [
         "dim_customer_migration",
         "dim_customer_by_type",
@@ -426,6 +839,7 @@ HOP2_CONTROLS = [
         "customer_type_cd",
         "dim_customer_by_type",
         "yes",
+        "REQ-DA-204",
     ],
     [
         "dim_customer_address_migration",
@@ -435,8 +849,18 @@ HOP2_CONTROLS = [
         "",
         "dim_address_rows",
         "yes",
+        "REQ-DC-202",
     ],
-    ["dim_reference_migration", "dim_ref_rows", "count", "", "", "dim_ref_rows", "yes"],
+    [
+        "dim_reference_migration",
+        "dim_ref_rows",
+        "count",
+        "",
+        "",
+        "dim_ref_rows",
+        "yes",
+        "REQ-DC-203",
+    ],
 ]
 
 HOP2_RELATIONS = [
@@ -446,6 +870,7 @@ HOP2_RELATIONS = [
         "dim_customer_address_migration",
         "involved_party_key",
         "yes",
+        "REQ-DI-201",
     ],
 ]
 
@@ -479,14 +904,21 @@ HOP3_TABLES = [
         "full",
         "",
         "yes",
+        "REQ-DA-301",
     ],
 ]
 
 HOP3_FIELDMAP = [
     _fm(
-        "cl_party_snpsht_migration", "involved_party_key", "party_identifier", "string", "no", "60"
+        "cl_party_snpsht_migration",
+        "involved_party_key",
+        "party_identifier",
+        "string",
+        "no",
+        "60",
+        desc="direct copy",
     ),
-    _fm("cl_party_snpsht_migration", "load_date", "as_of_date", "date", "no"),
+    _fm("cl_party_snpsht_migration", "load_date", "as_of_date", "date", "no", desc="direct copy"),
     _fm(
         "cl_party_snpsht_migration",
         "customer_type_cd",
@@ -497,6 +929,9 @@ HOP3_FIELDMAP = [
         "",
         "casewhen(customer_type_cd, 'P', 'Personal', 'N', 'Non-Personal', "
         "'C', 'Commercial', 'B', 'Business', 'UNSPECIFIED')",
+        desc="decode customer type: 'P'->Personal, 'N'->Non-Personal, 'C'->Commercial, "
+        "'B'->Business, otherwise UNSPECIFIED",
+        req="REQ-DA-303",
     ),
     _fm(
         "cl_party_snpsht_migration",
@@ -508,6 +943,9 @@ HOP3_FIELDMAP = [
         "",
         "casewhen(regexp_match(address_country_cd, '^[A-Za-z]{2}$'), 'True', "
         "address_country_cd, 'US')",
+        desc="keep the country code only if it is two letters, otherwise 'US' — padded "
+        "numeric codes never match, so 'US' always wins (per spec)",
+        req="REQ-DA-304",
     ),
     _fm(
         "cl_party_snpsht_migration",
@@ -516,9 +954,26 @@ HOP3_FIELDMAP = [
         "string",
         "yes",
         "20",
+        desc="direct copy",
     ),
-    _fm("cl_party_snpsht_migration", "bank_num", "bank_num", "string", "no", "50"),
-    _fm("cl_party_snpsht_migration", "appl_key", "data_source_code", "string", "no", "20"),
+    _fm(
+        "cl_party_snpsht_migration",
+        "bank_num",
+        "bank_num",
+        "string",
+        "no",
+        "50",
+        desc="direct copy",
+    ),
+    _fm(
+        "cl_party_snpsht_migration",
+        "appl_key",
+        "data_source_code",
+        "string",
+        "no",
+        "20",
+        desc="direct copy",
+    ),
     _fm(
         "cl_party_snpsht_migration",
         "appl_key",
@@ -528,6 +983,8 @@ HOP3_FIELDMAP = [
         "50",
         "",
         "casewhen(appl_key, 'PAR', 'BROKER-DEALER', naics_cd)",
+        desc="'PAR' maps to 'BROKER-DEALER'; otherwise the NAICS code",
+        req="REQ-DA-305",
     ),
     # SPEC GAP (row 11): "Complex Logic - details shared in next tab" — the
     # tab does not exist. Sentinel keeps the column verifiably present and
@@ -541,6 +998,8 @@ HOP3_FIELDMAP = [
         "60",
         "",
         "literal('PENDING_SPEC')",
+        desc="spec gap sentinel — party type rule pending client spec",
+        req="REQ-DA-306",
     ),
     _fm(
         "cl_party_snpsht_migration",
@@ -552,6 +1011,7 @@ HOP3_FIELDMAP = [
         "",
         "",
         "yes",
+        "direct copy",
     ),
     _fm(
         "cl_party_snpsht_migration",
@@ -563,8 +1023,17 @@ HOP3_FIELDMAP = [
         "",
         "",
         "yes",
+        "direct copy",
     ),
-    _fm("cl_party_snpsht_migration", "last_nm", "party_last_name", "string", "yes", "255"),
+    _fm(
+        "cl_party_snpsht_migration",
+        "last_nm",
+        "party_last_name",
+        "string",
+        "yes",
+        "255",
+        desc="direct copy",
+    ),
     _fm(
         "cl_party_snpsht_migration",
         "tax_id_number",
@@ -575,6 +1044,7 @@ HOP3_FIELDMAP = [
         "",
         "",
         "yes",
+        "direct copy",
     ),
     _fm(
         "cl_party_snpsht_migration",
@@ -585,8 +1055,21 @@ HOP3_FIELDMAP = [
         "1",
         "",
         "substr(tax_id_number_type_cd, 0, 1)",
+        desc="first character of the tax-id type code",
+        req="REQ-DA-307",
     ),
-    _fm("cl_party_snpsht_migration", "birth_dt", "date_of_birth", "date", "yes", "", "", "", "yes"),
+    _fm(
+        "cl_party_snpsht_migration",
+        "birth_dt",
+        "date_of_birth",
+        "date",
+        "yes",
+        "",
+        "",
+        "",
+        "yes",
+        "direct copy",
+    ),
     _fm(
         "cl_party_snpsht_migration",
         "tax_id_number_type_desc",
@@ -594,6 +1077,7 @@ HOP3_FIELDMAP = [
         "string",
         "yes",
         "255",
+        desc="direct copy",
     ),
     # CUSTOMER_CATEGORY (client CASE): DIM_REFERENCE lookup on naics_cd wins;
     # else searched CASE on customer_type_cd + full_nm markers. NULL for
@@ -609,11 +1093,23 @@ HOP3_FIELDMAP = [
         "50",
         "",
         CUSTOMER_CATEGORY_TRANSFORM,
+        desc="NAICS-match in DIM_REFERENCE wins; else 'P'->INDIVIDUAL, 'C'/'B' + LLC/INC "
+        "in name->CORP_SMALL, +BANK->BANK, else NULL",
+        req="REQ-DA-308",
     ),
 ]
 
 HOP3_CONTROLS = [
-    ["cl_party_snpsht_migration", "cl_party_rows", "count", "", "", "cl_party_rows", "yes"],
+    [
+        "cl_party_snpsht_migration",
+        "cl_party_rows",
+        "count",
+        "",
+        "",
+        "cl_party_rows",
+        "yes",
+        "REQ-DC-301",
+    ],
     [
         "cl_party_snpsht_migration",
         "cl_party_by_domain",
@@ -622,6 +1118,7 @@ HOP3_CONTROLS = [
         "business_domain",
         "cl_party_by_domain",
         "yes",
+        "REQ-DA-302",
     ],
 ]
 
@@ -660,7 +1157,7 @@ def _sheet(wb, title, headers, rows, first=False):
     return ws
 
 
-def _write(name, tables, fieldmap, controls, relations, readme):
+def _write(name, tables, fieldmap, controls, relations, readme, rules=None):
     wb = Workbook()
     _sheet(wb, "README", None, readme, first=True)
     wb["README"].column_dimensions["A"].width = 90
@@ -669,6 +1166,11 @@ def _write(name, tables, fieldmap, controls, relations, readme):
     _sheet(wb, "Controls", CONTROLS_HEADERS, controls)
     _sheet(wb, "Relations", RELATIONS_HEADERS, relations)
     _sheet(wb, "Mapping", MAPPING_HEADERS, [])
+    if rules:
+        rs = _sheet(wb, "Rules", RULES_HEADERS, rules)
+        rs.column_dimensions["B"].width = 24
+        rs.column_dimensions["G"].width = 70
+        rs.column_dimensions["M"].width = 60
     out = OUT_DIR / name
     out.parent.mkdir(parents=True, exist_ok=True)
     wb.save(out)
@@ -683,6 +1185,7 @@ def main():
         HOP1_CONTROLS,
         HOP1_RELATIONS,
         HOP1_README,
+        HOP1_RULES,
     )
     _write(
         "phase1_hop2_stage_to_il.xlsx",
@@ -691,6 +1194,7 @@ def main():
         HOP2_CONTROLS,
         HOP2_RELATIONS,
         HOP2_README,
+        HOP2_RULES,
     )
     _write(
         "phase1_hop3_il_to_consumption.xlsx",

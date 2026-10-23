@@ -19,6 +19,8 @@ class FieldMapping:
     transformation: "str | None" = None
     pii: bool = False
     enabled: bool = True
+    business_rule: "str | None" = None  # plain-English intent, reviewer-facing
+    requirement_id: "str | None" = None  # RTM join key — requirement being verified
 
 
 @dataclass
@@ -35,6 +37,7 @@ class TableMapping:
     enabled: bool = True
     recon_mode: str = "full"
     batch_size: "int | None" = None
+    requirement_id: "str | None" = None  # RTM join key — requirement being verified
     fields: list = field(default_factory=list)  # list[FieldMapping]
     controls: list = field(default_factory=list)  # Controls-sheet aggregate specs
     relations: list = field(default_factory=list)  # Relations-sheet FK specs (child side)

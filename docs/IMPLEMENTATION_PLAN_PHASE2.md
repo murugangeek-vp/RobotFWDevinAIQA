@@ -85,10 +85,10 @@ expressions only. Two-part implementation:
 - `scripts/generate_phase1_csv.py` — deterministic synthetic CSVs per table
   (CUP00301/CUP01201/DIM_REFERENCE + negative files: malformed rows, dup keys,
   bad codes, null PKs, encoding edge cases) into `data/phase1_csv/`.
-- `scripts/load_phase2_hop.py` — env-driven loader: CSV→landing (COPY),
+- `scripts/load_phase1_hop.py` — env-driven loader: CSV→landing (COPY),
   landing→integration and integration→target apply the workbook transforms
   through the real engine (`mapped_rows`) into the next database — mirrors
-  `load_phase2_hop.py`, refuses non-demo targets.
+  `load_phase1_hop.py`, refuses non-demo targets.
 - Grants stay least-privilege: loader uses `recon_rw`, suites use `recon_ro`.
 
 ### P2-5 — Suite wiring + chain evidence

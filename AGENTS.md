@@ -38,19 +38,25 @@ at corrupted fixtures to prove defect detection.
   snippets into the safe transform expression language.
 - `libs/reporting/` — migration evidence (`migration_summary.xlsx`,
   `migration_report.md`, `run_summary.json`; `production_signoff` is never
-  granted by a run).
+  granted by a run), the consolidated end-to-end report (`end_to_end_summary.xlsx`,
+  `end_to_end_report.md`) and traceability (`rtm.xlsx`,
+  `compliance_scorecard.xlsx`, `defect_report.md` on failures).
 - `config/contracts/contract.schema.json` — the contract schema every
   compiled mapping is validated against (fail closed).
 - `config/environments/phase1_*.yaml` — one env per hop; credentials only
   via `${ENV_VAR}` references. `run.snapshot_id` is the agreed frozen
   migration cut.
 - `resources/keywords/` — composed Robot keywords.
-- `tests/migration/` — verify-only suites (`01_`–`08_`, `90_`
-  negative-path): no loader, the target is validated as-is.
+- `tests/migration/` — verify-only suites: `01_end_to_end_migration_testing` runs the
+  whole chain as five lifecycle tests from one workbook →
+  `end_to_end_summary.xlsx` (business rules live on the workbook's `Rules`
+  sheet; `Business Rule` columns carry plain-English explanations);
+  `90_negative_path` is the exact-count defect-detection proof. No
+  loader — the target is validated as-is.
 - `scripts/` — `generate_phase1_workbooks.py` (spec → workbooks),
   `generate_phase1_csv.py` (synthetic fixtures + trailers),
-  `provision_phase2.py` (schemas/grants/read-only join views),
-  `load_phase2_hop.py` (env-driven fixture loader, RW role).
+  `provision_phase1.py` (schemas/grants/read-only join views),
+  `load_phase1_hop.py` (env-driven fixture loader, RW role).
 
 ## Non-negotiable rules
 
@@ -87,21 +93,15 @@ python -m unittest discover -s tests/migration -p "test_*.py" -v
 # Phase-1 full chain (needs the three wdr_uat_* databases provisioned):
 .venv/Scripts/python scripts/generate_phase1_workbooks.py
 .venv/Scripts/python scripts/generate_phase1_csv.py
-.venv/Scripts/python scripts/load_phase2_hop.py --hop 1
-.venv/Scripts/python scripts/provision_phase2.py --views stage
-.venv/Scripts/python scripts/load_phase2_hop.py --hop 2
-.venv/Scripts/python scripts/provision_phase2.py --views il
-.venv/Scripts/python scripts/load_phase2_hop.py --hop 3
+.venv/Scripts/python scripts/load_phase1_hop.py --hop 1
+.venv/Scripts/python scripts/provision_phase1.py --views stage
+.venv/Scripts/python scripts/load_phase1_hop.py --hop 2
+.venv/Scripts/python scripts/provision_phase1.py --views il
+.venv/Scripts/python scripts/load_phase1_hop.py --hop 3
 .venv/Scripts/robot -d results/phase1/hop1 \
   -v MIGRATION_ENV:config/environments/phase1_hop1_csv_stage.yaml \
   -v MAPPING_WORKBOOK:data/mapping/phase1_hop1_csv_to_stage.xlsx tests/migration
 # ... same pattern for hop2 / hop3 — see docs/RUNBOOK.md
-# Complex business rules — opt-in; the phase-1 rules workbook is hop-1
-# scoped (stage-schema targets), so supply it only on the hop-1 env:
-.venv/Scripts/robot -d results/phase1/hop1_rules \
-  -v MIGRATION_ENV:config/environments/phase1_hop1_csv_stage.yaml \
-  -v RULES_WORKBOOK:data/rules/phase1_complex_rules.xlsx \
-  tests/migration/10_business_rules.robot
 ```
 
 Style: Python 3.11+, ruff line-length 100 (E/F/W/I/B/UP/SIM), mypy clean on

@@ -15,8 +15,13 @@ Three-hop pipeline per the client spec `data/trailer/Phase1.xlsx`:
 | 2 | `signature` → `wdr_uat_integration.wdr_il_core` |
 | 3 | `wdr_il_core` → `wdr_uat_consumption.wdr_cl_fds_core` |
 
-One hop = one environment YAML + one mapping workbook; the same
-`tests/migration` suites (9 stages + negative-path) verify each hop.
+One hop = one environment YAML + one mapping workbook — the workbook is
+the single input template (Tables, FieldMap, Controls, Relations,
+Mapping, plus a `Rules` sheet of business rules with plain-English
+`Business Rule` explanations). `tests/migration/01_end_to_end_migration_testing.robot`
+runs the whole chain as five end-to-end-lifecycle tests and writes one
+consolidated report (`end_to_end_summary.xlsx` + `end_to_end_report.md`);
+`90_negative_path.robot` is the exact-count defect-detection proof.
 
 - **Runbook:** [docs/RUNBOOK.md](docs/RUNBOOK.md) — setup, credentials,
   full generate→load→verify chain, troubleshooting.
@@ -26,7 +31,9 @@ One hop = one environment YAML + one mapping workbook; the same
   sheet formats, transform language, fail-closed rules.
 - **Adapters:** [docs/ADAPTERS.md](docs/ADAPTERS.md) — any-database
   extension points.
-- **Plan:** [docs/IMPLEMENTATION_PLAN_PHASE2.md](docs/IMPLEMENTATION_PLAN_PHASE2.md).
+- **Plans:** [docs/IMPLEMENTATION_PLAN_PHASE2.md](docs/IMPLEMENTATION_PLAN_PHASE2.md),
+  [docs/IMPLEMENTATION_PLAN_PHASE3.md](docs/IMPLEMENTATION_PLAN_PHASE3.md)
+  (end-to-end lifecycle consolidation).
 
 All fixtures are synthetic and deterministic; verification runs under a
 SELECT-only role; no secrets are committed.

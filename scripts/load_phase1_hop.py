@@ -14,8 +14,8 @@ Safeguards:
     source — the loader reads live data, verification reads the frozen cut.
 
 Usage:
-    .venv/Scripts/python.exe scripts/load_phase2_hop.py --hop 1
-    .venv/Scripts/python.exe scripts/load_phase2_hop.py \
+    .venv/Scripts/python.exe scripts/load_phase1_hop.py --hop 1
+    .venv/Scripts/python.exe scripts/load_phase1_hop.py \
         --env config/environments/phase1_hop1_csv_stage.yaml \
         --workbook data/mapping/phase1_hop1_csv_to_stage.xlsx
 """

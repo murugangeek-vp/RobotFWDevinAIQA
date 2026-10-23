@@ -145,6 +145,7 @@ def load_tables(path: str) -> "list[TableMapping]":
                 enabled=_truth(row.get("enabled")),
                 recon_mode=mode,
                 batch_size=_opt_int(row, "batch size", ctx),
+                requirement_id=_opt(row, "requirement id"),
             )
         )
     if not tables:
@@ -182,6 +183,8 @@ def load_fields(path: str, tables: "list[TableMapping]") -> None:
                 transformation=_opt(row, "transformation"),
                 pii=(_truth(row.get("pii")) if row.get("pii") not in (None, "") else False),
                 enabled=_truth(row.get("enabled")),
+                business_rule=_opt(row, "business rule"),
+                requirement_id=_opt(row, "requirement id"),
             )
         )
     for t in tables:
@@ -220,6 +223,8 @@ def load_controls(path: str, tables: "list[TableMapping]") -> None:
         if len(groups) > 3:
             raise ValueError(f"{ctx}: Group By supports at most 3 columns")
         spec = {"id": cid, "type": ctype}
+        if req := _opt(row, "requirement id"):
+            spec["requirement_id"] = req
         if col := _opt(row, "column"):
             spec["column"] = col
         if groups:
@@ -250,6 +255,8 @@ def load_relations(path: str, tables: "list[TableMapping]") -> None:
             "parent_column": _need(row, "parent column", ctx),
             "child_column": _need(row, "child column", ctx),
         }
+        if req := _opt(row, "requirement id"):
+            rel["requirement_id"] = req
         key = (cmid, rel["child_column"], pmid, rel["parent_column"])
         if key in seen:
             raise ValueError(f"{ctx}: duplicate relation {key}")

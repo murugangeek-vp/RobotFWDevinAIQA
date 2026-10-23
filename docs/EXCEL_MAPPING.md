@@ -55,7 +55,9 @@ The workbooks are generated from the client spec
 | Max Length | no | declared VARCHAR length — validated on real Snowflake; marked "not validated" under fakesnow (it reports `TEXT` with no length) |
 | Scale | no | numeric scale for `decimal` |
 | Transformation | no | engine expression (below); empty = direct rename |
+| PII | no | `yes`/`no` — flags the column for masked/hashed handling |
 | Enabled | yes | `yes`/`no` |
+| Business Rule | no | plain-English explanation of the row's rule (or `direct copy`) — documentation only, never executed; surfaced next to the expression in `end_to_end_summary.xlsx` for reviewers |
 
 Every key column must have an enabled FieldMap row. Duplicate target
 columns, orphan Mapping IDs and unknown types all fail closed.
@@ -86,6 +88,37 @@ trailer file (`source.control_file` in the env YAML — CSV `name,group,value`).
 When `source.control_file` is configured, **every** declared control needs a
 certified trailer total — an uncertified control or a drifted value fails the
 stage. Group keys in the trailer join with ` | ` (blank = ungrouped).
+
+### `Relations` — FK integrity between mapped tables (optional)
+
+One row per parent→child foreign key; the `relations` stage reports child
+rows whose parent key does not exist (orphans), with exact counts.
+
+| Column | Required | Meaning |
+|---|---|---|
+| Parent Mapping | yes | a `Tables` Mapping ID |
+| Parent Column | yes | **target-side** parent column |
+| Child Mapping | yes | a `Tables` Mapping ID |
+| Child Column | yes | **target-side** child column |
+| Enabled | no | `yes`/`no` (blank = yes) |
+
+### `Rules` — business rules (optional)
+
+Rows for the excelrules engine, run by the lifecycle suite's business-
+validation test against the same workbook — the mapping template is the
+single input file. Columns: `Test ID`, `Rule Type` (`CUSTOM_SQL`,
+`CUSTOM_PYTHON`, `DIRECT_COMPARE`, `LOOKUP`, `REGEX`, `NULL_CHECK`,
+`DATE_FORMAT`, …), `Source Table` (comma list of CSV stems; `a@col=b`
+joins on differing keys), `Source Column(s)`, `Target Table`,
+`Target Column`, `Transformation Logic` (rule expression / SQL
+predicate), `Expected`, `Severity`, `Where Clause` (scoped SQL fragment,
+may itself contain a subquery), `Key Column` (`src=target` when names
+differ), `Enabled`, and `Business Rule` — the plain-English sentence a
+reviewer reads to understand intent (e.g. *"customer number must be
+unique across the landed customer table"*). Rules whose target tables do
+not exist in the env's target schema are skipped as a wrong-hop guard;
+a partial match still errors loudly. A workbook without this sheet
+simply declares no business rules.
 
 ### `README` — free text, ignored by the parser.
 

@@ -24,7 +24,7 @@ globs: "tests/**/*.robot,resources/**/*.resource"
 - Suite Setup: `Migration Suite Setup` (Configure Migration — env YAML +
   workbook); Suite Teardown: `Migration Suite Teardown` (Write Migration
   Evidence). The migration suites are verify-only — they never load the
-  target; loaders are scripts (`load_phase2_hop.py`) run out-of-band.
+  target; loaders are scripts (`load_phase1_hop.py`) run out-of-band.
 - Tests that seed defects on streamed copies MUST stay read-only against
   the databases — defect injection happens on in-memory frames only.
 - Parameterize via variables (`${MIGRATION_ENV}`, `${MAPPING_WORKBOOK}`,

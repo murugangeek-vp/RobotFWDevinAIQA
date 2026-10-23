@@ -255,6 +255,51 @@ def write_migration_report(
     return {"xlsx": str(xlsx), "md": str(md), "verdict": verdict}
 
 
+def build_evidence_insights(meta, cutover, coverage, verdict):
+    """Follow-up / caveat list for evidence workbooks — derivable from run
+    metadata so any consolidated report can render the same items."""
+    insights = [
+        "Results cover only the selected mappings and executed stages; no unmapped table is implicitly certified.",
+        "Millions-of-rows production scale and real Snowflake role enforcement require separate environment validation.",
+        "Comparison uses bounded fetch batches plus private temporary disk sorting; reserve disk proportional to projected rows.",
+        "Client-side hash mode does not reduce database network transfer and is not SQL hash pushdown.",
+        "Use an agreed immutable migration snapshot on both sides; separate live systems have no shared transaction snapshot.",
+        "Row counts alone cannot validate account balances. Review amount sums and referential integrity as additional banking controls.",
+        "Negative tests alter streamed copies, not database tables; they prove detection, not ETL recovery.",
+    ]
+    if meta.get("emulated_target"):
+        insights.insert(
+            0,
+            "EMULATED TARGET: fakesnow is not a real Santander or Snowflake deployment. All demo data is synthetic.",
+        )
+    if meta.get("snapshot_enforced"):
+        insights.insert(
+            0,
+            f"Source snapshot ENFORCED ({meta.get('source_snapshot')}); "
+            f"cut id: {meta.get('snapshot_id') or 'exported pg snapshot'}.",
+        )
+    else:
+        insights.insert(
+            0,
+            "WARNING: source snapshot was recorded but NOT enforced — rows may "
+            "have changed between stage reads.",
+        )
+    arrivals = cutover.get("post_snapshot_arrivals") or {}
+    if any(arrivals.values()):
+        insights.append(
+            f"Post-snapshot arrivals detected: {arrivals} "
+            "— these rows are outside the validated cut and need a delta migration."
+        )
+    if verdict == "FAIL":
+        insights.append(
+            "Resolve every failed/error stage before sign-off: align DDL, repair rejected source rows, and review mapping transformations."
+        )
+    for name, missing in coverage.items():
+        if missing:
+            insights.append(f"{name}: stages not run: {', '.join(missing)}")
+    return insights
+
+
 def write_evidence(results, meta, out_dir):
     import json
 
@@ -295,9 +340,18 @@ def write_evidence(results, meta, out_dir):
         "results": results,
         "production_signoff": False,
     }
-    (out / "run_summary.json").write_text(
-        json.dumps(summary, indent=2, default=str), encoding="utf-8"
-    )
+    # Preserve rtm/compliance blocks a previous suite in this output dir
+    # already augmented (multiple suites share results/phase1/hopN/).
+    summary_path = out / "run_summary.json"
+    if summary_path.is_file():
+        try:
+            prior = json.loads(summary_path.read_text(encoding="utf-8"))
+            for key in ("rtm", "compliance"):
+                if key in prior:
+                    summary[key] = prior[key]
+        except (OSError, ValueError):
+            pass
+    summary_path.write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
     wb = Workbook()
     wb.active.title = "Run Info"
     sheets = {
@@ -468,44 +522,7 @@ def write_evidence(results, meta, out_dir):
             defect("unmapped_target_table", str(t), actual="no workbook mapping")
         for e in row.get("not_validated") or []:
             defect("not_validated", actual=str(e))
-    insights = [
-        "Results cover only the selected mappings and executed stages; no unmapped table is implicitly certified.",
-        "Millions-of-rows production scale and real Snowflake role enforcement require separate environment validation.",
-        "Comparison uses bounded fetch batches plus private temporary disk sorting; reserve disk proportional to projected rows.",
-        "Client-side hash mode does not reduce database network transfer and is not SQL hash pushdown.",
-        "Use an agreed immutable migration snapshot on both sides; separate live systems have no shared transaction snapshot.",
-        "Row counts alone cannot validate account balances. Review amount sums and referential integrity as additional banking controls.",
-        "Negative tests alter streamed copies, not database tables; they prove detection, not ETL recovery.",
-    ]
-    if meta.get("emulated_target"):
-        insights.insert(
-            0,
-            "EMULATED TARGET: fakesnow is not a real Santander or Snowflake deployment. All demo data is synthetic.",
-        )
-    if meta.get("snapshot_enforced"):
-        insights.insert(
-            0,
-            f"Source snapshot ENFORCED ({meta.get('source_snapshot')}); "
-            f"cut id: {meta.get('snapshot_id') or 'exported pg snapshot'}.",
-        )
-    else:
-        insights.insert(
-            0,
-            "WARNING: source snapshot was recorded but NOT enforced — rows may "
-            "have changed between stage reads.",
-        )
-    if any(cutover["post_snapshot_arrivals"].values()):
-        insights.append(
-            f"Post-snapshot arrivals detected: {cutover['post_snapshot_arrivals']} "
-            "— these rows are outside the validated cut and need a delta migration."
-        )
-    if verdict == "FAIL":
-        insights.append(
-            "Resolve every failed/error stage before sign-off: align DDL, repair rejected source rows, and review mapping transformations."
-        )
-    for name, missing in coverage.items():
-        if missing:
-            insights.append(f"{name}: stages not run: {', '.join(missing)}")
+    insights = build_evidence_insights(meta, cutover, coverage, verdict)
     sheets["Insights"].extend([["Insight / follow-up", item] for item in insights])
     for title, rows in sheets.items():
         ws = wb[title] if title in wb.sheetnames else wb.create_sheet(title)

@@ -9,11 +9,12 @@ client spec `data/trailer/Phase1.xlsx`:
 | 2 | `signature` tables + `v_dim_customer_src` view | `wdr_uat_integration.wdr_il_core` | `phase1_hop2_stage_il.yaml` / `phase1_hop2_stage_to_il.xlsx` |
 | 3 | `wdr_il_core.v_party_snpsht_src` view | `wdr_uat_consumption.wdr_cl_fds_core` | `phase1_hop3_il_consumption.yaml` / `phase1_hop3_il_to_consumption.xlsx` |
 
-The same `tests/migration` suites run per hop — all 10 stages (mapping,
-source metadata, DQ, schema, profile, recon, transforms, pipeline,
-controls, relations) plus the `90_` negative-path proof. `pipeline_id:
-phase1-uat-demo` in the evidence metadata links the three runs into one
-auditable chain.
+The same `tests/migration` suites run per hop: `01_end_to_end_migration_testing.robot`
+covers the whole chain as five ordered lifecycle tests (mapping compile →
+source/DQ/schema → recon + transforms → controls/relations/profile/
+business rules → consolidated evidence) and `90_negative_path.robot` is
+the defect-detection proof. `pipeline_id: phase1-uat-demo` in the
+evidence metadata links the three runs into one auditable chain.
 
 ## Prereqs
 
@@ -28,7 +29,7 @@ auditable chain.
   Full provisioning DDL is in `.github/workflows/reconciliation.yml` (the
   "Provision phase-1 databases" step) — reuse it for any fresh environment.
   Locally it was applied once via `psql`; the read-only join views are
-  (re)created by `scripts/provision_phase2.py` at each stage of the load.
+  (re)created by `scripts/provision_phase1.py` at each stage of the load.
 
 ## Setup (< 5 min)
 
@@ -69,11 +70,11 @@ ETL.
 .venv/Scripts/python scripts/generate_phase1_csv.py
 
 # 2. Load each hop's target (RW role — the "ETL" for the demo)
-.venv/Scripts/python scripts/load_phase2_hop.py --hop 1     # CSV -> signature
-.venv/Scripts/python scripts/provision_phase2.py --views stage   # join view for hop 2
-.venv/Scripts/python scripts/load_phase2_hop.py --hop 2     # signature -> wdr_il_core
-.venv/Scripts/python scripts/provision_phase2.py --views il      # join view for hop 3
-.venv/Scripts/python scripts/load_phase2_hop.py --hop 3     # wdr_il_core -> wdr_cl_fds_core
+.venv/Scripts/python scripts/load_phase1_hop.py --hop 1     # CSV -> signature
+.venv/Scripts/python scripts/provision_phase1.py --views stage   # join view for hop 2
+.venv/Scripts/python scripts/load_phase1_hop.py --hop 2     # signature -> wdr_il_core
+.venv/Scripts/python scripts/provision_phase1.py --views il      # join view for hop 3
+.venv/Scripts/python scripts/load_phase1_hop.py --hop 3     # wdr_il_core -> wdr_cl_fds_core
 
 # 3. Verify each hop (RO role only)
 .venv/Scripts/robot -d results/phase1/hop1 \
@@ -86,22 +87,48 @@ ETL.
   -v MIGRATION_ENV:config/environments/phase1_hop3_il_consumption.yaml \
   -v MAPPING_WORKBOOK:data/mapping/phase1_hop3_il_to_consumption.xlsx tests/migration
 
-# 4. Complex business rules — opt-in, hop-1 scope only
-.venv/Scripts/robot -d results/phase1/hop1_rules \
-  -v MIGRATION_ENV:config/environments/phase1_hop1_csv_stage.yaml \
-  -v RULES_WORKBOOK:data/rules/phase1_complex_rules.xlsx \
-  tests/migration/10_business_rules.robot
 ```
 
-The rules workbook is env-scoped: its target tables must exist in the
-env's target schema. `phase1_complex_rules.xlsx` targets stage-schema
-objects (`cup00301`, `cup01201`, `v_dim_customer_src`), so supply it only
-on hop-1 runs. On a mismatched env `Check Rules Apply To Environment`
-skips the rules test with the missing-table reason; a *partial* match is
-not skipped — the genuinely broken rule still reports its own ERROR.
+The business rules live on the mapping workbook's `Rules` sheet — the
+workbook is the single input template; there is no separate rules file.
+Rules are env-scoped: their target tables must exist in the env's target
+schema. Hop-1's rules target stage-schema objects (`cup00301`,
+`cup01201`, `v_dim_customer_src`), so they only fire on the hop-1 env. On
+a mismatched env `Check Rules Apply To Environment` skips the rules
+portion with the missing-table reason; a *partial* match is not skipped —
+the genuinely broken rule still reports its own ERROR.
+
+### end-to-end lifecycle (single template, single report)
+
+`tests/migration/01_end_to_end_migration_testing.robot` runs the full chain as five
+ordered lifecycle tests — requirements intake (mapping compile) →
+source/schema conformance → recon + transforms → business validation
+(controls, relations, profile, business rules) → consolidated evidence.
+The mapping workbook is the only input: an optional `Rules` sheet carries
+the business rules (hop-1 ships the 11 complex checks; workbooks without
+one simply run no rules), and `Business Rule` columns on `FieldMap`/`Rules`
+give the plain-English explanation next to each expression.
+
+```bash
+.venv/Scripts/robot -d results/phase1/hop1 \
+  -v MIGRATION_ENV:config/environments/phase1_hop1_csv_stage.yaml \
+  -v MAPPING_WORKBOOK:data/mapping/phase1_hop1_csv_to_stage.xlsx \
+  tests/migration/01_end_to_end_migration_testing.robot
+```
+
+The single output summary is `end_to_end_summary.xlsx` + `end_to_end_report.md` —
+stage outcomes, control mismatches, rule results with their plain-English
+text, row-level violations, and the audit/snapshot metadata in one place.
+The workbook carries both audiences: reviewer sheets (Run Info, Stages,
+Controls, Rules, RTM, Scorecard) plus QA diagnostics (Data Diffs, Queries,
+Column Profile, Metadata, Insights) — everything `migration_summary.xlsx`
+contains is also inside it.
 
 Evidence per hop lands in `results/phase1/hopN/`: `report.html`,
 `log.html`, `migration_report.md`, `migration_summary.xlsx`,
+`end_to_end_summary.xlsx` + `end_to_end_report.md` (the consolidated lifecycle report),
+`rtm.xlsx` (requirement → check traceability), `compliance_scorecard.xlsx`
+(DC/DA/DI/DG verdicts), `defect_report.md` (only on failing runs),
 `run_summary.json`, `test_evidence_map.json` (links every Robot test to
 the evidence rows it produced), and `xunit.xml` when run with `--xunit`.
 Every Robot report embeds suite metadata — environment, hop,
@@ -133,9 +160,9 @@ rebot --merge -d results/phase1/merged --name "Phase-1 Migration" \
 
 - `run.stage_seconds_warn: 60` — any stage slower than the budget is
   WARN-logged and flagged `slow_seconds`/`slow_budget` in evidence.
-- `09_profile.robot` — per-column profiling (nulls, distinct, min/max)
-  compared source vs target; catches distribution drift row-recon can
-  miss on sampled/hash comparisons.
+- The `profile` stage (inside `01_end_to_end_migration_testing.robot`) — per-column
+  profiling (nulls, distinct, min/max) compared source vs target; catches
+  distribution drift row-recon can miss on sampled/hash comparisons.
 
 ## Snapshot / cutover semantics
 
@@ -215,14 +242,14 @@ the client-authored mapping (same sheet format), and point `source.dir` /
 
 | Symptom | Likely layer |
 |---|---|
-| Mapping compile errors in 01 | workbook (fail-closed spec gaps surface here) |
-| `unmapped_source_tables` insights in 01 | extra CSV files or scope leak |
-| Rule failures in 02 | source data quality |
-| `table ... does not exist` / type mismatch in 03 | target schema drift |
-| `missing_in_target` / `extra_in_target` in 04 | load layer / incomplete extract |
-| `Get Transform Diffs` non-empty in 05 | transform logic mismatch |
-| Control mismatches in 07 | trailer totals vs loaded data |
-| Orphans in 08 | referential integrity broken by load |
+| Mapping compile errors in test 1 | workbook (fail-closed spec gaps surface here) |
+| `unmapped_source_tables` insights in test 1 | extra CSV files or scope leak |
+| Source/schema failures in test 2 | source data quality or target schema drift |
+| `missing_in_target` / `extra_in_target` in test 3 | load layer / incomplete extract |
+| `Get Transform Diffs` non-empty in test 3 | transform logic mismatch |
+| Control mismatches in test 4 | trailer totals vs loaded data |
+| Orphans in test 4 | referential integrity broken by load |
+| `Validate Requirements Coverage` fails in test 5 | workbook rows lack `Requirement ID`s the env `run.requirements` declares (or remove `require_rtm_coverage`) |
 | `password authentication failed` | wrong role — verification must run as `recon_ro`, loader as `recon_rw` |
 | `snapshot required` on a real target | `run.snapshot_id` unset — mandatory for non-demo runs |
 | rules test SKIPped: `rules target tables ... do not exist` | rules workbook run against the wrong hop — supply it only with the env whose target schema holds its tables (phase-1 rules = hop 1) |

@@ -107,6 +107,10 @@
           "file_name": {
             "type": "string",
             "description": "Name this control has in the bank trailer file (default: id)"
+          },
+          "requirement_id": {
+            "type": "string",
+            "description": "RTM join key — the requirement this control verifies"
           }
         }
       }
@@ -121,7 +125,11 @@
         "properties": {
           "parent_mapping": {"type": "string", "minLength": 1},
           "parent_column": {"type": "string", "minLength": 1},
-          "child_column": {"type": "string", "minLength": 1}
+          "child_column": {"type": "string", "minLength": 1},
+          "requirement_id": {
+            "type": "string",
+            "description": "RTM join key — the requirement this relation verifies"
+          }
         }
       }
     },

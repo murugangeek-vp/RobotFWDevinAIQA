@@ -20,8 +20,8 @@ migrates. Phase-1 reference envs: `config/environments/phase1_hop*.yaml`
 ## 1. Setup / environment
 
 - Demo pipeline: `python scripts/generate_phase1_workbooks.py` +
-  `generate_phase1_csv.py`, then per hop `load_phase2_hop.py --hop N` with
-  `provision_phase2.py --views stage|il` between loads. Full chain in
+  `generate_phase1_csv.py`, then per hop `load_phase1_hop.py --hop N` with
+  `provision_phase1.py --views stage|il` between loads. Full chain in
   docs/RUNBOOK.md.
 - Real UAT: point the phase1_* env yamls at client hosts, set
   `${RECON_*}` env vars, and `run.snapshot_id` (agreed frozen migration

@@ -32,7 +32,7 @@ All three PASS → expect 11/11 each, rc=0.
 
 ## Pick a narrower run
 
-- **One suite:** `robot -d results/x -v MIGRATION_ENV:<env>.yaml -v MAPPING_WORKBOOK:<wb>.xlsx tests/migration/04_record_comparison.robot`
+- **One suite:** `robot -d results/x -v MIGRATION_ENV:<env>.yaml -v MAPPING_WORKBOOK:<wb>.xlsx tests/migration/01_end_to_end_migration_testing.robot`
 - **One mapping:** add `-v MAPPING_ID:dim_customer_migration`
 - **Compare+transform only:** `robot -d results/r --include recon tests/migration`
 - **Negative path (prove detection):**

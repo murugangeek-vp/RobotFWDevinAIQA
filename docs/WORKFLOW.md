@@ -21,7 +21,8 @@ data/phase1/csv/*.csv                ┌─────────────�
             v_party_snpsht_src view  └──────────────────────────────┘
                      │
                      ▼
-        tests/migration — same 9-stage verify-only suite per hop
+        tests/migration — same verify-only suites per hop
+        (01_end_to_end_migration_testing = the whole chain; 90_negative_path = proof)
                      │
                      ▼
         results/phase1/hopN/ — evidence (html/md/xlsx/json)
@@ -38,7 +39,7 @@ engagement where the bank's ETL owns target writes.
 | Role | Used by | Rights |
 |---|---|---|
 | `recon_ro` | `tests/migration` suites, all source/target reads | SELECT only |
-| `recon_rw` | `scripts/load_phase2_hop.py`, `provision_phase2.py` | schema + data writes on the `wdr_uat_*` demo DBs |
+| `recon_rw` | `scripts/load_phase1_hop.py`, `provision_phase1.py` | schema + data writes on the `wdr_uat_*` demo DBs |
 | `postgres` | one-time DB/role provisioning | admin — CI/local setup only |
 
 ## Daily workflow
@@ -59,11 +60,11 @@ the script, never hand-edited.
 ### 2. Load targets (the "ETL" — RW role)
 
 ```bash
-.venv/Scripts/python scripts/load_phase2_hop.py --hop 1
-.venv/Scripts/python scripts/provision_phase2.py --views stage
-.venv/Scripts/python scripts/load_phase2_hop.py --hop 2
-.venv/Scripts/python scripts/provision_phase2.py --views il
-.venv/Scripts/python scripts/load_phase2_hop.py --hop 3
+.venv/Scripts/python scripts/load_phase1_hop.py --hop 1
+.venv/Scripts/python scripts/provision_phase1.py --views stage
+.venv/Scripts/python scripts/load_phase1_hop.py --hop 2
+.venv/Scripts/python scripts/provision_phase1.py --views il
+.venv/Scripts/python scripts/load_phase1_hop.py --hop 3
 ```
 
 Views between loads: hop-2 reads `signature.v_dim_customer_src` (the
@@ -95,23 +96,25 @@ treats a *passing* negative run as an error — detection is the feature.
 
 ## What each suite proves (per hop)
 
-| Suite | Stage | Proves |
+`01_end_to_end_migration_testing.robot` — one suite, one input workbook, one
+consolidated report. Five ordered lifecycle tests:
+
+| Test (end-to-end phase) | Stages | Proves |
 |---|---|---|
-| 01 | mapping, source | workbook compiles; source metadata matches; unmapped inputs surfaced |
-| 02 | dq | source DQ rules (nulls, lengths, patterns) |
-| 03 | schema | target columns/types/nullability match the workbook |
-| 04 | recon | exact row sets — missing/extra/duplicates/diffs, bounded samples |
-| 05 | transform | every declared transform recomputes on target rows |
-| 06 | pipeline | all stages PASS in one pass; evidence `coverage == COMPLETE` |
-| 07 | controls | certified trailer totals (`name,group,value`) vs actuals |
-| 08 | relations | FK orphans on both sides of each declared/derived relation |
-| 10 | rules | opt-in rules workbook passes; env-scope guard skips wrong-hop runs |
-| 90 | negative | tampered streamed copies are caught — DBs untouched |
+| Requirements Intake And Mapping Compile | mapping | workbook compiles; unmapped inputs surfaced |
+| Source And Schema Conformance | source, dq, schema | source metadata + DQ rules; target columns/types/nullability match the workbook |
+| Transformation And Record Reconciliation | recon, transform | exact row sets (missing/extra/diffs); every declared transform recomputes |
+| Business Validation … | controls, relations, profile, rules | certified trailer totals; FK orphans; column profiles; `Rules`-sheet business rules (env-scope guard skips wrong-hop runs) |
+| Lifecycle Evidence Is Complete And Passing | — | verdict PASS, coverage COMPLETE; `end_to_end_summary.xlsx` + `end_to_end_report.md` written |
+
+`90_negative_path.robot` — tampered streamed copies are caught (DBs
+untouched).
 
 ## Evidence map
 
 | Artifact | Audience |
 |---|---|
+| `results/phase1/hopN/end_to_end_summary.xlsx`, `end_to_end_report.md` | consolidated lifecycle report — reviewer sheets (stages, controls, rules w/ plain-English, RTM, scorecard) + QA diagnostics (Data Diffs, Queries, Column Profile, Metadata, Insights) |
 | `results/phase1/hopN/migration_report.md` | business/finance sign-off |
 | `results/phase1/hopN/migration_summary.xlsx` | audit — Run Info has timestamp, snapshot id, commit, executor, verdict |
 | `results/phase1/hopN/run_summary.json` | automation/CI — per-stage counts, `pipeline_id`, `hop` |
@@ -122,11 +125,11 @@ treats a *passing* negative run as an error — detection is the feature.
 
 | Symptom | Where to look | Typical cause |
 |---|---|---|
-| Workbook compile error | hopN `log.html` → suite 01 | spec gap in Phase1.xlsx (fail-closed is correct) |
+| Workbook compile error | hopN `log.html` → test 1 (mapping) | spec gap in Phase1.xlsx (fail-closed is correct) |
 | `extra: N` on recon | `run_summary.json` stage `recon` | source rows never landed (loader or extract) |
 | `missing: N` | same | target holds rows outside the extract |
-| Control FAIL | suite 07 evidence | trailer vs loaded data drift |
-| FK orphans | suite 08 evidence | child rows loaded without parents |
+| Control FAIL | `end_to_end_summary.xlsx` Controls sheet | trailer vs loaded data drift |
+| FK orphans | `end_to_end_summary.xlsx` Stages sheet (`relations` rows) | child rows loaded without parents |
 | `password authentication failed` | — | wrong role/credential; verification is RO-only |
 
 ## Full rebuild (clean slate)

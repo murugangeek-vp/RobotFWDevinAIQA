@@ -115,11 +115,11 @@ jobs:
           RECON_RW_USER: recon_rw
           RECON_RW_PASSWORD: ${{ secrets.RECON_RW_PASSWORD }}
         run: |
-          python scripts/load_phase2_hop.py --hop 1
-          python scripts/provision_phase2.py --views stage
-          python scripts/load_phase2_hop.py --hop 2
-          python scripts/provision_phase2.py --views il
-          python scripts/load_phase2_hop.py --hop 3
+          python scripts/load_phase1_hop.py --hop 1
+          python scripts/provision_phase1.py --views stage
+          python scripts/load_phase1_hop.py --hop 2
+          python scripts/provision_phase1.py --views il
+          python scripts/load_phase1_hop.py --hop 3
 
       - name: Run phase-1 migration suites (read-only verification)
         env:

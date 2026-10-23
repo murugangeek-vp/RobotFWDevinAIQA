@@ -34,7 +34,7 @@ def _strip_loader_credentials(node):
 
     The verify suites never write to a target, so a missing RECON_RW_* env
     var must not fail the run — and write credentials should never even be
-    loaded into the verifier's process. `load_phase2_hop.py` expands the raw
+    loaded into the verifier's process. `load_phase1_hop.py` expands the raw
     file itself and still requires them there.
     """
     if isinstance(node, dict):

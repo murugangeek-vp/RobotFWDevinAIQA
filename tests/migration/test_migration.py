@@ -548,6 +548,7 @@ class RelationsTests(unittest.TestCase):
                 "parent_mapping": "dim_customer_migration",
                 "parent_column": "involved_party_key",
                 "child_column": "involved_party_key",
+                "requirement_id": "REQ-DI-201",
             },
         )
 

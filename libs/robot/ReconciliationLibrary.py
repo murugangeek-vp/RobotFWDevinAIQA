@@ -129,6 +129,7 @@ class ReconciliationLibrary:
         self.excel_mappings = {}  # Mapping sheet code tables
         self.rules_workbook_path = None  # workbook file, for audit metadata
         self.rule_results = []  # RuleResult list from the last validation run
+        self.uncovered_requirements = []  # Requirement IDs with no executed check
         self.mapping_workbook = None  # Excel mapping workbook (migration mode)
         self.table_mappings = None  # parsed TableMapping list
         self.code_mappings = {}  # Mapping sheet code tables
@@ -692,7 +693,19 @@ class ReconciliationLibrary:
     def load_rule_workbook(self, path: str):
         """Parse business_rules.xlsx — Rules sheet rows and the Mapping sheet
         code tables. Fail-closed on unknown rule types / missing columns.
-        Returns total rules (enabled+disabled)."""
+        A workbook without a Rules sheet is the merged mapping template:
+        it simply declares no business rules (0 returned)."""
+        from contextlib import closing
+
+        import openpyxl
+
+        self.excel_rules = []
+        self.excel_mappings = {}
+        self.rules_workbook_path = str(Path(path).resolve())
+        with closing(openpyxl.load_workbook(path, read_only=True)) as wb:
+            if "Rules" not in wb.sheetnames:
+                logger.info(f"rule workbook: no Rules sheet in {path} — 0 rules")
+                return 0
         self.excel_rules = parser.load_rules(path)
         self.excel_mappings = parser.load_mappings(path)
         self.rules_workbook_path = str(Path(path).resolve())
@@ -834,3 +847,63 @@ class ReconciliationLibrary:
         written = report.write_summary(self.rule_results, path, meta=meta)
         logger.info(f"rules summary written to {written}")
         return str(written)
+
+    @keyword("Write Consolidated Evidence")
+    def write_consolidated_evidence(self, out_dir: str = "results", mapping_workbook: str = ""):
+        """Consolidated lifecycle report — merges the migration stage evidence
+        already written to <out_dir>/run_summary.json with the business-rule
+        results into end_to_end_summary.xlsx + end_to_end_report.md. When mapping_workbook
+        is supplied, also emits the Requirement Traceability Matrix (rtm.xlsx),
+        the DC/DA/DI/DG compliance_scorecard.xlsx and, on failures,
+        defect_report.md — and augments run_summary.json with rtm/compliance
+        blocks."""
+        from libs.reporting import consolidated_report, traceability
+
+        summary_path = Path(out_dir) / "run_summary.json"
+        run = json.loads(summary_path.read_text(encoding="utf-8")) if summary_path.is_file() else {}
+        trace = None
+        if mapping_workbook:
+            from libs.mapping import parser as mapping_parser
+
+            tables, _ = mapping_parser.load_workbook(mapping_workbook)
+            trace = traceability.write_trace(
+                tables, self.excel_rules, self.rule_results, run, out_dir
+            )
+            self.uncovered_requirements = trace["uncovered"]
+            run["rtm"] = {
+                "requirements": len({r["req"] for r in trace["rtm_rows"]}),
+                "uncovered": trace["uncovered"],
+            }
+            run["compliance"] = trace["verdicts"]
+            if summary_path.is_file():
+                summary_path.write_text(json.dumps(run, indent=2, default=str), encoding="utf-8")
+        meta = {
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "environment": self.env_name or "",
+            "hop": (self.env or {}).get("run", {}).get("hop", ""),
+            "rules_workbook": self.rules_workbook_path or "",
+            "executed_by": (
+                os.environ.get("GITHUB_ACTOR")
+                or os.environ.get("USERNAME")
+                or os.environ.get("USER")
+                or ""
+            ),
+            "git_commit": os.environ.get("GITHUB_SHA", "") or self._git_head(),
+        }
+        written = consolidated_report.write_consolidated(
+            run, self.rule_results, out_dir, meta=meta, trace=trace
+        )
+        logger.info(f"e2e evidence written to {written}")
+        return str(written)
+
+    @keyword("Validate Requirements Coverage")
+    def validate_requirements_coverage(self):
+        """RTM gate: when env `run.require_rtm_coverage` is true, every
+        Requirement ID declared in the workbook must have produced at least
+        one executed check — an uncovered requirement fails the run.
+        No-op without the flag or without a workbook that declares req ids."""
+        if not (self.env or {}).get("run", {}).get("require_rtm_coverage"):
+            return
+        uncovered = getattr(self, "uncovered_requirements", None)
+        if uncovered:
+            raise AssertionError(f"requirements with no executed check: {', '.join(uncovered)}")

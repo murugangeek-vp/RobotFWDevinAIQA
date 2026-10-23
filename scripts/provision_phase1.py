@@ -12,14 +12,14 @@ Views created (idempotent, CREATE OR REPLACE):
       LEFT JOIN DIM_REFERENCE on attribute_map_cd = naics_cd
       (CUSTOMER_CATEGORY reference override)
 
-Run order: stage tables exist after `load_phase2_hop.py --hop 1`; run this
+Run order: stage tables exist after `load_phase1_hop.py --hop 1`; run this
 script (creates the stage view) -> hop-2 load -> run again for the IL view.
 
 Synthetic/local only: connects with ${RECON_RW_*} credentials, refuses any
 database name not matching the wdr_uat_* demo set.
 
 Usage:
-    .venv/Scripts/python.exe scripts/provision_phase2.py [--views all|stage|il]
+    .venv/Scripts/python.exe scripts/provision_phase1.py [--views all|stage|il]
 """
 
 import argparse
