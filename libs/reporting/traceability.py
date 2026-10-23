@@ -15,8 +15,15 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-_FILL = {"PASS": "C6EFCE", "WARN": "FFEB9C", "FAIL": "FFC7CE", "ERROR": "FFC7CE",
-         "UNCOVERED": "D9D9D9", "CONFIRMED": "C6EFCE", "NOT-COVERED": "D9D9D9"}
+_FILL = {
+    "PASS": "C6EFCE",
+    "WARN": "FFEB9C",
+    "FAIL": "FFC7CE",
+    "ERROR": "FFC7CE",
+    "UNCOVERED": "D9D9D9",
+    "CONFIRMED": "C6EFCE",
+    "NOT-COVERED": "D9D9D9",
+}
 
 # Stage -> which governance dimensions its evidence feeds (DC completeness,
 # DA accuracy, DI integrity, DG governance).
@@ -34,21 +41,39 @@ _STAGE_DIM = {
 
 # Rule type -> governance dimension.
 _RULE_DIM = {
-    "DIRECT_COMPARE": "DA", "LOOKUP": "DA", "CUSTOM_PYTHON": "DA",
-    "MAP": "DA", "CONCAT": "DA", "CASE_WHEN": "DA",
-    "SUBSTRING": "DA", "PREFIX": "DA", "SUFFIX": "DA",
-    "CUSTOM_SQL": "DI", "REGEX": "DI", "NULL_CHECK": "DI",
-    "DATE_FORMAT": "DI", "MAX_LENGTH": "DI", "MIN_LENGTH": "DI",
-    "MASK": "DG", "HASH": "DG", "ENCRYPTION": "DG", "DECRYPTION": "DG",
+    "DIRECT_COMPARE": "DA",
+    "LOOKUP": "DA",
+    "CUSTOM_PYTHON": "DA",
+    "MAP": "DA",
+    "CONCAT": "DA",
+    "CASE_WHEN": "DA",
+    "SUBSTRING": "DA",
+    "PREFIX": "DA",
+    "SUFFIX": "DA",
+    "CUSTOM_SQL": "DI",
+    "REGEX": "DI",
+    "NULL_CHECK": "DI",
+    "DATE_FORMAT": "DI",
+    "MAX_LENGTH": "DI",
+    "MIN_LENGTH": "DI",
+    "MASK": "DG",
+    "HASH": "DG",
+    "ENCRYPTION": "DG",
+    "DECRYPTION": "DG",
 }
 
 # Failure triage owner hint per stage (used in defect_report.md).
 _OWNER = {
-    "mapping": "Requirements / BA", "source": "Extract provider",
-    "dq": "Data steward", "schema": "Target platform",
-    "profile": "Data steward", "recon": "ETL / migration",
-    "controls": "Finance operations", "transform": "ETL / migration",
-    "relations": "Data model", "rules": "Business owner",
+    "mapping": "Requirements / BA",
+    "source": "Extract provider",
+    "dq": "Data steward",
+    "schema": "Target platform",
+    "profile": "Data steward",
+    "recon": "ETL / migration",
+    "controls": "Finance operations",
+    "transform": "ETL / migration",
+    "relations": "Data model",
+    "rules": "Business owner",
 }
 
 _WORST = {"PASS": 0, "WARN": 1, "UNCOVERED": 1, "FAIL": 2, "ERROR": 2}
@@ -60,7 +85,6 @@ def _worst(statuses):
 
 def build_rtm(tables, rules, rule_results, evidence):
     """Requirement ID -> check rows. Returns (rows, uncovered_req_ids)."""
-    by_map = {t.mapping_id: t for t in tables}
     ev_by_map = {}
     for r in evidence:
         ev_by_map.setdefault(r.get("mapping"), []).append(r)
@@ -68,9 +92,7 @@ def build_rtm(tables, rules, rule_results, evidence):
     rows = []
 
     def emit(req, artifact, check, status):
-        rows.append(
-            {"req": req, "artifact": artifact, "check": check, "status": status}
-        )
+        rows.append({"req": req, "artifact": artifact, "check": check, "status": status})
 
     for t in tables:
         if not t.enabled:
@@ -86,11 +108,19 @@ def build_rtm(tables, rules, rule_results, evidence):
         for f in t.fields:
             if f.enabled and f.requirement_id:
                 if not field_evs:
-                    emit(f.requirement_id, f"{t.mapping_id}.{f.target_column}",
-                         "(no field evidence)", "UNCOVERED")
+                    emit(
+                        f.requirement_id,
+                        f"{t.mapping_id}.{f.target_column}",
+                        "(no field evidence)",
+                        "UNCOVERED",
+                    )
                 for e in field_evs:
-                    emit(f.requirement_id, f"{t.mapping_id}.{f.target_column}",
-                         f"stage:{e.get('stage')}", e.get("status"))
+                    emit(
+                        f.requirement_id,
+                        f"{t.mapping_id}.{f.target_column}",
+                        f"stage:{e.get('stage')}",
+                        e.get("status"),
+                    )
         for c in t.controls:
             req = c.get("requirement_id")
             if not req:
@@ -100,35 +130,37 @@ def build_rtm(tables, rules, rule_results, evidence):
                 emit(req, f"{t.mapping_id}.{c['id']}", "controls stage", "UNCOVERED")
                 continue
             mismatched = any(
-                m.get("control") == c["id"]
-                for m in (ctrl_ev.get("control_mismatches") or [])
+                m.get("control") == c["id"] for m in (ctrl_ev.get("control_mismatches") or [])
             )
-            emit(req, f"{t.mapping_id}.{c['id']}", "certified control",
-                 "FAIL" if mismatched else ctrl_ev.get("status"))
+            emit(
+                req,
+                f"{t.mapping_id}.{c['id']}",
+                "certified control",
+                "FAIL" if mismatched else ctrl_ev.get("status"),
+            )
         for rel in t.relations:
             req = rel.get("requirement_id")
             if not req:
                 continue
             rel_ev = next(
-                (e for e in ev_by_map.get(t.mapping_id, [])
-                 if e.get("stage") == "relations"),
+                (e for e in ev_by_map.get(t.mapping_id, []) if e.get("stage") == "relations"),
                 None,
             )
-            emit(req, f"{t.mapping_id}.{rel['child_column']}→{rel['parent_mapping']}",
-                 "FK relation", rel_ev.get("status") if rel_ev else "UNCOVERED")
+            emit(
+                req,
+                f"{t.mapping_id}.{rel['child_column']}→{rel['parent_mapping']}",
+                "FK relation",
+                rel_ev.get("status") if rel_ev else "UNCOVERED",
+            )
 
-    rule_by_id = {r.test_id: r for r in rules}
     for r in rules:
         if not (r.enabled and r.requirement_id):
             continue
         res = result_by_rule.get(r.test_id)
-        emit(r.requirement_id, r.test_id, "business rule",
-             res.status if res else "UNCOVERED")
+        emit(r.requirement_id, r.test_id, "business rule", res.status if res else "UNCOVERED")
 
     # Per-requirement verdict = worst status across its checks.
-    uncovered = sorted(
-        {row["req"] for row in rows if row["status"] == "UNCOVERED"}
-    )
+    uncovered = sorted({row["req"] for row in rows if row["status"] == "UNCOVERED"})
     return rows, uncovered
 
 
@@ -137,39 +169,53 @@ def build_scorecard(tables, rule_results, evidence, run):
     rows = []
     for e in evidence:
         for dim in _STAGE_DIM.get(e.get("stage", ""), ()):
-            rows.append({
-                "dimension": dim,
-                "check": f"{e.get('mapping')}/{e.get('stage')}",
-                "status": e.get("status"),
-                "evidence": str(e.get("detail", ""))[:120],
-            })
+            rows.append(
+                {
+                    "dimension": dim,
+                    "check": f"{e.get('mapping')}/{e.get('stage')}",
+                    "status": e.get("status"),
+                    "evidence": str(e.get("detail", ""))[:120],
+                }
+            )
     for r in rule_results:
         dim = _RULE_DIM.get(r.rule.rule_type, "DA")
-        rows.append({
-            "dimension": dim,
-            "check": f"rule:{r.rule.test_id}",
-            "status": r.status,
-            "evidence": (r.rule.business_rule or r.error or "")[:120],
-        })
+        rows.append(
+            {
+                "dimension": dim,
+                "check": f"rule:{r.rule.test_id}",
+                "status": r.status,
+                "evidence": (r.rule.business_rule or r.error or "")[:120],
+            }
+        )
     cutover = run.get("cutover") or {}
     meta = run.get("meta") or {}
     pii = sum(1 for t in tables for f in t.fields if f.pii)
     rows += [
-        {"dimension": "DG", "check": "snapshot enforcement",
-         "status": "PASS" if cutover.get("snapshot_enforced") else "FAIL",
-         "evidence": f"source_snapshot={cutover.get('source_snapshot', '')}"},
-        {"dimension": "DG", "check": "PII columns declared",
-         "status": "PASS" if pii else "WARN",
-         "evidence": f"{pii} FieldMap rows flagged PII"},
-        {"dimension": "DG", "check": "audit metadata",
-         "status": "PASS" if (meta.get("started") or meta.get("snapshot_id")) else "WARN",
-         "evidence": "timestamp/environment/commit recorded in run summary"},
+        {
+            "dimension": "DG",
+            "check": "snapshot enforcement",
+            "status": "PASS" if cutover.get("snapshot_enforced") else "FAIL",
+            "evidence": f"source_snapshot={cutover.get('source_snapshot', '')}",
+        },
+        {
+            "dimension": "DG",
+            "check": "PII columns declared",
+            "status": "PASS" if pii else "WARN",
+            "evidence": f"{pii} FieldMap rows flagged PII",
+        },
+        {
+            "dimension": "DG",
+            "check": "audit metadata",
+            "status": "PASS" if (meta.get("started") or meta.get("snapshot_id")) else "WARN",
+            "evidence": "timestamp/environment/commit recorded in run summary",
+        },
     ]
     verdicts = {}
     for dim in ("DC", "DA", "DI", "DG"):
         sts = [r["status"] for r in rows if r["dimension"] == dim]
         verdicts[dim] = (
-            "NOT-COVERED" if not sts
+            "NOT-COVERED"
+            if not sts
             else ("FAILED" if any(s in ("FAIL", "ERROR") for s in sts) else "CONFIRMED")
         )
     return rows, verdicts
@@ -182,34 +228,41 @@ def build_defects(tables, rule_results, evidence):
     for e in evidence:
         if e.get("status") == "PASS":
             continue
-        defects.append({
-            "check": f"{e.get('mapping')}/{e.get('stage')}",
-            "status": e.get("status"),
-            "req": req_of_map.get(e.get("mapping"), ""),
-            "owner": _OWNER.get(e.get("stage", ""), ""),
-            "detail": str(e.get("detail", ""))[:200],
-            "samples": e.get("control_mismatches") or [],
-        })
+        defects.append(
+            {
+                "check": f"{e.get('mapping')}/{e.get('stage')}",
+                "status": e.get("status"),
+                "req": req_of_map.get(e.get("mapping"), ""),
+                "owner": _OWNER.get(e.get("stage", ""), ""),
+                "detail": str(e.get("detail", ""))[:200],
+                "samples": e.get("control_mismatches") or [],
+            }
+        )
     for r in rule_results:
         if r.status in ("FAIL", "ERROR"):
-            defects.append({
-                "check": f"rule:{r.rule.test_id}",
-                "status": r.status,
-                "req": r.rule.requirement_id or "",
-                "owner": _OWNER["rules"],
-                "detail": r.error or f"{len(r.violations)} violation(s)",
-                "samples": [
-                    f"key={v.key} {v.column}: expected {v.expected!r} actual {v.actual!r}"
-                    for v in r.violations[:10]
-                ],
-                "sql": r.sql or "",
-            })
+            defects.append(
+                {
+                    "check": f"rule:{r.rule.test_id}",
+                    "status": r.status,
+                    "req": r.rule.requirement_id or "",
+                    "owner": _OWNER["rules"],
+                    "detail": r.error or f"{len(r.violations)} violation(s)",
+                    "samples": [
+                        f"key={v.key} {v.column}: expected {v.expected!r} actual {v.actual!r}"
+                        for v in r.violations[:10]
+                    ],
+                    "sql": r.sql or "",
+                }
+            )
     return defects
 
 
 def _write_sheet(wb, title, headers, rows, widths, status_col):
-    ws = wb.active if wb.active.max_row == 1 and wb.active["A1"].value is None \
+    ws = (
+        wb.active
+        if wb.active.max_row == 1 and wb.active["A1"].value is None
         else wb.create_sheet(title)
+    )
     ws.title = title
     ws.append(headers)
     for c in ws[1]:
@@ -237,26 +290,34 @@ def write_trace(tables, rules, rule_results, run, out_dir):
     if rtm_rows:
         wb = Workbook()
         _write_sheet(
-            wb, "RTM",
+            wb,
+            "RTM",
             ["Requirement ID", "Artifact", "Check", "Status"],
             [[r["req"], r["artifact"], r["check"], r["status"]] for r in rtm_rows],
-            [18, 44, 30, 14], 4,
+            [18, 44, 30, 14],
+            4,
         )
         wb.save(out / "rtm.xlsx")
 
     wb = Workbook()
     _write_sheet(
-        wb, "Scorecard",
+        wb,
+        "Scorecard",
         ["Dimension", "Check", "Status", "Evidence"],
         [[r["dimension"], r["check"], r["status"], r["evidence"]] for r in sc_rows],
-        [12, 44, 10, 60], 3,
+        [12, 44, 10, 60],
+        3,
     )
     vs = wb.create_sheet("Dimension Verdicts")
     vs.append(["Dimension", "Verdict"])
     for c in vs[1]:
         c.font = Font(bold=True)
-    names = {"DC": "Data Completeness", "DA": "Data Accuracy",
-             "DI": "Data Integrity", "DG": "Data Governance"}
+    names = {
+        "DC": "Data Completeness",
+        "DA": "Data Accuracy",
+        "DI": "Data Integrity",
+        "DG": "Data Governance",
+    }
     for dim, verdict in verdicts.items():
         vs.append([f"{dim} — {names[dim]}", verdict])
         vs.cell(row=vs.max_row, column=2).fill = PatternFill(
@@ -271,8 +332,7 @@ def write_trace(tables, rules, rule_results, run, out_dir):
         lines = ["# Defect Report", ""]
         for d in defects:
             lines.append(
-                f"## {d['check']} — {d['status']}"
-                + (f" (req {d['req']})" if d["req"] else "")
+                f"## {d['check']} — {d['status']}" + (f" (req {d['req']})" if d["req"] else "")
             )
             lines.append(f"- owner: {d['owner'] or 'unassigned'}")
             lines.append(f"- {d['detail']}")

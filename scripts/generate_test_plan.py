@@ -124,7 +124,7 @@ def main():
     for row in _rows():
         ws.append(row)
         n += 1
-    for col, w in zip("ABCDEF", [16, 10, 6, 60, 44, 52]):
+    for col, w in zip("ABCDEF", [16, 10, 6, 60, 44, 52], strict=False):
         ws.column_dimensions[col].width = w
     ws.freeze_panes = "A2"
     out = REPO / "docs" / "test_plan.xlsx"

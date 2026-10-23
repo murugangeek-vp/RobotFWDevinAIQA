@@ -28,8 +28,9 @@ def _bold_header(ws) -> None:
         c.font = Font(bold=True)
 
 
-def _write_workbook(run: dict, rule_results: list, meta: dict, out: Path,
-                    trace: "dict | None" = None) -> Path:
+def _write_workbook(
+    run: dict, rule_results: list, meta: dict, out: Path, trace: "dict | None" = None
+) -> Path:
     results = run.get("results") or []
     stage_fail = sum(1 for r in results if r.get("status") != "PASS")
     rule_fail = sum(1 for r in rule_results if r.status in ("FAIL", "ERROR"))
@@ -58,15 +59,19 @@ def _write_workbook(run: dict, rule_results: list, meta: dict, out: Path,
         ("Stage Checks", f"{len(results)} run, {stage_fail} not passed"),
         ("Business Rules", f"{len(rule_results)} run, {rule_fail} not passed"),
         ("Rule Violations", n_viol),
-        ("Requirements Covered", (
-            f"{len({r['req'] for r in trace['rtm_rows']}) - len(trace['uncovered'])}"
-            f" covered, {len(trace['uncovered'])} uncovered"
-            if trace else ""
-        )),
-        ("DC/DA/DI/DG", (
-            " | ".join(f"{d}:{v}" for d, v in trace["verdicts"].items())
-            if trace else ""
-        )),
+        (
+            "Requirements Covered",
+            (
+                f"{len({r['req'] for r in trace['rtm_rows']}) - len(trace['uncovered'])}"
+                f" covered, {len(trace['uncovered'])} uncovered"
+                if trace
+                else ""
+            ),
+        ),
+        (
+            "DC/DA/DI/DG",
+            (" | ".join(f"{d}:{v}" for d, v in trace["verdicts"].items()) if trace else ""),
+        ),
         ("Verdict", run.get("verdict", "")),
         ("Coverage", run.get("coverage", "")),
         ("Overall Status", overall),
@@ -74,16 +79,12 @@ def _write_workbook(run: dict, rule_results: list, meta: dict, out: Path,
     ]:
         info.append([field, value])
         info.cell(row=info.max_row, column=1).font = Font(bold=True)
-    info.cell(row=info.max_row - 1, column=2).fill = PatternFill(
-        "solid", fgColor=_FILL[overall]
-    )
+    info.cell(row=info.max_row - 1, column=2).fill = PatternFill("solid", fgColor=_FILL[overall])
     info.column_dimensions["A"].width = 20
     info.column_dimensions["B"].width = 80
 
     st = wb.create_sheet("Stages")
-    st.append(
-        ["Mapping", "Stage", "Status", "Source Rows", "Target Rows", "Seconds", "Detail"]
-    )
+    st.append(["Mapping", "Stage", "Status", "Source Rows", "Target Rows", "Seconds", "Detail"])
     _bold_header(st)
     for r in results:
         st.append(
@@ -226,17 +227,33 @@ def _write_workbook(run: dict, rule_results: list, meta: dict, out: Path,
         for k in row.get("extra_samples") or []:
             defect(row, "extra_in_target", str(k), actual="absent in source")
         for d in row.get("diff_samples") or []:
-            defect(row, "value_diff", str(d.get("key", "")), d.get("column", ""),
-                   str(d.get("expected", "")), str(d.get("actual", "")))
+            defect(
+                row,
+                "value_diff",
+                str(d.get("key", "")),
+                d.get("column", ""),
+                str(d.get("expected", "")),
+                str(d.get("actual", "")),
+            )
         for m in row.get("control_mismatches") or []:
             if isinstance(m, dict):
-                defect(row, "control_mismatch", str(m.get("control", "")),
-                       str(m.get("group", "")), str(m.get("expected", "")),
-                       str(m.get("actual", "")))
+                defect(
+                    row,
+                    "control_mismatch",
+                    str(m.get("control", "")),
+                    str(m.get("group", "")),
+                    str(m.get("expected", "")),
+                    str(m.get("actual", "")),
+                )
         for d in row.get("profile_diffs") or []:
-            defect(row, "profile_diff", str(d.get("column", "")),
-                   str(d.get("stat", d.get("issue", ""))), str(d.get("source", "")),
-                   str(d.get("target", "")))
+            defect(
+                row,
+                "profile_diff",
+                str(d.get("column", "")),
+                str(d.get("stat", d.get("issue", ""))),
+                str(d.get("source", "")),
+                str(d.get("target", "")),
+            )
         for e in row.get("schema_errors") or []:
             defect(row, "schema_error", actual=str(e))
         for rid, n in (row.get("dq_failures") or {}).items():
@@ -268,15 +285,36 @@ def _write_workbook(run: dict, rule_results: list, meta: dict, out: Path,
     qs.freeze_panes = "A2"
 
     cp = wb.create_sheet("Column Profile")
-    cp.append(["Mapping", "Column", "Src Nulls", "Tgt Nulls", "Src Distinct",
-               "Tgt Distinct", "Src Min", "Tgt Min", "Src Max", "Tgt Max"])
+    cp.append(
+        [
+            "Mapping",
+            "Column",
+            "Src Nulls",
+            "Tgt Nulls",
+            "Src Distinct",
+            "Tgt Distinct",
+            "Src Min",
+            "Tgt Min",
+            "Src Max",
+            "Tgt Max",
+        ]
+    )
     _bold_header(cp)
     seen_p = set()
     for row in results:
         for p in row.get("column_profile") or []:
-            vals = (row["mapping"], p["column"], p["src_nulls"], p["tgt_nulls"],
-                    p["src_distinct"], p["tgt_distinct"], p["src_min"], p["tgt_min"],
-                    p["src_max"], p["tgt_max"])
+            vals = (
+                row["mapping"],
+                p["column"],
+                p["src_nulls"],
+                p["tgt_nulls"],
+                p["src_distinct"],
+                p["tgt_distinct"],
+                p["src_min"],
+                p["tgt_min"],
+                p["src_max"],
+                p["tgt_max"],
+            )
             if vals not in seen_p:
                 seen_p.add(vals)
                 cp.append(list(vals))
@@ -290,16 +328,33 @@ def _write_workbook(run: dict, rule_results: list, meta: dict, out: Path,
     for row in results:
         observed = {
             k: row[k]
-            for k in ("source_columns", "source_metadata", "target_metadata",
-                      "field_mappings", "unmapped_source_tables",
-                      "unmapped_target_tables", "relation", "source_orphans",
-                      "source_null_fk", "target_orphans", "target_null_fk",
-                      "post_snapshot_arrivals", "target_asof")
+            for k in (
+                "source_columns",
+                "source_metadata",
+                "target_metadata",
+                "field_mappings",
+                "unmapped_source_tables",
+                "unmapped_target_tables",
+                "relation",
+                "source_orphans",
+                "source_null_fk",
+                "target_orphans",
+                "target_null_fk",
+                "post_snapshot_arrivals",
+                "target_asof",
+            )
             if k in row
         }
         if observed:
-            md.append([row["mapping"], row["stage"], row.get("source", ""),
-                       row.get("target", ""), json.dumps(observed, default=str)])
+            md.append(
+                [
+                    row["mapping"],
+                    row["stage"],
+                    row.get("source", ""),
+                    row.get("target", ""),
+                    json.dumps(observed, default=str),
+                ]
+            )
     for i, w in enumerate([24, 12, 30, 30, 90], start=1):
         md.column_dimensions[get_column_letter(i)].width = w
     md.freeze_panes = "A2"
@@ -310,8 +365,10 @@ def _write_workbook(run: dict, rule_results: list, meta: dict, out: Path,
     from libs.reporting.report import build_evidence_insights
 
     for item in build_evidence_insights(
-        run.get("meta") or {}, run.get("cutover") or {},
-        run.get("not_run") or {}, run.get("verdict", ""),
+        run.get("meta") or {},
+        run.get("cutover") or {},
+        run.get("not_run") or {},
+        run.get("verdict", ""),
     ):
         ins.append(["Insight / follow-up", item])
     ins.column_dimensions["A"].width = 22
@@ -323,8 +380,9 @@ def _write_workbook(run: dict, rule_results: list, meta: dict, out: Path,
     return path
 
 
-def _write_markdown(run: dict, rule_results: list, meta: dict, out: Path,
-                    trace: "dict | None" = None) -> Path:
+def _write_markdown(
+    run: dict, rule_results: list, meta: dict, out: Path, trace: "dict | None" = None
+) -> Path:
     results = run.get("results") or []
     lines = [
         "# End-to-End Migration Validation Report",
@@ -345,7 +403,13 @@ def _write_markdown(run: dict, rule_results: list, meta: dict, out: Path,
         f"| {str(r.get('detail', '')).replace('|', '/')} |"
         for r in results
     ]
-    lines += ["", "## Business rules", "", "| Test ID | Type | Status | Violations |", "|---|---|---|---|"]
+    lines += [
+        "",
+        "## Business rules",
+        "",
+        "| Test ID | Type | Status | Violations |",
+        "|---|---|---|---|",
+    ]
     lines += [
         f"| {r.rule.test_id} | {r.rule.rule_type} | {r.status} | {len(r.violations)} |"
         for r in rule_results
@@ -358,8 +422,7 @@ def _write_markdown(run: dict, rule_results: list, meta: dict, out: Path,
             "",
             f"- requirements: {covered} covered, {len(trace['uncovered'])} uncovered"
             + (f" — {', '.join(trace['uncovered'])}" if trace["uncovered"] else ""),
-            "- dimensions: "
-            + " | ".join(f"{d} {v}" for d, v in trace["verdicts"].items()),
+            "- dimensions: " + " | ".join(f"{d} {v}" for d, v in trace["verdicts"].items()),
         ]
     fails = [r for r in results if r.get("status") != "PASS"] + [
         r for r in rule_results if r.status in ("FAIL", "ERROR")
@@ -368,9 +431,13 @@ def _write_markdown(run: dict, rule_results: list, meta: dict, out: Path,
         lines += ["", "## Failures", ""]
         for f in fails:
             if hasattr(f, "rule"):
-                lines.append(f"- rule {f.rule.test_id}: {f.status} — {len(f.violations)} violation(s)")
+                lines.append(
+                    f"- rule {f.rule.test_id}: {f.status} — {len(f.violations)} violation(s)"
+                )
                 for v in f.violations[:5]:
-                    lines.append(f"  - key={v.key} {v.column}: expected {v.expected!r} actual {v.actual!r}")
+                    lines.append(
+                        f"  - key={v.key} {v.column}: expected {v.expected!r} actual {v.actual!r}"
+                    )
             else:
                 lines.append(
                     f"- {f.get('mapping', '')}/{f.get('stage', '')}: "
@@ -381,8 +448,9 @@ def _write_markdown(run: dict, rule_results: list, meta: dict, out: Path,
     return path
 
 
-def write_consolidated(run: dict, rule_results: list, out_dir, meta: "dict | None" = None,
-               trace: "dict | None" = None) -> Path:
+def write_consolidated(
+    run: dict, rule_results: list, out_dir, meta: "dict | None" = None, trace: "dict | None" = None
+) -> Path:
     """Write end_to_end_summary.xlsx + end_to_end_report.md; returns the xlsx path."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
