@@ -37,8 +37,8 @@ at corrupted fixtures to prove defect detection.
   (`data/mapping/phase1_*.xlsx`), `sql_transform.py` translates client SQL
   snippets into the safe transform expression language.
 - `libs/reporting/` — migration evidence (`migration_summary.xlsx`,
-  `migration_report.md`, `run_summary.json`, `end_to_end_report.pdf`
-  reviewer PDF; `production_signoff` is never granted by a run).
+  `migration_report.md`, `run_summary.json`, `migration_report.pdf`
+  readable report; `production_signoff` is never granted by a run).
 - `config/contracts/contract.schema.json` — the contract schema every
   compiled mapping is validated against (fail closed).
 - `config/environments/phase1_*.yaml` — one env per hop; credentials only

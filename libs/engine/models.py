@@ -71,6 +71,9 @@ class ReconResult:
     missing_in_target: list = field(default_factory=list)
     extra_in_target: list = field(default_factory=list)
     diffs: list = field(default_factory=list)  # list[ColumnDiff]
+    # key -> {"source": row|None, "target": row|None} — the full problem
+    # record(s) behind a mismatch, bounded like the other samples.
+    record_samples: dict = field(default_factory=dict)
 
     totals: dict = field(default_factory=dict)
 
@@ -86,3 +89,7 @@ class ReconResult:
         samples = getattr(self, kind)
         if len(samples) < sample_limit:
             samples.append(value)
+
+    def record_sample(self, key, source_row, target_row, sample_limit: int):
+        if len(self.record_samples) < sample_limit and key not in self.record_samples:
+            self.record_samples[key] = {"source": source_row, "target": target_row}

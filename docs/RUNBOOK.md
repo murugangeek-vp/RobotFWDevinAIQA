@@ -102,8 +102,8 @@ not skipped — the genuinely broken rule still reports its own ERROR.
 
 Evidence per hop lands in `results/phase1/hopN/`: `report.html`,
 `log.html`, `migration_report.md`, `migration_summary.xlsx`,
-`end_to_end_report.pdf` (plain-English review report — test cases,
-evidence and follow-up actions, no SQL or customer values),
+`migration_report.pdf` (readable report — test cases, every recorded
+check, failure reasons with bounded proof samples),
 `run_summary.json`, `test_evidence_map.json` (links every Robot test to
 the evidence rows it produced), and `xunit.xml` when run with `--xunit`.
 Every Robot report embeds suite metadata — environment, hop,

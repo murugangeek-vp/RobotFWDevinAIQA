@@ -6,8 +6,9 @@ migration_summary.xlsx — Run Info / Stage Results / Diffs & Violations /
 migration_report.md    — the same content as a readable QA report, plus
                          auto-generated Insights and Improvement
                          Suggestions for the review meeting.
-end_to_end_report.pdf  — plain-English review report (test cases, evidence,
-                         follow-up actions) for QA, managers and clients.
+migration_report.pdf   — readable version of migration_summary.xlsx: test
+                         cases, every recorded check, failure reasons and
+                         bounded proof samples.
 """
 
 import logging
@@ -469,6 +470,8 @@ def write_evidence(results, meta, out_dir, test_outcomes=None, rule_results=None
             defect("unmapped_source_table", str(t), actual="no workbook mapping")
         for t in row.get("unmapped_target_tables") or []:
             defect("unmapped_target_table", str(t), actual="no workbook mapping")
+        for k in row.get("orphan_samples") or []:
+            defect("orphan_key", str(k), actual="no matching parent record")
         for e in row.get("not_validated") or []:
             defect("not_validated", actual=str(e))
     insights = [
@@ -621,17 +624,28 @@ def write_evidence(results, meta, out_dir, test_outcomes=None, rule_results=None
     ]
     (out / "migration_report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    from .review_pdf import write_review_pdf
+    from .migration_pdf import write_migration_pdf
 
     try:
-        write_review_pdf(
-            out,
-            summary,
-            rule_results=rule_results,
-            test_outcomes=test_outcomes,
-        )
-    except Exception as exc:  # noqa: BLE001 — reviewer PDF must never mask the gate
-        logging.getLogger(__name__).warning(
-            "end_to_end_report.pdf not written: %s (close the file if it is open)", exc
-        )
+        try:
+            write_migration_pdf(
+                out,
+                summary,
+                rule_results=rule_results,
+                test_outcomes=test_outcomes,
+            )
+        except PermissionError:
+            stamp = f"{datetime.now():%Y%m%d_%H%M%S}"
+            write_migration_pdf(
+                out,
+                summary,
+                rule_results=rule_results,
+                test_outcomes=test_outcomes,
+                filename=f"migration_report_{stamp}.pdf",
+            )
+            logging.getLogger(__name__).warning(
+                "migration_report.pdf is locked (open in a viewer?) — wrote a timestamped copy"
+            )
+    except Exception as exc:  # noqa: BLE001 — the PDF report must never mask the gate
+        logging.getLogger(__name__).warning("migration_report.pdf not written: %s", exc)
     return summary["verdict"]

@@ -578,10 +578,14 @@ def compare_chunked(
         while er is not None or ar is not None:
             if ar is None or (er is not None and er[0] < ar[0]):
                 assert er is not None
-                result.record("missing_in_target", display_key(er[1]), sample_limit)
+                key = display_key(er[1])
+                result.record("missing_in_target", key, sample_limit)
+                result.record_sample(key, er[1], None, sample_limit)
                 er = next(expected, None)
             elif er is None or ar[0] < er[0]:
-                result.record("extra_in_target", display_key(ar[1]), sample_limit)
+                key = display_key(ar[1])
+                result.record("extra_in_target", key, sample_limit)
+                result.record_sample(key, None, ar[1], sample_limit)
                 ar = next(actual, None)
             else:
                 key = display_key(er[1])
@@ -595,6 +599,7 @@ def compare_chunked(
                         e, a = normalize(er[1][name], spec), normalize(ar[1][name], spec)
                         if e != a:
                             result.record("diffs", ColumnDiff(key, name, e, a), sample_limit)
+                            result.record_sample(key, er[1], ar[1], sample_limit)
                 er, ar = next(expected, None), next(actual, None)
     finally:
         expected.close()

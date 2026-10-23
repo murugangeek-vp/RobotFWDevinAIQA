@@ -633,7 +633,27 @@ class MigrationLibrary:
                         diffs = engine_profile.compare_profiles(
                             src_rows, src_prof, tgt_rows, tgt_prof
                         )
-                        row["profile_diffs"] = diffs
+                        prof_pii = {c["name"]: bool(c.get("pii")) for c in contract.columns}
+
+                        def _prof_mask(col, val):
+                            return self._masked(val) if prof_pii.get(col, True) else str(val)
+
+                        row["profile_diffs"] = [
+                            {
+                                **d,
+                                "source": (
+                                    _prof_mask(d.get("column"), d.get("source"))
+                                    if d.get("stat") in ("min", "max")
+                                    else d.get("source")
+                                ),
+                                "target": (
+                                    _prof_mask(d.get("column"), d.get("target"))
+                                    if d.get("stat") in ("min", "max")
+                                    else d.get("target")
+                                ),
+                            }
+                            for d in diffs
+                        ]
                         row["column_profile"] = [
                             {
                                 "column": c,
@@ -641,10 +661,10 @@ class MigrationLibrary:
                                 "tgt_nulls": tgt_prof.get(c, {}).get("nulls"),
                                 "src_distinct": len(src_prof.get(c, {}).get("distinct", ())),
                                 "tgt_distinct": len(tgt_prof.get(c, {}).get("distinct", ())),
-                                "src_min": str(src_prof.get(c, {}).get("min")),
-                                "tgt_min": str(tgt_prof.get(c, {}).get("min")),
-                                "src_max": str(src_prof.get(c, {}).get("max")),
-                                "tgt_max": str(tgt_prof.get(c, {}).get("max")),
+                                "src_min": _prof_mask(c, src_prof.get(c, {}).get("min")),
+                                "tgt_min": _prof_mask(c, tgt_prof.get(c, {}).get("min")),
+                                "src_max": _prof_mask(c, src_prof.get(c, {}).get("max")),
+                                "tgt_max": _prof_mask(c, tgt_prof.get(c, {}).get("max")),
                             }
                             for c in sorted(set(src_prof) | set(tgt_prof))
                         ]
@@ -653,7 +673,7 @@ class MigrationLibrary:
                             shown = "; ".join(
                                 f"{d.get('column')}.{d.get('stat', '-')}: "
                                 f"src={d.get('source', '-')} tgt={d.get('target', '-')}"
-                                for d in diffs[:5]
+                                for d in row["profile_diffs"][:5]
                             )
                             row["detail"] = f"{len(diffs)} profile diff(s): {shown}"
                         else:
@@ -752,6 +772,21 @@ class MigrationLibrary:
                     result = self._compare(source, target, check)
                     pii = {c["name"]: bool(c.get("pii")) for c in contract.columns}
                     sample_limit = int(self.env.get("run", {}).get("sample_limit", 20))
+
+                    def _safe_record(rec):
+                        if rec is None:
+                            return None
+                        return {
+                            col: (
+                                None
+                                if val is None or (isinstance(val, float) and val != val)
+                                else self._masked(val)
+                                if pii.get(col, True)
+                                else str(val)
+                            )
+                            for col, val in rec.items()
+                        }
+
                     row.update(
                         {
                             "source_count": result.source_count,
@@ -783,6 +818,13 @@ class MigrationLibrary:
                                 }
                                 for d in result.diffs
                             ],
+                            "record_samples": {
+                                str(k): {
+                                    "source": _safe_record(v["source"]),
+                                    "target": _safe_record(v["target"]),
+                                }
+                                for k, v in result.record_samples.items()
+                            },
                         }
                     )
                     arrivals = source.post_snapshot_count()
@@ -917,7 +959,7 @@ class MigrationLibrary:
                             f"target orphan rows (null FK src={src['null_fk']} "
                             f"tgt={tgt['null_fk']}); orphan keys: {samples}"
                         )
-                        row["dq_failures"] = {"orphan_samples": samples}
+                        row["orphan_samples"] = samples
                     else:
                         row["detail"] = (
                             f"{rel_desc}: {len(pkeys_src)} source / {len(pkeys_tgt)} "
