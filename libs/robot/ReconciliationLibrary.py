@@ -870,10 +870,13 @@ class ReconciliationLibrary:
         return str(written)
 
     @keyword("Write Consolidated Evidence")
-    def write_consolidated_evidence(self, out_dir: str = "results", mapping_workbook: str = ""):
+    def write_consolidated_evidence(
+        self, out_dir: str = "results", mapping_workbook: str = "", test_outcomes=None
+    ):
         """Consolidated lifecycle report — merges the migration stage evidence
         already written to <out_dir>/run_summary.json with the business-rule
-        results into end_to_end_summary.xlsx + end_to_end_report.md. When mapping_workbook
+        results into end_to_end_summary.xlsx + end_to_end_report.md and a plain-English
+        end_to_end_report.pdf. When mapping_workbook
         is supplied, also emits the Requirement Traceability Matrix (rtm.xlsx),
         the DC/DA/DI/DG compliance_scorecard.xlsx and, on failures,
         defect_report.md — and augments run_summary.json with rtm/compliance
@@ -912,7 +915,13 @@ class ReconciliationLibrary:
             "git_commit": os.environ.get("GITHUB_SHA", "") or self._git_head(),
         }
         written = consolidated_report.write_consolidated(
-            run, self.rule_results, out_dir, meta=meta, trace=trace
+            run,
+            self.rule_results,
+            out_dir,
+            meta=meta,
+            trace=trace,
+            declared_rules=self.excel_rules,
+            test_outcomes=test_outcomes,
         )
         logger.info(f"e2e evidence written to {written}")
         return str(written)

@@ -63,6 +63,7 @@ Per hop under `results/phase1/hopN/`:
 
 | Artifact | Purpose |
 |---|---|
+| `end_to_end_report.pdf` | plain-English review copy: outcome, five test cases, exact comparison counts, business-rule evidence and suggested actions; generated automatically at suite teardown |
 | `end_to_end_summary.xlsx` | consolidated report — reviewer sheets (stages, controls, rules w/ plain-English, violations, RTM, scorecard) + QA diagnostics (data diffs, queries, column profile, metadata, insights) |
 | `end_to_end_report.md` | same verdict, narrative form |
 | `rtm.xlsx` | requirement → check traceability (COVERED-PASS/FAIL/UNCOVERED) |

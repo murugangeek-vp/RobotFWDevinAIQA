@@ -8,6 +8,7 @@ import openpyxl
 
 from libs.excelrules.models import Rule, RuleResult, Violation
 from libs.reporting import consolidated_report
+from libs.reporting.review_pdf import build_review, write_review_pdf
 
 
 def _run(verdict="PASS"):
@@ -78,6 +79,7 @@ class ConsolidatedReportTest(unittest.TestCase):
         tmp, path = self._write()
         self.assertTrue(path.exists())
         self.assertTrue((tmp / "end_to_end_report.md").exists())
+        self.assertTrue((tmp / "end_to_end_report.pdf").read_bytes().startswith(b"%PDF-"))
         wb = openpyxl.load_workbook(path)
         self.assertEqual(
             sorted(wb.sheetnames),
@@ -122,6 +124,103 @@ class ConsolidatedReportTest(unittest.TestCase):
         self.assertEqual(rows[0][4], "expected-9-digit")
         md = (tmp / "end_to_end_report.md").read_text(encoding="utf-8")
         self.assertIn("BR-AGG-UNIQ-CUNBR", md)
+
+
+class ReviewPdfTest(unittest.TestCase):
+    def setUp(self):
+        self.run = _run()
+        self.run["meta"] = {
+            "selected": ["csv_cup00301"],
+            "relation_children": [],
+            "environment": "synthetic-test",
+            "workbook_sha256": "a" * 64,
+        }
+        self.run["not_run"] = {"csv_cup00301": []}
+        self.run["results"] += [
+            {"mapping": "csv_cup00301", "stage": s, "status": "PASS"}
+            for s in ("mapping", "source", "dq", "schema", "transform", "profile")
+        ]
+        self.run["results"][0].update(missing=0, extra=0, diffs=0)
+        self.outcomes = [
+            {"test": "Migration.01 End To End Migration Testing." + name, "status": "PASS"}
+            for name in (
+                "Requirements Intake And Mapping Compile",
+                "Source And Schema Conformance",
+                "Transformation And Record Reconciliation",
+                "Business Validation Controls Relations Profile And Rules",
+                "Lifecycle Evidence Is Complete And Passing",
+            )
+        ]
+
+    def review(self, results=None, **kwargs):
+        return build_review(self.run, results or [], test_outcomes=self.outcomes, **kwargs)
+
+    def test_complete_run_without_additional_rules(self):
+        review = self.review(declared_rules=[])
+        self.assertEqual(review["status"], "PASS")
+        self.assertEqual(len(review["cases"]), 5)
+        self.assertEqual(review["rules"], [])
+        self.assertEqual(review["datasets"][0]["counts"], [200, 200, 0, 0, 0])
+
+    def test_failed_rule_overrides_successful_stage_and_test_results(self):
+        results = _results([Violation("BR-1", "cunbr", "PRIVATE-EXPECTED", "PRIVATE-ACTUAL")])
+        review = self.review(results)
+        self.assertEqual(review["status"], "FAIL")
+        self.assertEqual(review["rules"][0]["evidence"], "1 reported violation(s).")
+        self.assertNotIn("PRIVATE", str(review))
+        self.assertNotIn("SELECT", str(review))
+
+    def test_exact_counts_are_reported_without_compared_values(self):
+        self.run["results"][0].update(status="FAIL", source_count=195, extra=5)
+        self.run["results"][1].update(
+            status="FAIL", control_mismatches=[{"actual": "PRIVATE-SAMPLE"}] * 8
+        )
+        review = self.review()
+        self.assertEqual(review["datasets"][0]["counts"], [195, 200, 0, 5, 0])
+        self.assertIn(["Certified totals", "1 FAIL; 8 total mismatches"], review["checks"])
+        self.assertNotIn("PRIVATE", str(review))
+        del self.run["results"][0]["target_count"]
+        self.assertEqual(self.review()["datasets"][0]["counts"][1], "Not recorded")
+
+    def test_missing_rule_without_requirement_id_is_incomplete(self):
+        review = self.review(declared_rules=[_results([])[0].rule])
+        self.assertEqual(review["status"], "INCOMPLETE")
+        self.assertEqual(review["rules"][0]["status"], "NOT RUN")
+
+    def test_partial_evidence_and_missing_test_outcomes_never_pass(self):
+        self.run["results"] = [r for r in self.run["results"] if r["stage"] != "transform"]
+        self.assertEqual(self.review()["status"], "INCOMPLETE")
+        self.assertEqual(build_review(self.run, [])["status"], "INCOMPLETE")
+
+    def test_skipped_and_failed_test_outcomes_are_respected(self):
+        for raw, expected in (("SKIP", "INCOMPLETE"), ("FAIL", "FAIL"), ("UNKNOWN", "INCOMPLETE")):
+            with self.subTest(status=raw):
+                self.outcomes[-1]["status"] = raw
+                self.assertEqual(self.review()["status"], expected)
+
+    def test_warnings_require_review_and_raw_errors_are_not_shared(self):
+        result = _results([Violation("BR-1", "cunbr", "private", "private")])[0]
+        result.rule.severity = "LOW"
+        self.assertEqual(self.review([result])["status"], "REVIEW")
+        result.error = "PRIVATE connection error"
+        self.run["results"][0]["detail"] = "PRIVATE row contents"
+        review = self.review([result])
+        self.assertEqual(review["status"], "FAIL")
+        self.assertNotIn("PRIVATE", str(review))
+
+    def test_pdf_handles_long_rule_text_and_multiple_pages(self):
+        results = []
+        for index in range(35):
+            result = _results([])[0]
+            result.rule.test_id = f"BR-{index}"
+            result.rule.business_rule = "Check <value> & its declared format. " * 30
+            results.append(result)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write_review_pdf(self.run, results, tmp, test_outcomes=self.outcomes)
+            data = path.read_bytes()
+            self.assertTrue(data.startswith(b"%PDF-"))
+            self.assertIn(b"%%EOF", data[-100:])
+            self.assertGreater(data.count(b"/Type /Page\n"), 1)
 
 
 if __name__ == "__main__":

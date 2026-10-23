@@ -114,6 +114,7 @@ untouched).
 
 | Artifact | Audience |
 |---|---|
+| `results/phase1/hopN/end_to_end_report.pdf` | primary review copy for QA, managers, support and clients: five test cases, record-count evidence, business rules and next actions; no customer values or SQL |
 | `results/phase1/hopN/end_to_end_summary.xlsx`, `end_to_end_report.md` | consolidated lifecycle report — reviewer sheets (stages, controls, rules w/ plain-English, RTM, scorecard) + QA diagnostics (Data Diffs, Queries, Column Profile, Metadata, Insights) |
 | `results/phase1/hopN/migration_report.md` | business/finance sign-off |
 | `results/phase1/hopN/migration_summary.xlsx` | audit — Run Info has timestamp, snapshot id, commit, executor, verdict |

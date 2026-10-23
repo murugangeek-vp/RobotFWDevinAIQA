@@ -77,6 +77,7 @@ Lifecycle Evidence Is Complete And Passing
     Validate Requirements Coverage
     File Should Exist    ${OUTPUT DIR}${/}end_to_end_summary.xlsx
     File Should Exist    ${OUTPUT DIR}${/}end_to_end_report.md
+    File Should Exist    ${OUTPUT DIR}${/}end_to_end_report.pdf
     Log    consolidated end-to-end report: ${report}
 
 *** Keywords ***
@@ -87,4 +88,5 @@ End To End Suite Setup
 
 End To End Suite Teardown
     Write Migration Evidence    ${OUTPUT DIR}
-    Write Consolidated Evidence    ${OUTPUT DIR}    ${MAPPING_WORKBOOK}
+    ${outcomes}=    Get Migration Test Outcomes
+    Write Consolidated Evidence    ${OUTPUT DIR}    ${MAPPING_WORKBOOK}    test_outcomes=${outcomes}

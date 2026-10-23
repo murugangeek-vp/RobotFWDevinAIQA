@@ -20,7 +20,11 @@ the single input template (Tables, FieldMap, Controls, Relations,
 Mapping, plus a `Rules` sheet of business rules with plain-English
 `Business Rule` explanations). `tests/migration/01_end_to_end_migration_testing.robot`
 runs the whole chain as five end-to-end-lifecycle tests and writes one
-consolidated report (`end_to_end_summary.xlsx` + `end_to_end_report.md`);
+consolidated report: **`end_to_end_report.pdf`** is the plain-English review
+copy for QA, managers, support and clients. It shows test cases, results,
+record-count evidence, business-rule outcomes and follow-up actions.
+`end_to_end_summary.xlsx` retains detailed QA diagnostics, with
+`end_to_end_report.md` as a text summary;
 `90_negative_path.robot` is the exact-count defect-detection proof.
 
 - **Runbook:** [docs/RUNBOOK.md](docs/RUNBOOK.md) — setup, credentials,

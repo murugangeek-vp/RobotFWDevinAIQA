@@ -1035,6 +1035,11 @@ class MigrationLibrary:
     def write_report(self, out_dir):
         return write_evidence(self.evidence, self.meta, out_dir)
 
+    @keyword("Get Migration Test Outcomes")
+    def get_test_outcomes(self):
+        """Completed Robot test outcomes for the consolidated review report."""
+        return [{"test": t["test"], "status": t["status"]} for t in self._test_map]
+
     @keyword("Validate Migration Evidence")
     def validate_report(self, out_dir):
         self.write_report(out_dir)

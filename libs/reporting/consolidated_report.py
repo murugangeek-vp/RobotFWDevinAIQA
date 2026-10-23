@@ -1,9 +1,9 @@
-"""Consolidated end-to-end lifecycle report — one workbook + one markdown file.
+"""Consolidated end-to-end lifecycle report — QA workbook, Markdown and review PDF.
 
 Merges the migration stage evidence (the structure written to
 run_summary.json) and the business-rules RuleResult list into a single
 reviewer-facing artifact: end_to_end_summary.xlsx (Run Info | Stages |
-Controls | Rules | Violations) and end_to_end_report.md. Engine outputs are
+Controls | Rules | Violations), end_to_end_report.md and end_to_end_report.pdf. Engine outputs are
 inputs here — this module contains no comparison logic.
 """
 
@@ -13,6 +13,8 @@ from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
+
+from libs.reporting.review_pdf import write_review_pdf
 
 _FILL = {
     "PASS": "C6EFCE",
@@ -449,12 +451,19 @@ def _write_markdown(
 
 
 def write_consolidated(
-    run: dict, rule_results: list, out_dir, meta: "dict | None" = None, trace: "dict | None" = None
+    run: dict,
+    rule_results: list,
+    out_dir,
+    meta: "dict | None" = None,
+    trace: "dict | None" = None,
+    declared_rules=None,
+    test_outcomes=None,
 ) -> Path:
-    """Write end_to_end_summary.xlsx + end_to_end_report.md; returns the xlsx path."""
+    """Write the QA workbook, Markdown and review PDF; return the workbook path."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     meta = meta or {}
     written = _write_workbook(run, rule_results, meta, out, trace=trace)
     _write_markdown(run, rule_results, meta, out, trace=trace)
+    write_review_pdf(run, rule_results, out, meta, trace, declared_rules, test_outcomes)
     return written

@@ -116,7 +116,22 @@ give the plain-English explanation next to each expression.
   tests/migration/01_end_to_end_migration_testing.robot
 ```
 
-The single output summary is `end_to_end_summary.xlsx` + `end_to_end_report.md` —
+**Start with `end_to_end_report.pdf` for a review meeting or client handover.**
+The suite automatically creates one PDF per hop/run. It contains the overall
+result, the five test cases in plain English, exact source/destination counts,
+missing/unexpected records and field differences, business-rule results,
+requirement IDs, suggested follow-up actions and run identity.
+It uses completed Robot test outcomes as well as validation evidence;
+skipped, unexecuted or missing checks cannot be shown as passing.
+An initial copy is written during the release test, then replaced at suite
+teardown with the completed outcomes of all five tests.
+
+The PDF includes no customer values, raw SQL or raw error messages.
+It is a summary of the selected mappings in this hop, not an approval for
+production or a combined verdict across all three hops. The existing CI
+artifact upload includes the PDFs under `results/phase1/`.
+
+The detailed QA summary is `end_to_end_summary.xlsx` + `end_to_end_report.md` —
 stage outcomes, control mismatches, rule results with their plain-English
 text, row-level violations, and the audit/snapshot metadata in one place.
 The workbook carries both audiences: reviewer sheets (Run Info, Stages,
@@ -126,7 +141,8 @@ contains is also inside it.
 
 Evidence per hop lands in `results/phase1/hopN/`: `report.html`,
 `log.html`, `migration_report.md`, `migration_summary.xlsx`,
-`end_to_end_summary.xlsx` + `end_to_end_report.md` (the consolidated lifecycle report),
+`end_to_end_report.pdf` (plain-English review copy),
+`end_to_end_summary.xlsx` + `end_to_end_report.md` (detailed consolidated evidence),
 `rtm.xlsx` (requirement → check traceability), `compliance_scorecard.xlsx`
 (DC/DA/DI/DG verdicts), `defect_report.md` (only on failing runs),
 `run_summary.json`, `test_evidence_map.json` (links every Robot test to
