@@ -20,6 +20,7 @@ from libs.engine.reconcile import compare_chunked, normalize
 from libs.mapping import builder, parser
 from libs.reporting.report import write_evidence
 from libs.robot.MigrationLibrary import MigrationLibrary
+from libs.robot.ReconciliationLibrary import ReconciliationLibrary
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKBOOK = ROOT / "data/mapping/phase1_hop2_stage_to_il.xlsx"
@@ -709,6 +710,52 @@ class NewDialectAdapterTests(unittest.TestCase):
         inspect_schema(conn, "sch", dialect="mssql")
         self.assertIn("information_schema.columns", cur.execute.call_args[0][0])
         self.assertIn("table_schema = ?", cur.execute.call_args[0][0])
+
+
+class RulesScopeCheckTests(unittest.TestCase):
+    """`Check Rules Apply To Environment` — skip only on total scope mismatch."""
+
+    def _lib(self, tables, present, schema="wdr_cl_fds_core"):
+        from types import SimpleNamespace
+
+        lib = ReconciliationLibrary()
+        lib.env = {"target": {"schema": schema}}
+        lib.excel_rules = [SimpleNamespace(enabled=True, target_table=t) for t in tables]
+        target = MagicMock()
+        target.query.return_value = pd.DataFrame({"table_name": list(present)})
+        lib._ensure_target = MagicMock(return_value=target)
+        return lib
+
+    def test_all_rule_tables_missing_returns_skip_reason(self):
+        lib = self._lib(["cup00301", "cup01201", "v_dim_customer_src"], present=[])
+        reason = lib.check_rules_apply()
+        self.assertIn("different hop", reason)
+        self.assertIn("wdr_cl_fds_core", reason)
+
+    def test_all_rule_tables_present_allows_run(self):
+        lib = self._lib(
+            ["cup00301", "v_dim_customer_src"],
+            present=["cup00301", "v_dim_customer_src"],
+            schema="signature",
+        )
+        self.assertEqual(lib.check_rules_apply(), "")
+
+    def test_partial_presence_allows_run_so_broken_rules_error(self):
+        # One table exists, one doesn't → no blanket skip; the missing-table
+        # rule must surface its own ERROR, never a silent pass.
+        lib = self._lib(
+            ["cup00301", "typo_table"],
+            present=["cup00301"],
+            schema="signature",
+        )
+        self.assertEqual(lib.check_rules_apply(), "")
+
+    def test_no_rules_or_catalog_failure_returns_empty(self):
+        lib = self._lib([], present=[])
+        self.assertEqual(lib.check_rules_apply(), "")
+        lib = self._lib(["cup00301"], present=[])
+        lib._ensure_target.return_value.query.side_effect = RuntimeError("no catalog")
+        self.assertEqual(lib.check_rules_apply(), "")
 
 
 if __name__ == "__main__":

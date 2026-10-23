@@ -66,27 +66,69 @@ def _concat_operands(node) -> list:
     return [node]
 
 
-def _predicate(node) -> tuple[str, str]:
-    """CASE WHEN predicate -> (cond_expr, expected_value) pair for casewhen.
-
-    Supported:  <expr> = '<literal>'   and   REGEXP_LIKE(<expr>, '<pattern>')
-    """
+def _simple_arm(node) -> "tuple[str, str] | None":
+    """`<same expr> = '<literal>'` WHEN arm -> (cond_expr, expected) for
+    casewhen, else None. REGEXP_LIKE also fits (its result compares to 'True')."""
+    if isinstance(node, exp.Paren):
+        return _simple_arm(node.this)
     if isinstance(node, exp.EQ):
         left, right = node.left, node.right
         if isinstance(right, exp.Literal | exp.Boolean):
             return _emit(left), _lit(right)
         if isinstance(left, exp.Literal | exp.Boolean):
             return _emit(right), _lit(left)
-        raise ValueError("CASE WHEN comparison must be against a literal")
-    if isinstance(node, exp.NEQ):
-        raise ValueError("<> comparisons are not supported — use explicit CASE arms")
+        return None
     if isinstance(node, exp.RegexpLike):
-        return (
-            f"regexp_match({_emit(node.this)}, {_lit(node.expression)})",
-            repr("True"),
-        )
+        return _emit(node), repr("True")
+    return None
+
+
+def _bool_op(node, kind) -> "list | None":
+    """Flatten nested AND/OR of the same kind -> operand list, else None."""
+    if isinstance(node, kind):
+        parts = []
+        for operand in (node.this, node.expression):
+            flat = _bool_op(operand, kind)
+            parts.extend(flat if flat is not None else [operand])
+        return parts
+    return None
+
+
+def _condition(node) -> str:
+    """CASE WHEN predicate -> boolean-string expression ('True'/'False') for
+    case()/booland()/boolor(). Fail closed on anything without an exact
+    engine equivalent — never approximate a predicate."""
+    if isinstance(node, exp.Paren):
+        return _condition(node.this)
+    if isinstance(node, exp.Not):
+        inner = node.this
+        if isinstance(inner, exp.Paren):
+            inner = inner.this
+        if isinstance(inner, exp.Is) and isinstance(inner.expression, exp.Null):
+            return f"notnull({_emit(inner.this)})"
+        return f"boolnot({_condition(inner)})"
     if isinstance(node, exp.Is):
-        raise ValueError("IS NULL predicates are not supported — use ifnull()")
+        if isinstance(node.expression, exp.Null):
+            return f"isnull({_emit(node.this)})"
+        raise ValueError("Only IS [NOT] NULL is supported in WHEN predicates")
+    if isinstance(node, exp.And | exp.Or):
+        fn = "booland" if isinstance(node, exp.And) else "boolor"
+        parts = _bool_op(node, type(node)) or [node.this, node.expression]
+        return f"{fn}({', '.join(_condition(o) for o in parts)})"
+    if isinstance(node, exp.EQ | exp.NEQ):
+        fn = "eq" if isinstance(node, exp.EQ) else "neq"
+        return f"{fn}({_emit(node.left)}, {_emit(node.right)})"
+    if isinstance(node, exp.In):
+        if node.args.get("query") is not None or node.args.get("unnest") is not None:
+            raise ValueError("IN with a subquery is not supported — literal list only")
+        members = node.expressions
+        if not members or not all(isinstance(m, exp.Literal | exp.Boolean) for m in members):
+            raise ValueError("IN list members must be literals")
+        return f"in_list({_emit(node.this)}, {', '.join(_lit(m) for m in members)})"
+    if isinstance(node, exp.Like):
+        return f"like({_emit(node.this)}, {_emit(node.expression)})"
+    if isinstance(node, exp.RegexpLike):
+        return _emit(node)
     raise ValueError(f"Unsupported CASE WHEN predicate: {type(node).__name__}")
 
 
@@ -106,18 +148,32 @@ def _emit(node) -> str:
     if isinstance(node, exp.DPipe):
         return "concat(" + ", ".join(_emit(o) for o in _concat_operands(node)) + ")"
     if isinstance(node, exp.Case):
-        arms: list[str] = []
-        for cond in node.args.get("ifs", []):
-            cond_expr, expected = _predicate(cond.this)
-            arms.extend([cond_expr, expected, _emit(cond.args["true"])])
+        ifs = node.args.get("ifs", [])
         default = node.args.get("default")
         if default is None:
             raise ValueError("CASE without ELSE is not supported — declare the default")
+        # Simple form: every WHEN is `<same expr> = <literal>` (or a single
+        # REGEXP_LIKE) -> casewhen(expr, when, then, ..., else). Anything
+        # more complex (IN, LIKE, IS NULL, AND/OR, per-arm expressions) is a
+        # searched CASE -> case(cond, then, ..., else).
+        arms_simple: list[tuple[tuple[str, str], str]] = [
+            (s, r)
+            for s, r in ((_simple_arm(c.this), _emit(c.args["true"])) for c in ifs)
+            if s is not None
+        ]
+        if ifs and len(arms_simple) == len(ifs) and len({s[0] for s, _ in arms_simple}) == 1:
+            arms = [arms_simple[0][0][0]]
+            for (_, expected), result in arms_simple:
+                arms.extend([expected, result])
+            arms.append(_emit(default))
+            return f"casewhen({', '.join(arms)})"
+        arms = []
+        for cond in ifs:
+            arms.extend([_condition(cond.this), _emit(cond.args["true"])])
         arms.append(_emit(default))
-        return f"casewhen({', '.join(arms)})"
+        return f"case({', '.join(arms)})"
     if isinstance(node, exp.If):  # standalone IF(cond, a, b)
-        cond_expr, expected = _predicate(node.this)
-        return f"casewhen({cond_expr}, {expected}, {_emit(node.args['true'])}, {_emit(node.args.get('false', exp.Null()))})"
+        return f"case({_condition(node.this)}, {_emit(node.args['true'])}, {_emit(node.args.get('false', exp.Null()))})"
     if isinstance(node, exp.Coalesce):
         args = [node.this, *node.expressions]
         if len(args) != 2:

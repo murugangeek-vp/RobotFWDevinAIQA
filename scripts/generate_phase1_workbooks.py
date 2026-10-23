@@ -25,13 +25,33 @@ Spec gaps resolved explicitly (documented in each workbook README):
 Run: .venv/Scripts/python.exe scripts/generate_phase1_workbooks.py
 """
 
+import sys
 from pathlib import Path
 
 from openpyxl import Workbook
 from openpyxl.styles import Font
 
 REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO))
+
+from libs.mapping.sql_transform import sql_to_transform
+
 OUT_DIR = REPO / "data" / "mapping"
+
+# Client-specified CUSTOMER_CATEGORY derivation (spec SQL verbatim except the
+# inner CASE's implicit ELSE, declared as ELSE NULL — NULL is the faithful
+# result for 'C'/'B' names with no LLC/INC/BANK marker). Translated through
+# sql_to_transform so the workbook stores the engine expression.
+CUSTOMER_CATEGORY_SQL = (
+    "CASE WHEN ref2.attribute_cd IS NOT NULL THEN ref2.attribute_cd "
+    "ELSE (CASE WHEN cust.customer_type_cd = 'P' THEN 'INDIVIDUAL' "
+    "WHEN cust.customer_type_cd IN ('C', 'B') "
+    "AND (UPPER(cust.full_nm) LIKE '%LLC%' OR UPPER(cust.full_nm) LIKE '%INC%') "
+    "THEN 'CORP_SMALL' "
+    "WHEN cust.customer_type_cd IN ('C', 'B') AND UPPER(cust.full_nm) LIKE '%BANK%' "
+    "THEN 'BANK' ELSE NULL END) END"
+)
+CUSTOMER_CATEGORY_TRANSFORM = sql_to_transform(CUSTOMER_CATEGORY_SQL)
 
 TABLES_HEADERS = [
     "Mapping ID",
@@ -125,6 +145,7 @@ HOP1_FIELDMAP = [
     _fm("csv_dim_reference", "attribute_cd", "attribute_cd", "string", "no", "50"),
     _fm("csv_dim_reference", "attribute_value_desc", "attribute_value_desc", "string", "no", "256"),
     _fm("csv_dim_reference", "load_date", "load_date", "date", "no"),
+    _fm("csv_dim_reference", "attribute_map_cd", "attribute_map_cd", "string", "yes", "50"),
 ]
 
 HOP1_CONTROLS = [
@@ -151,6 +172,10 @@ HOP1_README = [
     ["against cup00301, and certified aggregates vs phase1_hop1_trailer.csv:"],
     ["row counts, distinct keys, tax-id nulls, NAICS sum, max country code,"],
     ["and the per-customer-type (CUPERS) grouped count."],
+    [""],
+    ["dim_reference carries ATTRIBUTE_MAP_CD (lookup key) alongside"],
+    ["ATTRIBUTE_CD: tax-id-type rows keep it NULL, NAICS->category rows"],
+    ["key on the NAICS code for the hop-3 CUSTOMER_CATEGORY join."],
     [""],
     ["Direct copies only — all transformation happens at hop 2 per spec."],
 ]
@@ -381,6 +406,14 @@ HOP2_FIELDMAP = [
         "256",
     ),
     _fm("dim_reference_migration", "load_date", "load_date", "date", "no"),
+    _fm(
+        "dim_reference_migration",
+        "attribute_map_cd",
+        "attribute_map_cd",
+        "string",
+        "yes",
+        "50",
+    ),
 ]
 
 HOP2_CONTROLS = [
@@ -428,6 +461,8 @@ HOP2_README = [
     ["    contributes NAICS_CD only."],
     ["  - CASE arms without ELSE (CUPERS first/last name): ELSE NULL"],
     ["    per spec — nullable target columns carry it."],
+    ["  - DIM_REFERENCE also lands ATTRIBUTE_MAP_CD — the NAICS lookup key"],
+    ["    used by hop-3 CUSTOMER_CATEGORY."],
 ]
 
 
@@ -560,6 +595,21 @@ HOP3_FIELDMAP = [
         "yes",
         "255",
     ),
+    # CUSTOMER_CATEGORY (client CASE): DIM_REFERENCE lookup on naics_cd wins;
+    # else searched CASE on customer_type_cd + full_nm markers. NULL for
+    # unmatched 'C'/'B' names — faithful to the spec snippet's missing ELSE.
+    # Last FieldMap row so contract column order matches the appended column
+    # on pre-existing targets.
+    _fm(
+        "cl_party_snpsht_migration",
+        "attribute_cd",
+        "customer_category",
+        "string",
+        "yes",
+        "50",
+        "",
+        CUSTOMER_CATEGORY_TRANSFORM,
+    ),
 ]
 
 HOP3_CONTROLS = [
@@ -588,6 +638,12 @@ HOP3_README = [
     ["  - PARTY_TYPE: 'Complex Logic - details shared in next tab' does not"],
     ["    exist -> literal('PENDING_SPEC') sentinel until client supplies it."],
     ["  - PARTY_TAX_IDENTIFIER_FORMAT_INDICATOR: LEFT(x,1) -> substr(x,0,1)."],
+    ["  - CUSTOMER_CATEGORY: client CASE — DIM_REFERENCE match on"],
+    ["    ATTRIBUTE_MAP_CD = NAICS_CD returns ATTRIBUTE_CD; else 'P' ->"],
+    ["    INDIVIDUAL, 'C'/'B' + name LIKE %LLC%/%INC% -> CORP_SMALL,"],
+    ["    'C'/'B' + name LIKE %BANK% -> BANK, otherwise NULL (spec has"],
+    ["    no ELSE — declared ELSE NULL). V_PARTY_SNPSHT_SRC LEFT JOINs"],
+    ["    DIM_REFERENCE to expose attribute_cd."],
 ]
 
 

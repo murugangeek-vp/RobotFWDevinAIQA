@@ -85,7 +85,20 @@ ETL.
 .venv/Scripts/robot -d results/phase1/hop3 \
   -v MIGRATION_ENV:config/environments/phase1_hop3_il_consumption.yaml \
   -v MAPPING_WORKBOOK:data/mapping/phase1_hop3_il_to_consumption.xlsx tests/migration
+
+# 4. Complex business rules — opt-in, hop-1 scope only
+.venv/Scripts/robot -d results/phase1/hop1_rules \
+  -v MIGRATION_ENV:config/environments/phase1_hop1_csv_stage.yaml \
+  -v RULES_WORKBOOK:data/rules/phase1_complex_rules.xlsx \
+  tests/migration/10_business_rules.robot
 ```
+
+The rules workbook is env-scoped: its target tables must exist in the
+env's target schema. `phase1_complex_rules.xlsx` targets stage-schema
+objects (`cup00301`, `cup01201`, `v_dim_customer_src`), so supply it only
+on hop-1 runs. On a mismatched env `Check Rules Apply To Environment`
+skips the rules test with the missing-table reason; a *partial* match is
+not skipped — the genuinely broken rule still reports its own ERROR.
 
 Evidence per hop lands in `results/phase1/hopN/`: `report.html`,
 `log.html`, `migration_report.md`, `migration_summary.xlsx`,
@@ -212,3 +225,4 @@ the client-authored mapping (same sheet format), and point `source.dir` /
 | Orphans in 08 | referential integrity broken by load |
 | `password authentication failed` | wrong role — verification must run as `recon_ro`, loader as `recon_rw` |
 | `snapshot required` on a real target | `run.snapshot_id` unset — mandatory for non-demo runs |
+| rules test SKIPped: `rules target tables ... do not exist` | rules workbook run against the wrong hop — supply it only with the env whose target schema holds its tables (phase-1 rules = hop 1) |

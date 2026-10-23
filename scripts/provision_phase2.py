@@ -9,6 +9,8 @@ Views created (idempotent, CREATE OR REPLACE):
 
   wdr_uat_integration.wdr_il_core.v_party_snpsht_src
       DIM_CUSTOMER LEFT JOIN DIM_CUSTOMER_ADDRESS on involved_party_key
+      LEFT JOIN DIM_REFERENCE on attribute_map_cd = naics_cd
+      (CUSTOMER_CATEGORY reference override)
 
 Run order: stage tables exist after `load_phase2_hop.py --hop 1`; run this
 script (creates the stage view) -> hop-2 load -> run again for the IL view.
@@ -49,10 +51,12 @@ LEFT JOIN signature.dim_reference r
 
 IL_VIEW_SQL = """
 CREATE OR REPLACE VIEW wdr_il_core.v_party_snpsht_src AS
-SELECT d.*, a.address_country_cd
+SELECT d.*, a.address_country_cd, r.attribute_cd
 FROM wdr_il_core.dim_customer d
 LEFT JOIN wdr_il_core.dim_customer_address a
        ON a.involved_party_key = d.involved_party_key
+LEFT JOIN wdr_il_core.dim_reference r
+       ON r.attribute_map_cd = d.naics_cd
 """
 
 

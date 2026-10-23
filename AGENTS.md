@@ -96,6 +96,12 @@ python -m unittest discover -s tests/migration -p "test_*.py" -v
   -v MIGRATION_ENV:config/environments/phase1_hop1_csv_stage.yaml \
   -v MAPPING_WORKBOOK:data/mapping/phase1_hop1_csv_to_stage.xlsx tests/migration
 # ... same pattern for hop2 / hop3 — see docs/RUNBOOK.md
+# Complex business rules — opt-in; the phase-1 rules workbook is hop-1
+# scoped (stage-schema targets), so supply it only on the hop-1 env:
+.venv/Scripts/robot -d results/phase1/hop1_rules \
+  -v MIGRATION_ENV:config/environments/phase1_hop1_csv_stage.yaml \
+  -v RULES_WORKBOOK:data/rules/phase1_complex_rules.xlsx \
+  tests/migration/10_business_rules.robot
 ```
 
 Style: Python 3.11+, ruff line-length 100 (E/F/W/I/B/UP/SIM), mypy clean on

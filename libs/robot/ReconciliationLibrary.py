@@ -700,6 +700,42 @@ class ReconciliationLibrary:
         logger.info(f"rule workbook: {enabled}/{len(self.excel_rules)} rules enabled")
         return len(self.excel_rules)
 
+    @keyword("Check Rules Apply To Environment")
+    def check_rules_apply(self):
+        """'' when the loaded rules workbook can run against this env's
+        target schema; a skip reason when NONE of its rule target tables
+        exist there (workbook belongs to a different hop — e.g. stage-schema
+        rules under the consumption env). Partial presence returns '' so
+        genuinely broken rules still ERROR loudly, never silently pass."""
+        if not self.excel_rules:
+            return ""
+        tables = sorted({r.target_table for r in self.excel_rules if r.enabled and r.target_table})
+        if not tables:
+            return ""
+        schema_name = (self.env or {}).get("target", {}).get("schema", "public")
+        for name in [schema_name, *tables]:
+            if not re.fullmatch(r"[A-Za-z_]\w*", name):
+                raise ValueError(f"unsafe identifier in rules target check: {name!r}")
+        names = ", ".join(f"'{t}'" for t in tables)
+        try:
+            df = self._ensure_target().query(
+                "SELECT table_name FROM information_schema.tables "
+                f"WHERE table_schema = '{schema_name}' AND table_name IN ({names})"
+            )
+        except Exception:
+            # Targets without information_schema (e.g. emulators) keep the
+            # legacy behavior — each rule reports its own error.
+            return ""
+        present = set(df.iloc[:, 0]) if len(df) else set()
+        missing = [t for t in tables if t not in present]
+        if len(missing) == len(tables):
+            return (
+                f"rules target tables {tables} do not exist in target schema "
+                f"{schema_name!r} — this rules workbook belongs to a different "
+                "hop; run it with the environment its tables live in"
+            )
+        return ""
+
     @keyword("Run Business Rules Validation")
     def run_business_rules_validation(
         self, test_id: "str | None" = None, source_dir: "str | None" = None

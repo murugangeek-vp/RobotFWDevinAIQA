@@ -91,6 +91,75 @@ def _regexp_match(v, pattern):
     return "True" if re.fullmatch(str(pattern), str(v)) else "False"
 
 
+def _eq(a, b):
+    """eq(a, b) -> 'True'/'False' — SQL = inside a searched WHEN. NULL = x
+    is UNKNOWN, which fails the WHEN, so nulls yield 'False' not NULL."""
+    if pd.isna(a) or pd.isna(b):
+        return "False"
+    return "True" if str(a) == str(b) else "False"
+
+
+def _neq(a, b):
+    """neq(a, b) -> 'True'/'False' — SQL <> ; NULL <> x is UNKNOWN -> 'False'."""
+    if pd.isna(a) or pd.isna(b):
+        return "False"
+    return "True" if str(a) != str(b) else "False"
+
+
+def _in_list(v, *vals):
+    """in_list(col, 'C', 'B') -> 'True'/'False' — SQL IN (literal list).
+    NULL IN (...) is UNKNOWN -> 'False'."""
+    if pd.isna(v):
+        return "False"
+    return "True" if str(v) in {str(x) for x in vals} else "False"
+
+
+def _like(v, pattern):
+    """like(col, '%LLC%') -> 'True'/'False' — SQL LIKE, case-sensitive;
+    % -> .*, _ -> . under fullmatch, everything else literal. NULL -> 'False'."""
+    if pd.isna(v):
+        return "False"
+    rx = "".join(".*" if c == "%" else "." if c == "_" else re.escape(c) for c in str(pattern))
+    return "True" if re.fullmatch(rx, str(v)) else "False"
+
+
+def _isnull(v):
+    """isnull(col) -> 'True'/'False' — SQL IS NULL."""
+    return "True" if pd.isna(v) else "False"
+
+
+def _notnull(v):
+    """notnull(col) -> 'True'/'False' — SQL IS NOT NULL."""
+    return "False" if pd.isna(v) else "True"
+
+
+def _booland(*conds):
+    """booland(cond, ...) -> 'True'/'False' — SQL AND over predicate results."""
+    return "True" if all(str(c) == "True" for c in conds) else "False"
+
+
+def _boolor(*conds):
+    """boolor(cond, ...) -> 'True'/'False' — SQL OR over predicate results."""
+    return "True" if any(str(c) == "True" for c in conds) else "False"
+
+
+def _boolnot(c):
+    """boolnot(cond) -> 'True'/'False' — SQL NOT; NOT UNKNOWN is UNKNOWN,
+    which fails the WHEN, so null input yields 'False'."""
+    if pd.isna(c):
+        return "False"
+    return "True" if str(c) != "True" else "False"
+
+
+def _case(*args):
+    """case(cond, value, cond, value, ..., default) — searched CASE WHEN:
+    alternating condition/result pairs where the first condition equal to
+    'True' wins; a trailing unpaired arg is the ELSE default (None -> NULL)."""
+    pairs = list(zip(args[0::2], args[1::2], strict=False))
+    default = args[-1] if len(args) % 2 else None
+    return next((t for c, t in pairs if str(c) == "True"), default)
+
+
 def _date_fmt(v, out_fmt, in_fmt=None):
     """Date/timestamp -> strftime'd string ('%d/%m/%Y' etc.).
 
@@ -135,6 +204,16 @@ _SAFE_FUNCS: dict = {
     "lpad": _lpad,
     "concat": _concat,
     "regexp_match": _regexp_match,
+    "eq": _eq,
+    "neq": _neq,
+    "in_list": _in_list,
+    "like": _like,
+    "isnull": _isnull,
+    "notnull": _notnull,
+    "booland": _booland,
+    "boolor": _boolor,
+    "boolnot": _boolnot,
+    "case": _case,
     "mul": lambda a, b: Decimal(str(a)) * Decimal(str(b)),
     "date_fmt": _date_fmt,
 }

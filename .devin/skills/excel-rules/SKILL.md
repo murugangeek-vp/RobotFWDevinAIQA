@@ -15,9 +15,15 @@ EXCEL-DRIVEN BUSINESS RULES
 Business rules are DATA, not code — a rules workbook is the source of truth
 and never produces per-rule test code. The engine (`libs/excelrules/`) is
 exercised through `ReconciliationLibrary` keywords (`Load Rule Workbook` →
-`Run Business Rules Validation` → `Get Rule Violations` / `Write Rules
-Summary`); create `data/rules/business_rules.xlsx` when a client supplies a
-rules sheet.
+`Check Rules Apply To Environment` → `Run Business Rules Validation` →
+`Get Rule Violations` / `Write Rules Summary`); create
+`data/rules/business_rules.xlsx` when a client supplies a rules sheet.
+
+Scope: a rules workbook belongs to one hop — every rule's Target Table
+must exist in the env's target schema. When *none* exist there (wrong
+env), `Check Rules Apply To Environment` returns a skip reason naming the
+missing tables; on a *partial* match it returns '' so the genuinely
+broken rule still ERRORs — never silently passes.
 
 ## Add a business rule (no code change)
 

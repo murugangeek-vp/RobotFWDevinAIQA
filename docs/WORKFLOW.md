@@ -51,8 +51,10 @@ engagement where the bank's ETL owns target writes.
 ```
 
 Fixtures are synthetic and seeded — 200 customers / 160 legal entities /
-3 reference rows, same every run. `data/phase1/` and `data/trailer/*.csv`
-are git-ignored; regenerate, never commit.
+6 reference rows (3 keyed by `attribute_map_cd` for the hop-3
+`customer_category` override), same every run. `data/phase1/` and
+`data/trailer/*.csv` are committed synthetic fixtures — regenerated via
+the script, never hand-edited.
 
 ### 2. Load targets (the "ETL" — RW role)
 
@@ -66,7 +68,9 @@ are git-ignored; regenerate, never commit.
 
 Views between loads: hop-2 reads `signature.v_dim_customer_src` (the
 spec's DIM_REFERENCE lookup); hop-3 reads `wdr_il_core.v_party_snpsht_src`
-(customer ⨝ address). Both are `CREATE OR REPLACE`, read-only consumers.
+(customer ⨝ address, LEFT JOIN `dim_reference` on
+`attribute_map_cd = naics_cd` — feeds the `customer_category` override
+arm). Both are `CREATE OR REPLACE`, read-only consumers.
 
 ### 3. Verify each hop (RO role — the release gate)
 
@@ -101,6 +105,7 @@ treats a *passing* negative run as an error — detection is the feature.
 | 06 | pipeline | all stages PASS in one pass; evidence `coverage == COMPLETE` |
 | 07 | controls | certified trailer totals (`name,group,value`) vs actuals |
 | 08 | relations | FK orphans on both sides of each declared/derived relation |
+| 10 | rules | opt-in rules workbook passes; env-scope guard skips wrong-hop runs |
 | 90 | negative | tampered streamed copies are caught — DBs untouched |
 
 ## Evidence map

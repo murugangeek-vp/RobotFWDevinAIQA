@@ -3,7 +3,11 @@ Documentation    Excel-driven complex business rules — multi-source joins,
 ...              inner-select/aggregate SQL predicates, conditional and
 ...              cross-file business logic. Opt-in per hop: the suite skips
 ...              unless -v RULES_WORKBOOK:<rules.xlsx> is supplied, so plain
-...              runs of tests/migration are unaffected.
+...              runs of tests/migration are unaffected. A supplied workbook
+...              is env-scoped — when none of its rule target tables exist in
+...              the env's target schema the rules test skips with the
+...              missing-table reason (wrong-hop guard); a partial match is
+...              not skipped and the broken rule reports its own ERROR.
 Resource         ../../resources/keywords/common.resource
 Library          ${ROOT}/libs/robot/ReconciliationLibrary.py
 Suite Setup      Business Rules Suite Setup
@@ -20,6 +24,8 @@ Complex Business Rules Pass On Migrated Data
     [Documentation]    Every enabled rule: no ERROR (a broken rule is a loud
     ...    failure, never a silent pass) and no failing-severity violations.
     [Tags]    rules
+    ${reason}=    Check Rules Apply To Environment
+    IF    $reason    Skip    ${reason}
     ${results}=    Run Business Rules Validation    source_dir=${RULES_SOURCE_DIR}
     ${summary}=    Get Rule Summary
     ${bad}=    Evaluate    [f"{r['test_id']}:{r['status']}" for r in ${summary} if r['status'] in ('FAIL', 'ERROR')]

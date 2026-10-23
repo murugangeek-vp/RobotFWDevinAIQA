@@ -1,5 +1,5 @@
 name,group,value
 cl_party_rows,,200
-cl_party_by_domain,Business,13
-cl_party_by_domain,Commercial,91
-cl_party_by_domain,Personal,96
+cl_party_by_domain,Business,15
+cl_party_by_domain,Commercial,93
+cl_party_by_domain,Personal,92

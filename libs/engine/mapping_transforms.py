@@ -74,14 +74,25 @@ def evaluate(tree, row, mappings):
                 raise ValueError("Unmapped source code")
             return table[str(value).strip()]
         args = [evaluate(arg, row, mappings) for arg in tree.args]
-        # Null handling: ifnull needs the null to substitute; casewhen must
-        # still apply when/else even if a branch value is null (SQL CASE
-        # semantics); regexp_match on null is False. Everything else
-        # propagates null — including concat (SQL || semantics).
+        # Null handling: ifnull needs the null to substitute; casewhen/case
+        # must still apply when/else even if a branch value is null (SQL CASE
+        # semantics); the searched-CASE predicates (eq/like/isnull/...) test
+        # for null themselves. Everything else propagates null — including
+        # concat (SQL || semantics).
         if any(value is None for value in args) and name not in {
             "ifnull",
             "casewhen",
+            "case",
             "regexp_match",
+            "eq",
+            "neq",
+            "in_list",
+            "like",
+            "isnull",
+            "notnull",
+            "booland",
+            "boolor",
+            "boolnot",
         }:
             return None
         return _SAFE_FUNCS[name](*args)

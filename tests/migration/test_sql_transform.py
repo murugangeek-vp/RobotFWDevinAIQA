@@ -33,12 +33,57 @@ class SqlToTransform(unittest.TestCase):
         )
 
     def test_multi_arm_case(self):
-        self.assertEqual(
-            sql_to_transform(
-                "CASE WHEN T = 'P' THEN 'Personal' WHEN T = 'N' THEN 'Non-Personal' ELSE 'Other' END"
-            ),
-            "casewhen(T, 'P', 'Personal', T, 'N', 'Non-Personal', 'Other')",
+        # Same-expression WHENs collapse to literal-when casewhen: the value
+        # is emitted once, then alternating literal/result pairs — repeating
+        # the column per arm compared it against itself (any non-'P' value
+        # matched the second arm).
+        expr = sql_to_transform(
+            "CASE WHEN T = 'P' THEN 'Personal' WHEN T = 'N' THEN 'Non-Personal' ELSE 'Other' END"
         )
+        self.assertEqual(expr, "casewhen(T, 'P', 'Personal', 'N', 'Non-Personal', 'Other')")
+        self.assertEqual(_eval(expr, {"T": "P"}), "Personal")
+        self.assertEqual(_eval(expr, {"T": "N"}), "Non-Personal")
+        self.assertEqual(_eval(expr, {"T": "X"}), "Other")
+
+    def test_case_in_list(self):
+        expr = sql_to_transform("CASE WHEN T IN ('C', 'B') THEN 'ORG' ELSE 'OTHER' END")
+        self.assertEqual(expr, "case(in_list(T, 'C', 'B'), 'ORG', 'OTHER')")
+        self.assertEqual(_eval(expr, {"T": "B"}), "ORG")
+        self.assertEqual(_eval(expr, {"T": "P"}), "OTHER")
+        self.assertEqual(_eval(expr, {"T": None}), "OTHER")  # NULL IN -> arm not taken
+
+    def test_case_is_not_null(self):
+        expr = sql_to_transform("CASE WHEN R.ATTR IS NOT NULL THEN R.ATTR ELSE 'MISS' END")
+        self.assertEqual(expr, "case(notnull(ATTR), ATTR, 'MISS')")
+        self.assertEqual(_eval(expr, {"ATTR": "X1"}), "X1")
+        self.assertEqual(_eval(expr, {"ATTR": None}), "MISS")
+
+    def test_case_like_and_or(self):
+        expr = sql_to_transform(
+            "CASE WHEN T IN ('C','B') AND (UPPER(N) LIKE '%LLC%' OR UPPER(N) LIKE '%INC%') "
+            "THEN 'CORP_SMALL' ELSE 'OTHER' END"
+        )
+        self.assertEqual(
+            expr,
+            "case(booland(in_list(T, 'C', 'B'), boolor(like(upper(N), '%LLC%'), "
+            "like(upper(N), '%INC%'))), 'CORP_SMALL', 'OTHER')",
+        )
+        self.assertEqual(_eval(expr, {"T": "C", "N": "Delta Holdings LLC"}), "CORP_SMALL")
+        self.assertEqual(_eval(expr, {"T": "B", "N": "epsilon inc"}), "CORP_SMALL")
+        self.assertEqual(_eval(expr, {"T": "P", "N": "Delta LLC"}), "OTHER")  # wrong type
+        self.assertEqual(_eval(expr, {"T": "C", "N": "Plain Co"}), "OTHER")
+        self.assertEqual(_eval(expr, {"T": "C", "N": None}), "OTHER")  # NULL LIKE -> not taken
+
+    def test_nested_case_else_null(self):
+        expr = sql_to_transform(
+            "CASE WHEN R.ATTR IS NOT NULL THEN R.ATTR "
+            "ELSE (CASE WHEN T = 'P' THEN 'INDIVIDUAL' ELSE NULL END) END"
+        )
+        # inner single-arm CASE collapses to casewhen; ELSE NULL -> None
+        self.assertEqual(expr, "case(notnull(ATTR), ATTR, casewhen(T, 'P', 'INDIVIDUAL', None))")
+        self.assertEqual(_eval(expr, {"ATTR": "REF", "T": "C"}), "REF")
+        self.assertEqual(_eval(expr, {"ATTR": None, "T": "P"}), "INDIVIDUAL")
+        self.assertIsNone(_eval(expr, {"ATTR": None, "T": "C"}))
 
     def test_lpad_cast_unwrap(self):
         self.assertEqual(sql_to_transform("LPAD(CUCNCD::VARCHAR, 5, '0')"), "lpad(CUCNCD, 5, '0')")
@@ -77,6 +122,55 @@ class SqlToTransform(unittest.TestCase):
         ]:
             with self.assertRaises(ValueError, msg=bad):
                 sql_to_transform(bad)
+
+
+class ClientCustomerCategory(unittest.TestCase):
+    """The spec CASE: dim_reference hit on attribute_map_cd = naics_cd wins;
+    else searched CASE on customer_type_cd + full_nm markers; inner CASE has
+    ELSE NULL so unmatched 'C'/'B' names produce NULL."""
+
+    SQL = (
+        "CASE WHEN ref2.attribute_cd IS NOT NULL THEN ref2.attribute_cd "
+        "ELSE (CASE WHEN cust.customer_type_cd = 'P' THEN 'INDIVIDUAL' "
+        "WHEN cust.customer_type_cd IN ('C', 'B') "
+        "AND (UPPER(cust.full_nm) LIKE '%LLC%' OR UPPER(cust.full_nm) LIKE '%INC%') "
+        "THEN 'CORP_SMALL' "
+        "WHEN cust.customer_type_cd IN ('C', 'B') AND UPPER(cust.full_nm) LIKE '%BANK%' "
+        "THEN 'BANK' ELSE NULL END) END"
+    )
+
+    def _categorize(self, attribute_cd=None, customer_type_cd=None, full_nm=None):
+        return _eval(
+            sql_to_transform(self.SQL),
+            {
+                "attribute_cd": attribute_cd,
+                "customer_type_cd": customer_type_cd,
+                "full_nm": full_nm,
+            },
+        )
+
+    def test_reference_hit_wins_over_type_and_name(self):
+        # ref2.attribute_cd takes precedence — even for 'P' with a %BANK% name
+        self.assertEqual(self._categorize("BANK_HOLDING", "P", "MARIA BANKINGTON"), "BANK_HOLDING")
+
+    def test_individual(self):
+        self.assertEqual(self._categorize(None, "P", "ALICE SAMPLE"), "INDIVIDUAL")
+
+    def test_corp_small_llc_and_inc(self):
+        self.assertEqual(self._categorize(None, "C", "DELTA HOLDINGS LLC"), "CORP_SMALL")
+        self.assertEqual(self._categorize(None, "B", "epsilon inc"), "CORP_SMALL")
+
+    def test_arm_order_llc_before_bank(self):
+        self.assertEqual(self._categorize(None, "C", "BANK STREET LLC"), "CORP_SMALL")
+
+    def test_bank(self):
+        self.assertEqual(self._categorize(None, "B", "FIRST RIVER BANK"), "BANK")
+
+    def test_unmatched_commercial_is_null(self):
+        self.assertIsNone(self._categorize(None, "C", "PLAIN SERVICES GROUP"))
+
+    def test_p_beats_bank_name(self):
+        self.assertEqual(self._categorize(None, "P", "CAROL BANKSTON"), "INDIVIDUAL")
 
 
 class NewSafeFuncs(unittest.TestCase):

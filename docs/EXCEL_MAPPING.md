@@ -103,7 +103,8 @@ parsed by `libs/engine/mapping_transforms.py` (AST-vetted; no arbitrary code).
 | Date reformat | `date_fmt({dob_txt}, '%Y-%m-%d', '%m/%d/%Y')` | output fmt, input fmt |
 | Rounding | `round({bal_amt}, 2)` | |
 | Code map | `map(prod_cd, product_codes)` | via `Mapping` sheet |
-| Conditional | `casewhen(...)` | decode chains |
+| Conditional | `casewhen(...)` | decode chains (same-column equality) |
+| Searched CASE | `case(eq({a},'P'),'INDIVIDUAL', booland(in_list({t},'C','B'), like(upper({n}),'%LLC%')), 'CORP_SMALL', 'BANK', None)` | per-arm conditions: `eq`/`neq`/`in_list`/`like`/`isnull`/`notnull`/`regexp_match`, combined with `booland`/`boolor`/`boolnot`; all yield `'True'`/`'False'` |
 | Null default | `ifnull({phone}, 'N/A')` | |
 
 ## Fail-closed validation

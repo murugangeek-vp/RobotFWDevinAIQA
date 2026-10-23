@@ -48,7 +48,7 @@ CUP00301_HEADER = [
     "load_date",
 ]
 CUP01201_HEADER = ["cunbr", "culegenty", "load_date"]
-DIM_REFERENCE_HEADER = ["attribute_cd", "attribute_value_desc", "load_date"]
+DIM_REFERENCE_HEADER = ["attribute_cd", "attribute_value_desc", "load_date", "attribute_map_cd"]
 
 PERSON_TYPES = ["P", "P", "P", "P", "P", "P", "P", "N", "N", "N", "N", "N", "C", "C", "B"]
 COUNTRY_CODES = [840, 840, 840, 124, 826, 392, 356]  # NUMBER(5,0) per spec
@@ -57,37 +57,60 @@ TAX_TYPES = ["S", "S", "S", "S", "E", "T", ""]
 LEGAL_ENTITIES = ["SOLE PROP", "PARTNERSHIP", "LLC", "CORP", "TRUST"]
 
 DIM_REFERENCE_ROWS = [
-    ["S", "SOCIAL SECURITY NUMBER", LOAD_DATE],
-    ["E", "EMPLOYER IDENTIFICATION NUMBER", LOAD_DATE],
-    ["T", "OTHER TAX IDENTIFIER", LOAD_DATE],
+    # tax-id-type lookups (hop-2 join on attribute_cd; no map code)
+    ["S", "SOCIAL SECURITY NUMBER", LOAD_DATE, ""],
+    ["E", "EMPLOYER IDENTIFICATION NUMBER", LOAD_DATE, ""],
+    ["T", "OTHER TAX IDENTIFIER", LOAD_DATE, ""],
+    # naics -> customer_category overrides (hop-3 join on
+    # attribute_map_cd = naics_cd; lpad'd 6-char codes)
+    ["BANK_HOLDING", "NAICS 523110 - INVESTMENT BANKING", LOAD_DATE, "523110"],
+    ["CREDIT_UNION", "NAICS 522120 - CREDIT UNIONS", LOAD_DATE, "522120"],
+    ["FINTECH", "NAICS 541511 - CUSTOM SOFTWARE", LOAD_DATE, "541511"],
 ]
+
+# Deterministic CUSTOMER_CATEGORY coverage — one row per CASE arm plus
+# precedence edges (ref lookup beats type/name; LLC/INC arm precedes BANK
+# arm; 'P' beats name markers). cupers/cusic/cuna1 positions 2/4/5.
+_CATEGORY_CASES = {
+    0: ("P", "522210", "ALICE INDIVIDUAL SAMPLE"),  # 'P' -> INDIVIDUAL
+    1: ("C", "522210", "DELTA HOLDINGS LLC"),  # LLC -> CORP_SMALL
+    2: ("C", "522210", "epsilon inc"),  # lowercase marker -> CORP_SMALL (UPPER fold)
+    3: ("B", "522210", "FIRST RIVER BANK"),  # BANK -> BANK
+    4: ("C", "522210", "BANK STREET LLC"),  # arm order: LLC checked before BANK
+    5: ("C", "522210", "PLAIN SERVICES GROUP"),  # no marker -> NULL (no ELSE)
+    6: ("P", "523110", "MARIA BANKINGTON"),  # ref hit beats 'P' and %BANK% name
+    7: ("N", "522210", "NORTHFIELD LLC"),  # N->'C' in hop 2, LLC -> CORP_SMALL
+    8: ("B", "522120", "ANY HOLDER"),  # ref hit 522120 -> CREDIT_UNION
+    9: ("P", "522210", "CAROL BANKSTON"),  # 'P' arm evaluated before name arms
+}
 
 
 def _customers(fake):
     rows = []
     for i in range(N_CUSTOMERS):
         cupers = PERSON_TYPES[i % len(PERSON_TYPES)]
-        rows.append(
-            [
-                str(random.choice([1, 2, 3])),  # cubk
-                f"C{i + 1:06d}",  # cunbr
-                cupers,
-                str(random.choice(COUNTRY_CODES)),  # cucncd
-                "" if i % 7 == 0 else str(random.choice(NAICS_CODES)),  # cusic
-                fake.name() if cupers == "P" else fake.company(),  # cuna1
-                fake.first_name(),  # cucfnm
-                fake.last_name(),  # cuclnm
-                "" if i % 10 == 3 else str(random.randint(100000000, 999999999)),  # cussnr
-                TAX_TYPES[i % len(TAX_TYPES)],  # cussty ('' -> null path)
-                fake.date_of_birth(minimum_age=18, maximum_age=90).strftime("%Y%m%d"),
-                fake.street_address().replace("\n", " "),  # cuadl1
-                "" if i % 3 else fake.secondary_address(),  # cuadl2
-                fake.city(),  # cuadct
-                fake.state_abbr(),  # cuadst
-                fake.postcode(),  # cuadpc
-                LOAD_DATE,
-            ]
-        )
+        row = [
+            str(random.choice([1, 2, 3])),  # cubk
+            f"C{i + 1:06d}",  # cunbr
+            cupers,
+            str(random.choice(COUNTRY_CODES)),  # cucncd
+            "" if i % 7 == 0 else str(random.choice(NAICS_CODES)),  # cusic
+            fake.name() if cupers == "P" else fake.company(),  # cuna1
+            fake.first_name(),  # cucfnm
+            fake.last_name(),  # cuclnm
+            "" if i % 10 == 3 else str(random.randint(100000000, 999999999)),  # cussnr
+            TAX_TYPES[i % len(TAX_TYPES)],  # cussty ('' -> null path)
+            fake.date_of_birth(minimum_age=18, maximum_age=90).strftime("%Y%m%d"),
+            fake.street_address().replace("\n", " "),  # cuadl1
+            "" if i % 3 else fake.secondary_address(),  # cuadl2
+            fake.city(),  # cuadct
+            fake.state_abbr(),  # cuadst
+            fake.postcode(),  # cuadpc
+            LOAD_DATE,
+        ]
+        if i in _CATEGORY_CASES:
+            row[2], row[4], row[5] = _CATEGORY_CASES[i]
+        rows.append(row)
     return rows
 
 
