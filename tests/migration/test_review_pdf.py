@@ -1,6 +1,5 @@
 import tempfile
 import unittest
-from pathlib import Path
 from unittest.mock import MagicMock
 
 from libs.reporting.review_pdf import build_review, write_review_pdf
@@ -34,7 +33,14 @@ class BuildReviewTests(unittest.TestCase):
 
     def test_failed_test_means_fail(self):
         review = build_review(
-            _summary(), test_outcomes=[_outcome("T", "FAIL", [{"stage": "recon", "status": "FAIL", "mapping": "m", "detail": "1 missing"}])]
+            _summary(),
+            test_outcomes=[
+                _outcome(
+                    "T",
+                    "FAIL",
+                    [{"stage": "recon", "status": "FAIL", "mapping": "m", "detail": "1 missing"}],
+                )
+            ],
         )
         self.assertEqual(review["status"], "FAIL")
         self.assertIn("re-run", review["action"])
@@ -59,7 +65,9 @@ class BuildReviewTests(unittest.TestCase):
     def test_rule_error_means_fail(self):
         rule = MagicMock(test_id="R1", rule_type="NULL_CHECK", severity="HIGH")
         result = MagicMock(rule=rule, status="ERROR", violations=[], error="boom")
-        review = build_review(_summary(), rule_results=[result], test_outcomes=[_outcome("T", "PASS")])
+        review = build_review(
+            _summary(), rule_results=[result], test_outcomes=[_outcome("T", "PASS")]
+        )
         self.assertEqual(review["status"], "FAIL")
         self.assertEqual(review["rule_rows"][0]["test_id"], "R1")
 

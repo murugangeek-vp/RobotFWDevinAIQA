@@ -11,7 +11,7 @@ import contextlib
 from pathlib import Path
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_LEFT, TA_RIGHT
+from reportlab.lib.enums import TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
@@ -79,6 +79,7 @@ _ACTIONS = {
     "NOT RUN": "Re-run the validation suite; evidence is absent.",
 }
 
+
 # A technical stage detail is only reviewer-friendly when it reads like a
 # count or status statement; anything else (SQL, paths, reprs) stays in the
 # QA workbook.
@@ -112,11 +113,10 @@ def _status(summary: dict, outcomes: list, rule_results) -> str:
     verdict = summary.get("verdict", "NOT_RUN")
     if verdict == "NOT_RUN":
         return "NOT RUN"
-    if outcomes and any(o.get("status") not in ("PASS",) for o in outcomes):
-        if any(o.get("status") == "SKIP" for o in outcomes):
-            return "INCOMPLETE"
-    if outcomes and any(o.get("status") == "FAIL" for o in outcomes):
+    if any(o.get("status") == "FAIL" for o in outcomes):
         return "FAIL"
+    if any(o.get("status") == "SKIP" for o in outcomes):
+        return "INCOMPLETE"
     bad = [r.status for r in (rule_results or []) if r.status in ("FAIL", "ERROR")]
     if verdict == "FAIL" or bad:
         return "FAIL"
@@ -135,7 +135,6 @@ def build_review(
     test_outcomes=None,
 ) -> dict:
     """Review model from run_summary + rule results — plain-English only."""
-    results = summary.get("results", [])
     outcomes = list(test_outcomes or [])
     status = _status(summary, outcomes, rule_results)
 
@@ -153,13 +152,13 @@ def build_review(
         if "e2e" in stages:
             expected = "All declared stage checks produce their expected results"
         else:
-            expected = "; ".join(
-                f"{_stage_label(s)}: {_stage_expected(s)}" for s in stages[:4]
-            ) or "Recorded checks produce their expected results"
+            expected = (
+                "; ".join(f"{_stage_label(s)}: {_stage_expected(s)}" for s in stages[:4])
+                or "Recorded checks produce their expected results"
+            )
         failed = [c for c in checks if c["status"] != "PASS"]
-        evidence = (
-            f"{len(checks)} recorded check(s)"
-            + (f"; {len(failed)} not passed" if failed else "")
+        evidence = f"{len(checks)} recorded check(s)" + (
+            f"; {len(failed)} not passed" if failed else ""
         )
         if outcome.get("status") == "FAIL" and failed:
             first = _reader_detail(failed[0])
@@ -349,7 +348,10 @@ def write_review_pdf(
         story.append(rule_table)
     elif review["requirements"]:
         story.append(
-            P(f"{len(review['requirements'])} workbook rule(s) declared — none ran this run.", small)
+            P(
+                f"{len(review['requirements'])} workbook rule(s) declared — none ran this run.",
+                small,
+            )
         )
 
     if review["cases"]:
