@@ -18,42 +18,58 @@ auditable chain.
 ## Prereqs
 
 - Python 3.11+ (3.12 preferred), `uv` or `pip`
-- A reachable PostgreSQL 16. Local Docker:
-
-  ```bash
-  docker run -d --name recon-db -e POSTGRES_PASSWORD=postgres_local -p 5432:5432 postgres:16-alpine
-  ```
-
+- A reachable PostgreSQL 16 — local Docker works (Step 1 below)
 - The three `wdr_uat_*` databases, schemas, and least-privilege roles.
   Full provisioning DDL is in `.github/workflows/reconciliation.yml` (the
   "Provision phase-1 databases" step) — reuse it for any fresh environment.
   Locally it was applied once via `psql`; the read-only join views are
   (re)created by `scripts/provision_phase2.py` at each stage of the load.
 
-## Setup (< 5 min)
+## Step-by-step run (terminal commands)
+
+From a clean checkout — every command in order, from the repo root.
+Windows Git Bash paths shown; on Linux/macOS use `.venv/bin/` instead of
+`.venv/Scripts/`.
+
+### Step 1 — Start PostgreSQL
 
 ```bash
-uv venv .venv && uv pip install --python .venv/Scripts/python -r requirements.txt
-# or: python -m venv .venv && .venv/Scripts/pip install -r requirements.txt
+docker run -d --name recon-db -e POSTGRES_PASSWORD=postgres_local -p 5432:5432 postgres:16-alpine
 ```
 
-## Credentials (never committed)
+### Step 2 — Create the databases and roles (one time)
 
-Copy `.env.example` to `.env` (git-ignored) and fill in the passwords — the
-library loads it automatically on suite setup:
+Apply the provisioning DDL from `.github/workflows/reconciliation.yml`
+(the "Provision phase-1 databases" step) — it creates `wdr_uat_active_stage`,
+`wdr_uat_integration`, `wdr_uat_consumption`, the schemas, and the
+`recon_ro` / `recon_rw` roles. Save that step's SQL to a file and run:
 
 ```bash
-cp .env.example .env   # Windows: copy .env.example .env
+docker exec -i recon-db psql -U postgres < phase1_provision.sql
 ```
 
-Variables already set in the environment (e.g. CI secrets) override `.env`:
+### Step 3 — Python environment
+
+```bash
+python -m venv .venv
+.venv/Scripts/pip install -r requirements.txt
+```
+
+(`uv venv .venv && uv pip install --python .venv/Scripts/python -r requirements.txt`
+works too.)
+
+### Step 4 — Credentials (never committed)
+
+```bash
+cp .env.example .env        # then fill in RECON_RW_PASSWORD / RECON_RO_PASSWORD
+```
+
+Variables already exported in the shell override `.env`:
 
 ```bash
 export RECON_RO_USER=recon_ro   RECON_RO_PASSWORD=...
 export RECON_RW_USER=recon_rw   RECON_RW_PASSWORD=...
 ```
-
-Windows PowerShell: `$env:RECON_RO_USER="recon_ro"` etc.
 
 Roles: `recon_ro` is SELECT-only and serves all verification; `recon_rw`
 is the fixture loader only. The suites never open a write connection —
@@ -61,37 +77,86 @@ is the fixture loader only. The suites never open a write connection —
 can populate the synthetic targets out-of-band, standing in for the bank's
 ETL.
 
-## Full chain (generate → load → verify)
+### Step 5 — Generate workbooks and CSV fixtures
+
+Deterministic output from the client spec `data/trailer/Phase1.xlsx`:
 
 ```bash
-# 1. Regenerate artifacts (workbooks from spec, deterministic CSVs, trailers)
 .venv/Scripts/python scripts/generate_phase1_workbooks.py
 .venv/Scripts/python scripts/generate_phase1_csv.py
+```
 
-# 2. Load each hop's target (RW role — the "ETL" for the demo)
-.venv/Scripts/python scripts/load_phase2_hop.py --hop 1     # CSV -> signature
+### Step 6 — Load the demo targets (the "ETL" stand-in, RW role)
+
+Order matters — each hop's read-only join view depends on the previous hop:
+
+```bash
+.venv/Scripts/python scripts/load_phase2_hop.py --hop 1          # CSV -> signature
 .venv/Scripts/python scripts/provision_phase2.py --views stage   # join view for hop 2
-.venv/Scripts/python scripts/load_phase2_hop.py --hop 2     # signature -> wdr_il_core
+.venv/Scripts/python scripts/load_phase2_hop.py --hop 2          # signature -> wdr_il_core
 .venv/Scripts/python scripts/provision_phase2.py --views il      # join view for hop 3
-.venv/Scripts/python scripts/load_phase2_hop.py --hop 3     # wdr_il_core -> wdr_cl_fds_core
+.venv/Scripts/python scripts/load_phase2_hop.py --hop 3          # wdr_il_core -> wdr_cl_fds_core
+```
 
-# 3. Verify each hop (RO role only)
+### Step 7 — Verify each hop (RO role only)
+
+```bash
 .venv/Scripts/robot -d results/phase1/hop1 \
   -v MIGRATION_ENV:config/environments/phase1_hop1_csv_stage.yaml \
   -v MAPPING_WORKBOOK:data/mapping/phase1_hop1_csv_to_stage.xlsx tests/migration
+
 .venv/Scripts/robot -d results/phase1/hop2 \
   -v MIGRATION_ENV:config/environments/phase1_hop2_stage_il.yaml \
   -v MAPPING_WORKBOOK:data/mapping/phase1_hop2_stage_to_il.xlsx tests/migration
+
 .venv/Scripts/robot -d results/phase1/hop3 \
   -v MIGRATION_ENV:config/environments/phase1_hop3_il_consumption.yaml \
   -v MAPPING_WORKBOOK:data/mapping/phase1_hop3_il_to_consumption.xlsx tests/migration
+```
 
-# 4. Complex business rules — opt-in, hop-1 scope only
+Expected: each hop prints `Migration | PASS | 14 tests, 12 passed, 2 skipped`
+(the 2 skips are the rules suite — `RULES_WORKBOOK` not set by default).
+
+### Step 8 — Optional: business-rules suite (hop-1 scope only)
+
+```bash
 .venv/Scripts/robot -d results/phase1/hop1_rules \
   -v MIGRATION_ENV:config/environments/phase1_hop1_csv_stage.yaml \
   -v RULES_WORKBOOK:data/rules/phase1_complex_rules.xlsx \
   tests/migration/10_business_rules.robot
 ```
+
+### Step 9 — Optional: negative-path proof (expected FAIL)
+
+```bash
+.venv/Scripts/robot -d results/phase1/hop1_negative \
+  -v MIGRATION_ENV:config/environments/phase1_hop1_csv_stage_negative.yaml \
+  -v MAPPING_WORKBOOK:data/mapping/phase1_hop1_csv_to_stage.xlsx tests/migration
+```
+
+### Step 10 — Optional: quality gates
+
+```bash
+.venv/Scripts/python -m unittest discover -s tests/migration -p "test_*.py" -v
+.venv/Scripts/pre-commit run --all-files
+```
+
+### Step 11 — Open the reports
+
+`results/phase1/hopN/` after each run:
+
+| Artifact | What it is |
+|---|---|
+| `migration_report.pdf` | Reviewer report — verdict, mapping workbook, test cases, all checks, column profile, file comparison, failures with record-level proof |
+| `migration_summary.xlsx` | Audit workbook — Run Info, Stage Results, Field Mappings, Column Profile, Diffs & Violations, Insights |
+| `migration_report.md` | Same evidence as a readable markdown report |
+| `run_summary.json` | Machine-readable verdict, coverage, per-stage evidence |
+| `report.html` / `log.html` / `output.xml` | Robot execution evidence |
+| `test_evidence_map.json` | Links every Robot test to the evidence rows it produced |
+
+Every Robot report embeds suite metadata — environment, hop,
+`snapshot_id`, workbook sha256, git commit — so an artifact always states
+what it verified.
 
 The rules workbook is env-scoped: its target tables must exist in the
 env's target schema. `phase1_complex_rules.xlsx` targets stage-schema
@@ -99,16 +164,6 @@ objects (`cup00301`, `cup01201`, `v_dim_customer_src`), so supply it only
 on hop-1 runs. On a mismatched env `Check Rules Apply To Environment`
 skips the rules test with the missing-table reason; a *partial* match is
 not skipped — the genuinely broken rule still reports its own ERROR.
-
-Evidence per hop lands in `results/phase1/hopN/`: `report.html`,
-`log.html`, `migration_report.md`, `migration_summary.xlsx`,
-`migration_report.pdf` (readable report — test cases, every recorded
-check, failure reasons with bounded proof samples),
-`run_summary.json`, `test_evidence_map.json` (links every Robot test to
-the evidence rows it produced), and `xunit.xml` when run with `--xunit`.
-Every Robot report embeds suite metadata — environment, hop,
-`snapshot_id`, workbook sha256, git commit — so an artifact always states
-what it verified.
 
 ## Re-run failed tests, merged pipeline report
 
