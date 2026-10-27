@@ -64,13 +64,19 @@ class BuildReportTests(unittest.TestCase):
         self.assertEqual(report["status"], "FAIL")
 
     def test_rule_error_means_fail(self):
-        rule = MagicMock(test_id="R1", rule_type="NULL_CHECK", severity="HIGH")
+        rule = MagicMock(
+            test_id="R1",
+            rule_type="NULL_CHECK",
+            severity="HIGH",
+            description="customer number must be unique",
+        )
         result = MagicMock(rule=rule, status="ERROR", violations=[], error="boom")
         report = build_report(
             _summary(), rule_results=[result], test_outcomes=[_outcome("T", "PASS")]
         )
         self.assertEqual(report["status"], "FAIL")
         self.assertEqual(report["rule_rows"][0]["test_id"], "R1")
+        self.assertEqual(report["rule_rows"][0]["description"], "customer number must be unique")
 
     def test_stage_rows_and_failures_with_proof(self):
         report = build_report(_summary(verdict="FAIL", results=[_failed_recon()]))
@@ -126,7 +132,7 @@ class BuildReportTests(unittest.TestCase):
         self.assertEqual(len(report["stage_rows"]), 1)
         self.assertEqual(len(report["failures"]), 1)
 
-    def test_file_comparison_collected_once(self):
+    def test_file_comparison_not_in_report(self):
         row = {
             "mapping": "m1",
             "stage": "negative",
@@ -141,12 +147,8 @@ class BuildReportTests(unittest.TestCase):
                 }
             ],
         }
-        report = build_report(_summary(results=[row, dict(row)]))
-        fc = report["file_comparison"]
-        self.assertEqual(len(fc), 1)
-        self.assertEqual(fc[0]["mapping"], "m1")
-        self.assertEqual(fc[0]["source_rows"], 200)
-        self.assertEqual(fc[0]["row_difference"], 0)
+        report = build_report(_summary(results=[row]))
+        self.assertNotIn("file_comparison", report)
 
 
 class WritePdfTests(unittest.TestCase):
@@ -183,6 +185,7 @@ class WritePdfTests(unittest.TestCase):
                         "type": "string",
                         "nullable": "no",
                         "transformation": "concat('CBS', 'CUST', cubk, cunbr)",
+                        "description": "Customer key built as 'CBSCUST' + bank + customer number",
                     },
                     {
                         "source": "load_date",

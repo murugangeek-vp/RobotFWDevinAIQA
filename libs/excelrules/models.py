@@ -50,6 +50,7 @@ class Rule:
     where: str | None = None  # optional SQL WHERE fragment on the target fetch
     key_column: str | None = None  # "src=target" when names differ, else shared name
     enabled: bool = True
+    description: str = ""  # plain-English statement of the business rule
 
     def key_pair(self) -> "tuple[str | None, str | None]":
         """key_column -> (source_key, target_key); 'a=b' splits, plain = same."""

@@ -142,6 +142,9 @@ def load_tables(path: str) -> "list[TableMapping]":
                 target_table=_need(row, "target table", ctx),
                 keys=keys,
                 where=where,
+                source_tables=[
+                    s.strip() for s in (_opt(row, "source tables") or "").split(",") if s.strip()
+                ],
                 enabled=_truth(row.get("enabled")),
                 recon_mode=mode,
                 batch_size=_opt_int(row, "batch size", ctx),
@@ -180,6 +183,7 @@ def load_fields(path: str, tables: "list[TableMapping]") -> None:
                 max_length=_opt_int(row, "max length", ctx),
                 scale=_opt_int(row, "scale", ctx),
                 transformation=_opt(row, "transformation"),
+                description=_opt(row, "description"),
                 pii=(_truth(row.get("pii")) if row.get("pii") not in (None, "") else False),
                 enabled=_truth(row.get("enabled")),
             )

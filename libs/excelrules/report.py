@@ -84,6 +84,7 @@ def write_summary(
             "Violations",
             "Sample",
             "Error",
+            "Description",
         ]
     )
     _bold_header(ws)
@@ -106,12 +107,13 @@ def write_summary(
                 len(r.violations),
                 sample,
                 r.error or "",
+                rule.description or "",
             ]
         )
         status_cell = ws.cell(row=ws.max_row, column=7)
         status_cell.fill = PatternFill("solid", fgColor=_FILL.get(r.status, "FFFFFF"))
 
-    for i, width in enumerate([10, 16, 50, 30, 60, 10, 8, 11, 70, 40], start=1):
+    for i, width in enumerate([10, 16, 50, 30, 60, 10, 8, 11, 70, 40, 60], start=1):
         ws.column_dimensions[get_column_letter(i)].width = width
     ws.freeze_panes = "A2"
 

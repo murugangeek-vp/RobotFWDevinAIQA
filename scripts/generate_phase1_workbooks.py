@@ -64,6 +64,7 @@ TABLES_HEADERS = [
     "Recon Mode",
     "Batch Size",
     "Enabled",
+    "Source Tables",
 ]
 FIELDMAP_HEADERS = [
     "Mapping ID",
@@ -76,6 +77,7 @@ FIELDMAP_HEADERS = [
     "Transformation",
     "PII",
     "Enabled",
+    "Description",
 ]
 MAPPING_HEADERS = ["Mapping Name", "Code", "Value"]
 CONTROLS_HEADERS = [
@@ -96,14 +98,38 @@ RELATIONS_HEADERS = [
 ]
 
 
-def _fm(mid, src, tgt, ttype, nullable, maxlen="", scale="", transform="", pii="no"):
-    return [mid, src, tgt, ttype, nullable, maxlen, scale, transform, pii, "yes"]
+def _fm(mid, src, tgt, ttype, nullable, maxlen="", scale="", transform="", pii="no", desc=""):
+    return [mid, src, tgt, ttype, nullable, maxlen, scale, transform, pii, "yes", desc]
 
 
 # ---------------------------------------------------------------- hop 1
 HOP1_TABLES = [
-    ["csv_cup00301", "csv", "cup00301", "signature", "cup00301", "cunbr", "", "full", "", "yes"],
-    ["csv_cup01201", "csv", "cup01201", "signature", "cup01201", "cunbr", "", "full", "", "yes"],
+    [
+        "csv_cup00301",
+        "csv",
+        "cup00301",
+        "signature",
+        "cup00301",
+        "cunbr",
+        "",
+        "full",
+        "",
+        "yes",
+        "",
+    ],
+    [
+        "csv_cup01201",
+        "csv",
+        "cup01201",
+        "signature",
+        "cup01201",
+        "cunbr",
+        "",
+        "full",
+        "",
+        "yes",
+        "",
+    ],
     [
         "csv_dim_reference",
         "csv",
@@ -115,37 +141,132 @@ HOP1_TABLES = [
         "full",
         "",
         "yes",
+        "",
     ],
 ]
 
 HOP1_FIELDMAP = [
     # cup00301 — customer master extract
-    _fm("csv_cup00301", "cubk", "cubk", "integer", "no"),
-    _fm("csv_cup00301", "cunbr", "cunbr", "string", "no", "20"),
-    _fm("csv_cup00301", "cupers", "cupers", "string", "no", "1"),
-    _fm("csv_cup00301", "cucncd", "cucncd", "integer", "no"),
-    _fm("csv_cup00301", "cusic", "cusic", "integer", "yes"),
-    _fm("csv_cup00301", "cuna1", "cuna1", "string", "no", "40", "", "", "yes"),
-    _fm("csv_cup00301", "cucfnm", "cucfnm", "string", "yes", "60", "", "", "yes"),
-    _fm("csv_cup00301", "cuclnm", "cuclnm", "string", "yes", "60", "", "", "yes"),
-    _fm("csv_cup00301", "cussnr", "cussnr", "string", "yes", "11", "", "", "yes"),
-    _fm("csv_cup00301", "cussty", "cussty", "string", "yes", "1"),
-    _fm("csv_cup00301", "cujbdt", "cujbdt", "string", "yes", "8"),
-    _fm("csv_cup00301", "cuadl1", "cuadl1", "string", "yes", "80", "", "", "yes"),
-    _fm("csv_cup00301", "cuadl2", "cuadl2", "string", "yes", "80", "", "", "yes"),
-    _fm("csv_cup00301", "cuadct", "cuadct", "string", "yes", "60", "", "", "yes"),
-    _fm("csv_cup00301", "cuadst", "cuadst", "string", "yes", "30", "", "", "yes"),
-    _fm("csv_cup00301", "cuadpc", "cuadpc", "string", "yes", "15", "", "", "yes"),
-    _fm("csv_cup00301", "load_date", "load_date", "date", "no"),
+    _fm("csv_cup00301", "cubk", "cubk", "integer", "no", desc="Bank code - loaded unchanged"),
+    _fm(
+        "csv_cup00301",
+        "cunbr",
+        "cunbr",
+        "string",
+        "no",
+        "20",
+        desc="Customer number - the record key",
+    ),
+    _fm("csv_cup00301", "cupers", "cupers", "string", "no", "1", desc="Person/organization flag"),
+    _fm("csv_cup00301", "cucncd", "cucncd", "integer", "no", desc="Country code"),
+    _fm("csv_cup00301", "cusic", "cusic", "integer", "yes", desc="NAICS industry code"),
+    _fm(
+        "csv_cup00301", "cuna1", "cuna1", "string", "no", "40", "", "", "yes", "Customer name (PII)"
+    ),
+    _fm(
+        "csv_cup00301", "cucfnm", "cucfnm", "string", "yes", "60", "", "", "yes", "First name (PII)"
+    ),
+    _fm(
+        "csv_cup00301", "cuclnm", "cuclnm", "string", "yes", "60", "", "", "yes", "Last name (PII)"
+    ),
+    _fm(
+        "csv_cup00301",
+        "cussnr",
+        "cussnr",
+        "string",
+        "yes",
+        "11",
+        "",
+        "",
+        "yes",
+        "Tax id / SSN (PII)",
+    ),
+    _fm("csv_cup00301", "cussty", "cussty", "string", "yes", "1", desc="Tax id type code"),
+    _fm(
+        "csv_cup00301", "cujbdt", "cujbdt", "string", "yes", "8", desc="Birth/job date as YYYYMMDD"
+    ),
+    _fm(
+        "csv_cup00301",
+        "cuadl1",
+        "cuadl1",
+        "string",
+        "yes",
+        "80",
+        "",
+        "",
+        "yes",
+        "Address line 1 (PII)",
+    ),
+    _fm(
+        "csv_cup00301",
+        "cuadl2",
+        "cuadl2",
+        "string",
+        "yes",
+        "80",
+        "",
+        "",
+        "yes",
+        "Address line 2 (PII)",
+    ),
+    _fm("csv_cup00301", "cuadct", "cuadct", "string", "yes", "60", "", "", "yes", "City (PII)"),
+    _fm(
+        "csv_cup00301", "cuadst", "cuadst", "string", "yes", "30", "", "", "yes", "State code (PII)"
+    ),
+    _fm(
+        "csv_cup00301",
+        "cuadpc",
+        "cuadpc",
+        "string",
+        "yes",
+        "15",
+        "",
+        "",
+        "yes",
+        "Postal code (PII)",
+    ),
+    _fm("csv_cup00301", "load_date", "load_date", "date", "no", desc="Extract load date"),
     # cup01201 — legal entity extract
-    _fm("csv_cup01201", "cunbr", "cunbr", "string", "no", "20"),
-    _fm("csv_cup01201", "culegenty", "culegenty", "string", "no", "50"),
-    _fm("csv_cup01201", "load_date", "load_date", "date", "no"),
+    _fm(
+        "csv_cup01201",
+        "cunbr",
+        "cunbr",
+        "string",
+        "no",
+        "20",
+        desc="Customer number - links to cup00301",
+    ),
+    _fm("csv_cup01201", "culegenty", "culegenty", "string", "no", "50", desc="Legal entity code"),
+    _fm("csv_cup01201", "load_date", "load_date", "date", "no", desc="Extract load date"),
     # dim_reference — reference codes extract
-    _fm("csv_dim_reference", "attribute_cd", "attribute_cd", "string", "no", "50"),
-    _fm("csv_dim_reference", "attribute_value_desc", "attribute_value_desc", "string", "no", "256"),
-    _fm("csv_dim_reference", "load_date", "load_date", "date", "no"),
-    _fm("csv_dim_reference", "attribute_map_cd", "attribute_map_cd", "string", "yes", "50"),
+    _fm(
+        "csv_dim_reference",
+        "attribute_cd",
+        "attribute_cd",
+        "string",
+        "no",
+        "50",
+        desc="Reference attribute code (key)",
+    ),
+    _fm(
+        "csv_dim_reference",
+        "attribute_value_desc",
+        "attribute_value_desc",
+        "string",
+        "no",
+        "256",
+        desc="Reference value description",
+    ),
+    _fm("csv_dim_reference", "load_date", "load_date", "date", "no", desc="Extract load date"),
+    _fm(
+        "csv_dim_reference",
+        "attribute_map_cd",
+        "attribute_map_cd",
+        "string",
+        "yes",
+        "50",
+        desc="Lookup key used by category joins",
+    ),
 ]
 
 HOP1_CONTROLS = [
@@ -194,6 +315,7 @@ HOP2_TABLES = [
         "full",
         "",
         "yes",
+        "cup00301, cup01201, dim_reference",
     ],
     [
         "dim_customer_address_migration",
@@ -206,6 +328,7 @@ HOP2_TABLES = [
         "full",
         "",
         "yes",
+        "",
     ],
     [
         "dim_reference_migration",
@@ -218,6 +341,7 @@ HOP2_TABLES = [
         "full",
         "",
         "yes",
+        "",
     ],
 ]
 
@@ -232,8 +356,16 @@ HOP2_FIELDMAP = [
         "60",
         "",
         "concat('CBS', 'CUST', cubk, cunbr)",
+        desc="Customer key built as 'CBSCUST' + bank code + customer number",
     ),
-    _fm("dim_customer_migration", "load_date", "load_date", "date", "no"),
+    _fm(
+        "dim_customer_migration",
+        "load_date",
+        "load_date",
+        "date",
+        "no",
+        desc="Extract load date - copied unchanged",
+    ),
     _fm(
         "dim_customer_migration",
         "cupers",
@@ -243,8 +375,17 @@ HOP2_FIELDMAP = [
         "1",
         "",
         "casewhen(trim(cupers), 'N', 'C', trim(cupers))",
+        desc="Person flag: 'N' becomes 'C' (commercial); other values pass through",
     ),
-    _fm("dim_customer_migration", "culegenty", "legal_entity_cd", "string", "yes", "50"),
+    _fm(
+        "dim_customer_migration",
+        "culegenty",
+        "legal_entity_cd",
+        "string",
+        "yes",
+        "50",
+        desc="Legal entity code - copied unchanged",
+    ),
     _fm(
         "dim_customer_migration",
         "cubk",
@@ -254,6 +395,7 @@ HOP2_FIELDMAP = [
         "3",
         "",
         "lpad(trim(cubk), 3, '0')",
+        desc="Bank code left-padded to 3 digits",
     ),
     _fm(
         "dim_customer_migration",
@@ -264,6 +406,7 @@ HOP2_FIELDMAP = [
         "60",
         "",
         "literal('CBS')",
+        desc="Always 'CBS' - the source system identifier",
     ),
     _fm(
         "dim_customer_migration",
@@ -274,6 +417,7 @@ HOP2_FIELDMAP = [
         "6",
         "",
         "lpad(cusic, 6, '0')",
+        desc="Industry code left-padded to 6 digits",
     ),
     _fm(
         "dim_customer_migration",
@@ -285,6 +429,7 @@ HOP2_FIELDMAP = [
         "",
         "trim(cuna1)",
         "yes",
+        "Customer name trimmed - becomes the full name",
     ),
     _fm(
         "dim_customer_migration",
@@ -296,6 +441,7 @@ HOP2_FIELDMAP = [
         "",
         "casewhen(cupers, 'P', cucfnm, None)",
         "yes",
+        "First name kept only for persons (P); organizations stay empty",
     ),
     _fm(
         "dim_customer_migration",
@@ -307,6 +453,7 @@ HOP2_FIELDMAP = [
         "",
         "lpad(cussnr, 9, '0')",
         "yes",
+        "Tax id left-padded to 9 digits",
     ),
     _fm(
         "dim_customer_migration",
@@ -317,6 +464,7 @@ HOP2_FIELDMAP = [
         "1",
         "",
         "casewhen(ifnull(cussty, ''), '', 'S', cussty)",
+        desc="Empty tax-id type defaults to 'S' (Social Security)",
     ),
     _fm(
         "dim_customer_migration",
@@ -328,6 +476,7 @@ HOP2_FIELDMAP = [
         "",
         "date_fmt(cujbdt, '%Y-%m-%d', '%Y%m%d')",
         "yes",
+        "Birth date converted from YYYYMMDD to YYYY-MM-DD",
     ),
     _fm(
         "dim_customer_migration",
@@ -339,6 +488,7 @@ HOP2_FIELDMAP = [
         "",
         "casewhen(cupers, 'P', cuclnm, None)",
         "yes",
+        "Last name kept only for persons (P); organizations stay empty",
     ),
     _fm(
         "dim_customer_migration",
@@ -347,6 +497,7 @@ HOP2_FIELDMAP = [
         "string",
         "yes",
         "256",
+        desc="Tax-id type description from the reference lookup",
     ),
     # cup00301 -> dim_customer_address (spec row 6 + carried address columns)
     _fm(
@@ -358,6 +509,7 @@ HOP2_FIELDMAP = [
         "60",
         "",
         "concat('CBS', 'CUST', cubk, cunbr)",
+        desc="Customer key built as 'CBSCUST' + bank code + customer number",
     ),
     _fm(
         "dim_customer_address_migration",
@@ -368,6 +520,7 @@ HOP2_FIELDMAP = [
         "5",
         "",
         "lpad(cucncd, 5, '0')",
+        desc="Country code left-padded to 5 digits",
     ),
     _fm(
         "dim_customer_address_migration",
@@ -379,6 +532,7 @@ HOP2_FIELDMAP = [
         "",
         "trim(cuadl1)",
         "yes",
+        "Address line 1, trimmed",
     ),
     _fm(
         "dim_customer_address_migration",
@@ -390,13 +544,56 @@ HOP2_FIELDMAP = [
         "",
         "trim(cuadl2)",
         "yes",
+        "Address line 2, trimmed",
     ),
-    _fm("dim_customer_address_migration", "cuadct", "city", "string", "yes", "60", "", "", "yes"),
-    _fm("dim_customer_address_migration", "cuadst", "state_cd", "string", "yes", "30"),
-    _fm("dim_customer_address_migration", "cuadpc", "postal_cd", "string", "yes", "15"),
-    _fm("dim_customer_address_migration", "load_date", "load_date", "date", "no"),
+    _fm(
+        "dim_customer_address_migration",
+        "cuadct",
+        "city",
+        "string",
+        "yes",
+        "60",
+        "",
+        "",
+        "yes",
+        "City - copied unchanged",
+    ),
+    _fm(
+        "dim_customer_address_migration",
+        "cuadst",
+        "state_cd",
+        "string",
+        "yes",
+        "30",
+        desc="State code - copied unchanged",
+    ),
+    _fm(
+        "dim_customer_address_migration",
+        "cuadpc",
+        "postal_cd",
+        "string",
+        "yes",
+        "15",
+        desc="Postal code - copied unchanged",
+    ),
+    _fm(
+        "dim_customer_address_migration",
+        "load_date",
+        "load_date",
+        "date",
+        "no",
+        desc="Extract load date - copied unchanged",
+    ),
     # dim_reference -> dim_reference (reference data lands in IL unchanged)
-    _fm("dim_reference_migration", "attribute_cd", "attribute_cd", "string", "no", "50"),
+    _fm(
+        "dim_reference_migration",
+        "attribute_cd",
+        "attribute_cd",
+        "string",
+        "no",
+        "50",
+        desc="Reference attribute code - copied unchanged",
+    ),
     _fm(
         "dim_reference_migration",
         "attribute_value_desc",
@@ -404,8 +601,16 @@ HOP2_FIELDMAP = [
         "string",
         "no",
         "256",
+        desc="Reference value description - copied unchanged",
     ),
-    _fm("dim_reference_migration", "load_date", "load_date", "date", "no"),
+    _fm(
+        "dim_reference_migration",
+        "load_date",
+        "load_date",
+        "date",
+        "no",
+        desc="Extract load date - copied unchanged",
+    ),
     _fm(
         "dim_reference_migration",
         "attribute_map_cd",
@@ -413,6 +618,7 @@ HOP2_FIELDMAP = [
         "string",
         "yes",
         "50",
+        desc="Category lookup key - copied unchanged",
     ),
 ]
 
@@ -479,14 +685,28 @@ HOP3_TABLES = [
         "full",
         "",
         "yes",
+        "dim_customer, dim_customer_address, dim_reference",
     ],
 ]
 
 HOP3_FIELDMAP = [
     _fm(
-        "cl_party_snpsht_migration", "involved_party_key", "party_identifier", "string", "no", "60"
+        "cl_party_snpsht_migration",
+        "involved_party_key",
+        "party_identifier",
+        "string",
+        "no",
+        "60",
+        desc="Customer key - copied unchanged as the party identifier",
     ),
-    _fm("cl_party_snpsht_migration", "load_date", "as_of_date", "date", "no"),
+    _fm(
+        "cl_party_snpsht_migration",
+        "load_date",
+        "as_of_date",
+        "date",
+        "no",
+        desc="Snapshot as-of date",
+    ),
     _fm(
         "cl_party_snpsht_migration",
         "customer_type_cd",
@@ -497,6 +717,7 @@ HOP3_FIELDMAP = [
         "",
         "casewhen(customer_type_cd, 'P', 'Personal', 'N', 'Non-Personal', "
         "'C', 'Commercial', 'B', 'Business', 'UNSPECIFIED')",
+        desc="Type code expanded: P=Personal, N=Non-Personal, C=Commercial, B=Business",
     ),
     _fm(
         "cl_party_snpsht_migration",
@@ -508,6 +729,7 @@ HOP3_FIELDMAP = [
         "",
         "casewhen(regexp_match(address_country_cd, '^[A-Za-z]{2}$'), 'True', "
         "address_country_cd, 'US')",
+        desc="Two-letter country code kept; anything else defaults to 'US'",
     ),
     _fm(
         "cl_party_snpsht_migration",
@@ -516,9 +738,26 @@ HOP3_FIELDMAP = [
         "string",
         "yes",
         "20",
+        desc="Legal entity code - copied unchanged",
     ),
-    _fm("cl_party_snpsht_migration", "bank_num", "bank_num", "string", "no", "50"),
-    _fm("cl_party_snpsht_migration", "appl_key", "data_source_code", "string", "no", "20"),
+    _fm(
+        "cl_party_snpsht_migration",
+        "bank_num",
+        "bank_num",
+        "string",
+        "no",
+        "50",
+        desc="Bank code - copied unchanged",
+    ),
+    _fm(
+        "cl_party_snpsht_migration",
+        "appl_key",
+        "data_source_code",
+        "string",
+        "no",
+        "20",
+        desc="Source system code - copied unchanged",
+    ),
     _fm(
         "cl_party_snpsht_migration",
         "appl_key",
@@ -528,6 +767,7 @@ HOP3_FIELDMAP = [
         "50",
         "",
         "casewhen(appl_key, 'PAR', 'BROKER-DEALER', naics_cd)",
+        desc="'PAR' becomes 'BROKER-DEALER'; otherwise the NAICS code",
     ),
     # SPEC GAP (row 11): "Complex Logic - details shared in next tab" — the
     # tab does not exist. Sentinel keeps the column verifiably present and
@@ -541,6 +781,7 @@ HOP3_FIELDMAP = [
         "60",
         "",
         "literal('PENDING_SPEC')",
+        desc="SPEC GAP - placeholder until the client defines party type logic",
     ),
     _fm(
         "cl_party_snpsht_migration",
@@ -552,6 +793,7 @@ HOP3_FIELDMAP = [
         "",
         "",
         "yes",
+        "Full name - copied unchanged (PII)",
     ),
     _fm(
         "cl_party_snpsht_migration",
@@ -563,8 +805,17 @@ HOP3_FIELDMAP = [
         "",
         "",
         "yes",
+        "First name - copied unchanged (PII)",
     ),
-    _fm("cl_party_snpsht_migration", "last_nm", "party_last_name", "string", "yes", "255"),
+    _fm(
+        "cl_party_snpsht_migration",
+        "last_nm",
+        "party_last_name",
+        "string",
+        "yes",
+        "255",
+        desc="Last name - copied unchanged",
+    ),
     _fm(
         "cl_party_snpsht_migration",
         "tax_id_number",
@@ -575,6 +826,7 @@ HOP3_FIELDMAP = [
         "",
         "",
         "yes",
+        "Tax id - copied unchanged (PII)",
     ),
     _fm(
         "cl_party_snpsht_migration",
@@ -585,8 +837,20 @@ HOP3_FIELDMAP = [
         "1",
         "",
         "substr(tax_id_number_type_cd, 0, 1)",
+        desc="First character of the tax-id type code",
     ),
-    _fm("cl_party_snpsht_migration", "birth_dt", "date_of_birth", "date", "yes", "", "", "", "yes"),
+    _fm(
+        "cl_party_snpsht_migration",
+        "birth_dt",
+        "date_of_birth",
+        "date",
+        "yes",
+        "",
+        "",
+        "",
+        "yes",
+        "Birth date - copied unchanged (PII)",
+    ),
     _fm(
         "cl_party_snpsht_migration",
         "tax_id_number_type_desc",
@@ -594,6 +858,7 @@ HOP3_FIELDMAP = [
         "string",
         "yes",
         "255",
+        desc="Tax-id type description - copied unchanged",
     ),
     # CUSTOMER_CATEGORY (client CASE): DIM_REFERENCE lookup on naics_cd wins;
     # else searched CASE on customer_type_cd + full_nm markers. NULL for
@@ -609,6 +874,8 @@ HOP3_FIELDMAP = [
         "50",
         "",
         CUSTOMER_CATEGORY_TRANSFORM,
+        desc="Client CASE: NAICS lookup in dim_reference wins; else name/type "
+        "markers classify the category; NULL for unmatched C/B names",
     ),
 ]
 

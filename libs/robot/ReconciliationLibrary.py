@@ -832,5 +832,26 @@ class ReconciliationLibrary:
             "git_commit": os.environ.get("GITHUB_SHA", "") or self._git_head(),
         }
         written = report.write_summary(self.rule_results, path, meta=meta)
+        # Sidecar so the migration PDF can include the rules section even from
+        # later suite teardowns — Robot imports this library by file path, so
+        # its instance is not reachable from other suites' namespaces.
+        sidecar = Path(written).with_name("rules_results.json")
+        sidecar.write_text(
+            json.dumps(
+                [
+                    {
+                        "test_id": r.rule.test_id,
+                        "rule_type": r.rule.rule_type.replace("_", " ").title(),
+                        "status": r.status,
+                        "violations": len(r.violations),
+                        "error": r.error or "",
+                        "description": r.rule.description or "",
+                    }
+                    for r in self.rule_results
+                ],
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
         logger.info(f"rules summary written to {written}")
         return str(written)

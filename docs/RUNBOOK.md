@@ -147,7 +147,7 @@ Expected: each hop prints `Migration | PASS | 14 tests, 12 passed, 2 skipped`
 
 | Artifact | What it is |
 |---|---|
-| `migration_report.pdf` | Reviewer report — verdict, mapping workbook, test cases, all checks, column profile, file comparison, failures with record-level proof |
+| `migration_report.pdf` | Reviewer report — verdict, mapping workbook, test cases, all checks, column profile, failures with record-level proof |
 | `migration_summary.xlsx` | Audit workbook — Run Info, Stage Results, Field Mappings, Column Profile, Diffs & Violations, Insights |
 | `migration_report.md` | Same evidence as a readable markdown report |
 | `run_summary.json` | Machine-readable verdict, coverage, per-stage evidence |

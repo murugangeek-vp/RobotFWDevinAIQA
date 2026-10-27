@@ -42,6 +42,7 @@ The workbooks are generated from the client spec
 | Recon Mode | no | `full` (default) or `hash` (SHA-256 per key — large tables) |
 | Batch Size | no | rows per fetch/sort batch (default from env `run.batch_size`) |
 | Enabled | yes | `yes`/`no` — `no` rows parse but are never selectable |
+| Source Tables | no | comma list of base tables when Source Table is a view — shown in `migration_report.pdf` so reviewers see the real source tables |
 
 ### `FieldMap` — one row per target field
 
@@ -56,6 +57,7 @@ The workbooks are generated from the client spec
 | Scale | no | numeric scale for `decimal` |
 | Transformation | no | engine expression (below); empty = direct rename |
 | Enabled | yes | `yes`/`no` |
+| Description | no | plain-English meaning of the mapping for reviewers — rendered next to the transformation in `migration_report.pdf`, the `Field Mappings` sheet and `migration_report.md` |
 
 Every key column must have an enabled FieldMap row. Duplicate target
 columns, orphan Mapping IDs and unknown types all fail closed.

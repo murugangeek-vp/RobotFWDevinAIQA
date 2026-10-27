@@ -29,7 +29,11 @@ broken rule still ERRORs — never silently passes.
 
 1. One row on the **Rules** sheet: Test ID, Source Table(s), Source
    Column(s), Target Table/Column, Rule Type, Transformation Logic,
-   Expected, Severity, Where Clause, Key Column, Enabled.
+   Expected, Severity, Where Clause, Key Column, Enabled, and an optional
+   **Description** — plain-English meaning of the rule for reviewers
+   (e.g. "customer number must be unique across the landed customer
+   table"); rendered in the PDF Business rules section and
+   `business_rules_summary.xlsx`.
 2. Run a suite that calls `Run Business Rules Validation` and check the
    rules summary workbook written under `results/`.
 

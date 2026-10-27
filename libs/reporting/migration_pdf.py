@@ -9,6 +9,7 @@ the evidence behind it — without opening the Excel workbook.
 """
 
 import contextlib
+import json
 from pathlib import Path
 
 from reportlab.lib import colors
@@ -106,10 +107,10 @@ def _status(summary: dict, outcomes: list, rule_results) -> str:
         return "FAIL"
     if any(o.get("status") == "SKIP" for o in outcomes):
         return "INCOMPLETE"
-    bad = [r.status for r in (rule_results or []) if r.status in ("FAIL", "ERROR")]
-    if verdict == "FAIL" or bad:
+    rule_statuses = [r["status"] if isinstance(r, dict) else r.status for r in (rule_results or [])]
+    if verdict == "FAIL" or any(s in ("FAIL", "ERROR") for s in rule_statuses):
         return "FAIL"
-    if any(r.status == "WARN" for r in (rule_results or [])):
+    if any(s == "WARN" for s in rule_statuses):
         return "REVIEW"
     if summary.get("coverage") != "COMPLETE":
         return "INCOMPLETE"
@@ -300,18 +301,6 @@ def build_report(summary: dict, rule_results=None, test_outcomes=None) -> dict:
             }
         )
 
-    seen_fc = set()
-    file_comparison = []
-    for r in results:
-        if r.get("stage") != "negative":
-            continue
-        for fc in r.get("file_comparison") or []:
-            k = (r.get("mapping"), fc.get("variant"))
-            if k in seen_fc:
-                continue
-            seen_fc.add(k)
-            file_comparison.append({"mapping": r.get("mapping", ""), **fc})
-
     seen_prof = set()
     profile_rows = []
     for r in results:
@@ -345,15 +334,23 @@ def build_report(summary: dict, rule_results=None, test_outcomes=None) -> dict:
         "skipped": [_case_name(o) for o in outcomes if o.get("status") == "SKIP"],
         "stage_rows": stage_rows,
         "failures": failures,
-        "file_comparison": file_comparison,
         "profile_rows": profile_rows,
         "rule_rows": [
             {
-                "test_id": r.rule.test_id,
-                "rule_type": r.rule.rule_type.replace("_", " ").title(),
-                "status": r.status,
-                "violations": len(r.violations),
-                "error": r.error or "",
+                "test_id": r["test_id"] if isinstance(r, dict) else r.rule.test_id,
+                "rule_type": (
+                    r["rule_type"]
+                    if isinstance(r, dict)
+                    else r.rule.rule_type.replace("_", " ").title()
+                ),
+                "status": r["status"] if isinstance(r, dict) else r.status,
+                "violations": (r["violations"] if isinstance(r, dict) else len(r.violations)),
+                "error": (r["error"] if isinstance(r, dict) else r.error) or "",
+                "description": (
+                    r["description"]
+                    if isinstance(r, dict)
+                    else getattr(r.rule, "description", "") or ""
+                ),
             }
             for r in (rule_results or [])
         ],
@@ -369,6 +366,14 @@ def write_migration_pdf(
     filename: "str | None" = None,
 ) -> Path:
     """Render the migration report next to the other run artifacts."""
+    if not rule_results:
+        # The rules suite writes a sidecar so later suite teardowns can still
+        # include the Business rules section — its library instance is not
+        # reachable from other suites' namespaces.
+        sidecar = Path(out_dir) / "rules_results.json"
+        if sidecar.exists():
+            with contextlib.suppress(Exception):
+                rule_results = json.loads(sidecar.read_text(encoding="utf-8"))
     review = build_report(summary, rule_results, test_outcomes)
     out = Path(out_dir) / (filename or REPORT_NAME)
     status = review["status"]
@@ -377,6 +382,7 @@ def write_migration_pdf(
     h = ParagraphStyle("h", fontSize=11, leading=14, spaceBefore=5 * mm, spaceAfter=2 * mm)
     body = ParagraphStyle("body", fontSize=9, leading=12)
     small = ParagraphStyle("small", fontSize=8, leading=10, textColor=colors.HexColor("#444444"))
+    tiny = ParagraphStyle("tiny", fontSize=5.5, leading=7, textColor=colors.HexColor("#444444"))
     mono = ParagraphStyle(
         "mono", fontName="Courier", fontSize=7, leading=9, textColor=colors.HexColor("#333333")
     )
@@ -469,17 +475,19 @@ def write_migration_pdf(
         story += [Paragraph("Mapping workbook", h)]
         for m in mappings:
             overview = table(
-                ["Mapping ID", "Source", "Target", "Key Columns", "Enabled"],
+                ["Mapping ID", m.get("mapping_id", "")],
                 [
-                    [
-                        P(m.get("mapping_id", ""), small),
-                        P(m.get("source", ""), small),
-                        P(m.get("target", ""), small),
-                        P(", ".join(str(k) for k in m.get("keys") or []), small),
-                        P(m.get("enabled", ""), small),
-                    ]
+                    ["Source", P(m.get("source", ""), small)],
+                    *(
+                        [["Source Tables", P(", ".join(m["source_tables"]), small)]]
+                        if m.get("source_tables")
+                        else []
+                    ),
+                    ["Target", P(m.get("target", ""), small)],
+                    ["Key Columns", P(", ".join(str(k) for k in m.get("keys") or []), small)],
+                    ["Enabled", P(m.get("enabled", ""), small)],
                 ],
-                [42 * mm, 40 * mm, 40 * mm, 30 * mm, 18 * mm],
+                [36 * mm, 134 * mm],
             )
             fields = m.get("fields") or []
             field_table = table(
@@ -491,11 +499,19 @@ def write_migration_pdf(
                         P(f.get("target", ""), small),
                         P(f.get("type", ""), small),
                         P(f.get("nullable", ""), small),
-                        P(f.get("transformation", ""), small),
+                        PM(
+                            esc(f.get("transformation", ""))
+                            + (
+                                f"<br/><font color='#555555'><i>{esc(f['description'])}</i></font>"
+                                if f.get("description")
+                                else ""
+                            ),
+                            small,
+                        ),
                     ]
                     for i, f in enumerate(fields, 1)
                 ],
-                [9 * mm, 26 * mm, 36 * mm, 14 * mm, 15 * mm, 70 * mm],
+                [9 * mm, 33 * mm, 44 * mm, 14 * mm, 15 * mm, 55 * mm],
             )
             story += [overview, field_table, Spacer(1, 3 * mm)]
 
@@ -525,7 +541,7 @@ def write_migration_pdf(
     if review["stage_rows"]:
         rows = [
             [
-                P(s["mapping"], small),
+                P(s["mapping"], tiny),
                 P(s["stage"], small),
                 P(s["status"], small),
                 P(s["src"], small),
@@ -538,7 +554,7 @@ def write_migration_pdf(
         stage_table = table(
             ["Dataset", "Check", "Status", "Src rows", "Tgt rows", "Mismatches", "Secs"],
             rows,
-            [34 * mm, 42 * mm, 18 * mm, 20 * mm, 20 * mm, 22 * mm, 14 * mm],
+            [46 * mm, 40 * mm, 16 * mm, 18 * mm, 18 * mm, 18 * mm, 14 * mm],
         )
         for r, s in enumerate(review["stage_rows"], 1):
             with contextlib.suppress(KeyError):
@@ -549,49 +565,12 @@ def write_migration_pdf(
     else:
         story.append(P("No stage checks were recorded.", small))
 
-    # ---- Negative self-test: source vs defect-copy file comparison ------------
-    if review["file_comparison"]:
-        src_label = (meta.get("source_type") or "source").upper()
-        story += [
-            Paragraph("File comparison - negative self-test", h),
-            P(
-                "The defect self-test recompares the source against streamed copies "
-                "carrying one injected defect each, and expects the exact difference.",
-                small,
-            ),
-        ]
-        rows = [
-            [
-                P(fc["mapping"], small),
-                P(fc.get("variant", ""), small),
-                P(fc.get("source_rows", ""), small),
-                P(fc.get("negative_rows", ""), small),
-                P(fc.get("row_difference", ""), small),
-                P("True" if fc.get("columns_match") else "False", small),
-            ]
-            for fc in review["file_comparison"]
-        ]
-        story.append(
-            table(
-                [
-                    "Dataset",
-                    "Variant",
-                    f"Source {src_label} Rows",
-                    f"Negative {src_label} Rows",
-                    "Row Difference",
-                    "Columns Match",
-                ],
-                rows,
-                [40 * mm, 34 * mm, 28 * mm, 30 * mm, 22 * mm, 16 * mm],
-            )
-        )
-
     # ---- Column profile -------------------------------------------------------
     if review["profile_rows"]:
         story += [Paragraph("Column profile", h)]
         rows = [
             [
-                P(p["mapping"], small),
+                P(p["mapping"], tiny),
                 P(p["column"], small),
                 P(p["src_nulls"], small),
                 P(p["tgt_nulls"], small),
@@ -603,7 +582,7 @@ def write_migration_pdf(
         prof_table = table(
             ["Dataset", "Column", "Src Nulls", "Tgt Nulls", "Src Distinct", "Tgt Distinct"],
             rows,
-            [44 * mm, 36 * mm, 20 * mm, 20 * mm, 25 * mm, 25 * mm],
+            [42 * mm, 46 * mm, 20 * mm, 20 * mm, 21 * mm, 21 * mm],
         )
         for r, p in enumerate(review["profile_rows"], 1):
             if p["differs"]:
@@ -615,7 +594,6 @@ def write_migration_pdf(
     # ---- Failures: reason + proof ---------------------------------------------
     if review["failures"]:
         story += [Paragraph("Failures - reason and proof", h)]
-        tiny = ParagraphStyle("tiny", fontSize=5.5, leading=7)
         for f in review["failures"]:
             block = [PM(f"<b>{esc(f['heading'])}</b>")]
             if f["reason"]:
@@ -710,25 +688,36 @@ def write_migration_pdf(
     # ---- Business rules ---------------------------------------------------------
     if review["rule_rows"]:
         story += [Paragraph("Business rules", h)]
-        rows = [
-            [
-                P(rr["test_id"], small),
-                P(rr["rule_type"], small),
-                P(rr["status"], small),
-                P(rr["violations"] if not rr["error"] else f"error: {rr['error'][:60]}", small),
-            ]
-            for rr in review["rule_rows"]
-        ]
+        rows = []
+        spans = []
+        status_fills = []
+        for rr in review["rule_rows"]:
+            row_i = len(rows) + 1  # +1 for header
+            rows.append(
+                [
+                    P(rr["test_id"], small),
+                    P(rr["rule_type"], small),
+                    P(rr["status"], small),
+                    P(
+                        rr["violations"] if not rr["error"] else f"error: {rr['error'][:60]}",
+                        small,
+                    ),
+                ]
+            )
+            with contextlib.suppress(KeyError):
+                status_fills.append(
+                    ("BACKGROUND", (2, row_i), (2, row_i), _STATUS_FILL[rr["status"]])
+                )
+            if rr["description"]:
+                rows.append([PM(f"<i>{esc(rr['description'])}</i>", small), "", "", ""])
+                spans.append(("SPAN", (0, row_i + 1), (-1, row_i + 1)))
         rule_table = table(
             ["Test", "Rule", "Result", "Violations"],
             rows,
             [40 * mm, 50 * mm, 20 * mm, 60 * mm],
         )
-        for r, rr in enumerate(review["rule_rows"], 1):
-            with contextlib.suppress(KeyError):
-                rule_table.setStyle(
-                    TableStyle([("BACKGROUND", (2, r), (2, r), _STATUS_FILL[rr["status"]])])
-                )
+        if spans or status_fills:
+            rule_table.setStyle(TableStyle(spans + status_fills))
         story.append(rule_table)
 
     story += [

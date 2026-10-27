@@ -203,6 +203,7 @@ class MigrationLibrary:
                         {
                             "mapping_id": t.mapping_id,
                             "source": f"{t.source_schema}.{t.source_table}",
+                            "source_tables": [f"{t.source_schema}.{n}" for n in t.source_tables],
                             "target": f"{t.target_schema}.{t.target_table}",
                             "keys": [str(k) for k in t.keys],
                             "fk_columns": sorted(
@@ -222,6 +223,7 @@ class MigrationLibrary:
                                     "type": f.target_type,
                                     "nullable": "yes" if f.nullable else "no",
                                     "transformation": f.transformation or "Direct rename",
+                                    "description": f.description or "",
                                 }
                                 for f in t.fields
                                 if f.enabled
@@ -1129,20 +1131,23 @@ class MigrationLibrary:
         if failed:
             raise AssertionError("; ".join(failed))
 
+    @keyword("Migration Suite Is Configured")
+    def is_configured(self):
+        """True when Configure Migration ran for this execution — lets the
+        business-rules suite refresh migration evidence only when a migration
+        run is in progress."""
+        return bool(self.signature)
+
     @keyword("Write Migration Evidence")
     def write_report(self, out_dir):
-        rule_results = None
-        try:
-            rules_lib = BuiltIn().get_library_instance("ReconciliationLibrary")
-            rule_results = getattr(rules_lib, "rule_results", None) or None
-        except Exception:  # noqa: BLE001 — rules library absent in verify-only suites
-            pass
+        # Rule rows come from rules_results.json (written by the rules-suite
+        # teardown) inside write_evidence — Robot imports ReconciliationLibrary
+        # by file path only in that suite, so no live instance is reachable here.
         return write_evidence(
             self.evidence,
             self.meta,
             out_dir,
             test_outcomes=self._test_map,
-            rule_results=rule_results,
         )
 
     @keyword("Validate Migration Evidence")

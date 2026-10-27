@@ -39,6 +39,7 @@ RULES_HEADERS = [
     "Where Clause",
     "Key Column",
     "Enabled",
+    "Description",
 ]
 
 RULES = [
@@ -55,6 +56,7 @@ RULES = [
         "",
         "cunbr",
         "yes",
+        "Customer number must be unique across the landed customer table",
     ],
     [
         "BR-AGG-BANK-CAP",
@@ -69,6 +71,7 @@ RULES = [
         "",
         "cunbr",
         "yes",
+        "No bank may carry more than 80 customer rows in the landed customer table",
     ],
     [
         "BR-FK-CUNBR-EXISTS",
@@ -83,6 +86,8 @@ RULES = [
         "",
         "cunbr",
         "yes",
+        "Every legal-entity row must reference a customer number that exists in "
+        "the customer table",
     ],
     [
         "BR-TAXID-FORMAT",
@@ -97,6 +102,7 @@ RULES = [
         "",
         "cunbr",
         "yes",
+        "Tax ids marked as S-type (Social Security) must be exactly nine digits",
     ],
     [
         "BR-JOIN-LEGAL-ENTITY",
@@ -111,6 +117,9 @@ RULES = [
         "",
         "cunbr",
         "yes",
+        "The legal entity in the customer join view must equal the value "
+        "recomputed by joining the customer and legal-entity files on "
+        "customer number",
     ],
     [
         "BR-LOOKUP-TAXID-DESC",
@@ -125,6 +134,7 @@ RULES = [
         "cussty IS NOT NULL",
         "cunbr",
         "yes",
+        "Each customer with a tax-id type gets its description from the " "reference-data lookup",
     ],
     [
         "BR-DEFAULT-TAXID-DESC",
@@ -139,6 +149,8 @@ RULES = [
         "",
         "cunbr",
         "yes",
+        "When a tax-id type has no reference description it defaults to "
+        "'SOCIAL SECURITY NUMBER'",
     ],
     [
         "BR-EXTRACT-CUT-DATE",
@@ -153,6 +165,8 @@ RULES = [
         "",
         "cunbr",
         "yes",
+        "Customer and legal-entity extracts must carry the same load date "
+        "for each customer number",
     ],
     [
         "BR-STATE-FORMAT",
@@ -167,6 +181,7 @@ RULES = [
         "",
         "cunbr",
         "yes",
+        "State code must be exactly two uppercase letters",
     ],
     [
         "BR-JOBDATE-FORMAT",
@@ -181,6 +196,7 @@ RULES = [
         "",
         "cunbr",
         "yes",
+        "Job/birth date must be a valid date in YYYYMMDD format",
     ],
     [
         "BR-SCOPED-NOTNULL",
@@ -195,6 +211,8 @@ RULES = [
         "EXISTS (SELECT 1 FROM signature.cup00301 c WHERE c.cunbr = cup01201.cunbr)",
         "cunbr",
         "yes",
+        "Legal entity must be populated for every legal-entity row whose "
+        "customer exists in the customer file",
     ],
 ]
 

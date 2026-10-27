@@ -334,7 +334,15 @@ def write_evidence(results, meta, out_dir, test_outcomes=None, rule_results=None
             ["Mapping", "Stage", "Type", "Key / Name", "Column", "Expected", "Actual / Detail"]
         ],
         "Field Mappings": [
-            ["Mapping", "Source Column", "Target Column", "Type", "Nullable", "Transformation"]
+            [
+                "Mapping",
+                "Source Column",
+                "Target Column",
+                "Type",
+                "Nullable",
+                "Transformation",
+                "Description",
+            ]
         ],
         "Insights": [["Type", "Detail"]],
     }
@@ -356,6 +364,7 @@ def write_evidence(results, meta, out_dir, test_outcomes=None, rule_results=None
                     f.get("type", ""),
                     f.get("nullable", ""),
                     f.get("transformation", ""),
+                    f.get("description", ""),
                 ]
             )
     seen_defects = set()
@@ -560,6 +569,29 @@ def write_evidence(results, meta, out_dir, test_outcomes=None, rule_results=None
             )
             + " |"
         )
+    mappings = meta.get("mappings") or []
+    if mappings:
+        lines += ["", "## Mapping workbook", ""]
+        for m in mappings:
+            lines.append(f"### {m.get('mapping_id', '')}")
+            lines.append(
+                f"- Source: `{m.get('source', '')}` -> Target: `{m.get('target', '')}` "
+                f"(keys: {', '.join(str(k) for k in m.get('keys') or [])})"
+            )
+            if m.get("source_tables"):
+                lines.append(f"- Source tables: `{', '.join(m['source_tables'])}`")
+            lines += [
+                "",
+                "| Source | Target | Transformation | Description |",
+                "|---|---|---|---|",
+            ]
+            for f in m.get("fields") or []:
+                lines.append(
+                    f"| {escaped(f.get('source', ''))} | {escaped(f.get('target', ''))} | "
+                    f"{escaped(f.get('transformation', ''))} | "
+                    f"{escaped(f.get('description', ''))} |"
+                )
+            lines.append("")
     defects = [r for r in results if r["status"] != "PASS"]
     if defects:
         lines += ["", "## Defects (bounded samples)", ""]

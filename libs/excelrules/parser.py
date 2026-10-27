@@ -31,6 +31,7 @@ _RULE_COLS = {
     "where clause": "where",
     "enabled": "enabled",
     "key column": "key_column",
+    "description": "description",
 }
 _MAP_COLS = {
     "mapping name": "mapping_name",
@@ -101,6 +102,7 @@ def load_rules(path: "str | Path") -> list[Rule]:
                 where=raw.get("where"),
                 key_column=raw.get("key_column"),
                 enabled=_enabled(row.get("enabled")),
+                description=raw.get("description") or "",
             )
         )
     return rules

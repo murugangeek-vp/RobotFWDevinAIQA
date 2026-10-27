@@ -10,6 +10,7 @@ Documentation    Excel-driven complex business rules — multi-source joins,
 ...              not skipped and the broken rule reports its own ERROR.
 Resource         ../../resources/keywords/common.resource
 Library          ${ROOT}/libs/robot/ReconciliationLibrary.py
+Library          ${ROOT}/libs/robot/MigrationLibrary.py
 Suite Setup      Business Rules Suite Setup
 Suite Teardown   Business Rules Suite Teardown
 Test Timeout     15 minutes
@@ -57,4 +58,8 @@ Business Rules Suite Setup
 Business Rules Suite Teardown
     IF    '${RULES_WORKBOOK}' != '${EMPTY}'
         Write Rules Summary    ${OUTPUT DIR}${/}business_rules_summary.xlsx
+        # Re-write the migration evidence so the PDF/xlsx include the
+        # business-rules section with each rule's plain-English description.
+        ${configured}=    Run Keyword And Return Status    Migration Suite Is Configured
+        IF    ${configured}    Write Migration Evidence    ${OUTPUT DIR}
     END

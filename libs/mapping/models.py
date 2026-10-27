@@ -17,6 +17,7 @@ class FieldMapping:
     max_length: "int | None" = None
     scale: "int | None" = None
     transformation: "str | None" = None
+    description: "str | None" = None  # plain-English business meaning for reviewers
     pii: bool = False
     enabled: bool = True
 
@@ -32,6 +33,7 @@ class TableMapping:
     target_table: str
     keys: list
     where: "str | None" = None
+    source_tables: list = field(default_factory=list)  # base tables when source is a view
     enabled: bool = True
     recon_mode: str = "full"
     batch_size: "int | None" = None
