@@ -96,11 +96,57 @@ class BuildReportTests(unittest.TestCase):
         self.assertIsNone(records[0][1]["target"])
         self.assertEqual(report["failures"][0]["records_total"], 1)
 
+    def test_problem_record_columns_filtered(self):
+        row = _failed_recon()
+        row["record_samples"] = {
+            "k1": {
+                "source": {"id": "k1", "name": "J***s", "load_date": "2026-01-01", "extra": "x"},
+                "target": {"id": "k1", "name": "m***n", "load_date": "2026-01-01", "extra": "x"},
+            }
+        }
+        summary = _summary(verdict="FAIL", results=[row])
+        summary["meta"]["mappings"] = [
+            {
+                "mapping_id": "m1",
+                "keys": ["id"],
+                "fk_columns": [],
+                "fields": [
+                    {"source": "id", "target": "id", "type": "string"},
+                    {"source": "load_date", "target": "load_date", "type": "date"},
+                ],
+            }
+        ]
+        report = build_report(summary)
+        cols = report["failures"][0]["record_columns"]
+        self.assertEqual(cols, ["id", "name", "load_date"])  # key, diff, date; "extra" dropped
+
     def test_duplicate_stage_rows_deduped(self):
         row = _failed_recon()
         report = build_report(_summary(verdict="FAIL", results=[row, dict(row)]))
         self.assertEqual(len(report["stage_rows"]), 1)
         self.assertEqual(len(report["failures"]), 1)
+
+    def test_file_comparison_collected_once(self):
+        row = {
+            "mapping": "m1",
+            "stage": "negative",
+            "status": "PASS",
+            "file_comparison": [
+                {
+                    "variant": "clean baseline",
+                    "source_rows": 200,
+                    "negative_rows": 200,
+                    "row_difference": 0,
+                    "columns_match": True,
+                }
+            ],
+        }
+        report = build_report(_summary(results=[row, dict(row)]))
+        fc = report["file_comparison"]
+        self.assertEqual(len(fc), 1)
+        self.assertEqual(fc[0]["mapping"], "m1")
+        self.assertEqual(fc[0]["source_rows"], 200)
+        self.assertEqual(fc[0]["row_difference"], 0)
 
 
 class WritePdfTests(unittest.TestCase):
@@ -120,6 +166,38 @@ class WritePdfTests(unittest.TestCase):
                 test_outcomes=[_outcome("T", "FAIL")],
             )
             self.assertTrue(path.exists())
+
+    def test_writes_pdf_with_mapping_workbook_section(self):
+        summary = _summary()
+        summary["meta"]["mappings"] = [
+            {
+                "mapping_id": "dim_customer_migration",
+                "source": "signature.v_dim_customer_src",
+                "target": "wdr_il_core.dim_customer",
+                "keys": ["involved_party_key"],
+                "enabled": "yes",
+                "fields": [
+                    {
+                        "source": "cunbr",
+                        "target": "involved_party_key",
+                        "type": "string",
+                        "nullable": "no",
+                        "transformation": "concat('CBS', 'CUST', cubk, cunbr)",
+                    },
+                    {
+                        "source": "load_date",
+                        "target": "load_date",
+                        "type": "date",
+                        "nullable": "no",
+                        "transformation": "Direct rename",
+                    },
+                ],
+            }
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write_migration_pdf(tmp, summary, test_outcomes=[_outcome("T", "PASS")])
+            self.assertTrue(path.exists())
+            self.assertGreater(path.stat().st_size, 1000)
 
 
 if __name__ == "__main__":

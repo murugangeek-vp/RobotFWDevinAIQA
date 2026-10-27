@@ -172,6 +172,34 @@ def _proof_lines(row: dict) -> list:
     return lines
 
 
+def _problem_columns(records: list, mapping_info: dict) -> list:
+    """Columns worth showing in a problem-record table — the reconciliation
+    key, foreign keys, date columns, and the columns that actually differ.
+    Falls back to every column when nothing can be identified."""
+    all_cols = []
+    for _, sides in records:
+        for rec in (sides.get("source"), sides.get("target")):
+            if rec:
+                all_cols += [c for c in rec if c not in all_cols]
+    if not all_cols:
+        return []
+
+    fields = mapping_info.get("fields") or []
+    keys = {str(k) for k in mapping_info.get("keys") or []}
+    fks = {str(k) for k in mapping_info.get("fk_columns") or []}
+    keep = set(keys | fks)
+    for f in fields:
+        if f.get("target") in keys | fks or f.get("type") == "date":
+            keep.update((f.get("target"), f.get("source")))
+    keep |= {c for c in all_cols if "date" in c.lower() or c.lower().endswith("dt")}
+    for _, sides in records:
+        src, tgt = sides.get("source"), sides.get("target")
+        if src and tgt:
+            keep |= {c for c in all_cols if src.get(c) != tgt.get(c)}
+    cols = [c for c in all_cols if c in keep]
+    return cols or all_cols
+
+
 def build_report(summary: dict, rule_results=None, test_outcomes=None) -> dict:
     """Report model from run_summary + outcomes — every check, every failure."""
     results = summary.get("results", [])
@@ -248,6 +276,7 @@ def build_report(summary: dict, rule_results=None, test_outcomes=None) -> dict:
             }
         )
 
+    mappings_by_id = {m["mapping_id"]: m for m in summary.get("meta", {}).get("mappings") or []}
     seen_failures = set()
     failures = []
     for r in results:
@@ -265,8 +294,46 @@ def build_report(summary: dict, rule_results=None, test_outcomes=None) -> dict:
                 "proof": _proof_lines(r),
                 "records": records[:_PROOF_BOUND],
                 "records_total": len(records),
+                "record_columns": _problem_columns(
+                    records, mappings_by_id.get(r.get("mapping"), {})
+                ),
             }
         )
+
+    seen_fc = set()
+    file_comparison = []
+    for r in results:
+        if r.get("stage") != "negative":
+            continue
+        for fc in r.get("file_comparison") or []:
+            k = (r.get("mapping"), fc.get("variant"))
+            if k in seen_fc:
+                continue
+            seen_fc.add(k)
+            file_comparison.append({"mapping": r.get("mapping", ""), **fc})
+
+    seen_prof = set()
+    profile_rows = []
+    for r in results:
+        for p in r.get("column_profile") or []:
+            k = (r.get("mapping"), p.get("column"))
+            if k in seen_prof:
+                continue
+            seen_prof.add(k)
+            profile_rows.append(
+                {
+                    "mapping": r.get("mapping", ""),
+                    "column": p.get("column", ""),
+                    "src_nulls": p.get("src_nulls", ""),
+                    "tgt_nulls": p.get("tgt_nulls", ""),
+                    "src_distinct": p.get("src_distinct", ""),
+                    "tgt_distinct": p.get("tgt_distinct", ""),
+                    "differs": (
+                        p.get("src_nulls") != p.get("tgt_nulls")
+                        or p.get("src_distinct") != p.get("tgt_distinct")
+                    ),
+                }
+            )
 
     return {
         "status": status,
@@ -278,6 +345,8 @@ def build_report(summary: dict, rule_results=None, test_outcomes=None) -> dict:
         "skipped": [_case_name(o) for o in outcomes if o.get("status") == "SKIP"],
         "stage_rows": stage_rows,
         "failures": failures,
+        "file_comparison": file_comparison,
+        "profile_rows": profile_rows,
         "rule_rows": [
             {
                 "test_id": r.rule.test_id,
@@ -394,6 +463,42 @@ def write_migration_pdf(
         t.setStyle(header_style)
         return t
 
+    # ---- Mapping workbook: what each dataset was supposed to do ---------------
+    mappings = meta.get("mappings") or []
+    if mappings:
+        story += [Paragraph("Mapping workbook", h)]
+        for m in mappings:
+            overview = table(
+                ["Mapping ID", "Source", "Target", "Key Columns", "Enabled"],
+                [
+                    [
+                        P(m.get("mapping_id", ""), small),
+                        P(m.get("source", ""), small),
+                        P(m.get("target", ""), small),
+                        P(", ".join(str(k) for k in m.get("keys") or []), small),
+                        P(m.get("enabled", ""), small),
+                    ]
+                ],
+                [42 * mm, 40 * mm, 40 * mm, 30 * mm, 18 * mm],
+            )
+            fields = m.get("fields") or []
+            field_table = table(
+                ["S.No", "Source Column", "Target Column", "Type", "Nullable", "Transformation"],
+                [
+                    [
+                        str(i),
+                        P(f.get("source", ""), small),
+                        P(f.get("target", ""), small),
+                        P(f.get("type", ""), small),
+                        P(f.get("nullable", ""), small),
+                        P(f.get("transformation", ""), small),
+                    ]
+                    for i, f in enumerate(fields, 1)
+                ],
+                [9 * mm, 26 * mm, 36 * mm, 14 * mm, 15 * mm, 70 * mm],
+            )
+            story += [overview, field_table, Spacer(1, 3 * mm)]
+
     # ---- Executed test cases ------------------------------------------------
     story += [Paragraph("Test cases", h)]
     if review["cases"]:
@@ -444,6 +549,69 @@ def write_migration_pdf(
     else:
         story.append(P("No stage checks were recorded.", small))
 
+    # ---- Negative self-test: source vs defect-copy file comparison ------------
+    if review["file_comparison"]:
+        src_label = (meta.get("source_type") or "source").upper()
+        story += [
+            Paragraph("File comparison - negative self-test", h),
+            P(
+                "The defect self-test recompares the source against streamed copies "
+                "carrying one injected defect each, and expects the exact difference.",
+                small,
+            ),
+        ]
+        rows = [
+            [
+                P(fc["mapping"], small),
+                P(fc.get("variant", ""), small),
+                P(fc.get("source_rows", ""), small),
+                P(fc.get("negative_rows", ""), small),
+                P(fc.get("row_difference", ""), small),
+                P("True" if fc.get("columns_match") else "False", small),
+            ]
+            for fc in review["file_comparison"]
+        ]
+        story.append(
+            table(
+                [
+                    "Dataset",
+                    "Variant",
+                    f"Source {src_label} Rows",
+                    f"Negative {src_label} Rows",
+                    "Row Difference",
+                    "Columns Match",
+                ],
+                rows,
+                [40 * mm, 34 * mm, 28 * mm, 30 * mm, 22 * mm, 16 * mm],
+            )
+        )
+
+    # ---- Column profile -------------------------------------------------------
+    if review["profile_rows"]:
+        story += [Paragraph("Column profile", h)]
+        rows = [
+            [
+                P(p["mapping"], small),
+                P(p["column"], small),
+                P(p["src_nulls"], small),
+                P(p["tgt_nulls"], small),
+                P(p["src_distinct"], small),
+                P(p["tgt_distinct"], small),
+            ]
+            for p in review["profile_rows"]
+        ]
+        prof_table = table(
+            ["Dataset", "Column", "Src Nulls", "Tgt Nulls", "Src Distinct", "Tgt Distinct"],
+            rows,
+            [44 * mm, 36 * mm, 20 * mm, 20 * mm, 25 * mm, 25 * mm],
+        )
+        for r, p in enumerate(review["profile_rows"], 1):
+            if p["differs"]:
+                prof_table.setStyle(
+                    TableStyle([("BACKGROUND", (0, r), (-1, r), colors.HexColor("#FFC7CE"))])
+                )
+        story.append(prof_table)
+
     # ---- Failures: reason + proof ---------------------------------------------
     if review["failures"]:
         story += [Paragraph("Failures - reason and proof", h)]
@@ -464,16 +632,12 @@ def write_migration_pdf(
                     label += f" (first {len(f['records'])} of {f['records_total']})"
                 story.append(P(label, small))
 
-                rec_cols = []
-                for _, sides in f["records"]:
-                    for rec in (sides.get("source"), sides.get("target")):
-                        if rec:
-                            rec_cols += [c for c in rec if c not in rec_cols]
-                # a full record is wider than the page — render it as stacked
-                # tables of ~5 columns so values stay readable
-                for start in range(0, len(rec_cols), 5):
-                    cols = rec_cols[start : start + 5]
-                    if len(rec_cols) > 5:
+                # key / FK / date / differing columns only — full 17-column
+                # records are noise; anything wider than the page still chunks
+                rec_cols = f["record_columns"]
+                for start in range(0, len(rec_cols), 8):
+                    cols = rec_cols[start : start + 8]
+                    if len(rec_cols) > 8:
                         story.append(
                             P(f"columns {start + 1}-{start + len(cols)} of {len(rec_cols)}", tiny)
                         )

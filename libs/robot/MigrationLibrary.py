@@ -184,6 +184,7 @@ class MigrationLibrary:
             self.meta.update(
                 {
                     "environment": self.env["environment"],
+                    "source_type": str(self.env["source"].get("type", "")),
                     "emulated_target": bool(self.env["target"].get("fake")),
                     "snapshot_id": run.get("snapshot_id", ""),
                     "env_file": str(env_file),
@@ -198,6 +199,36 @@ class MigrationLibrary:
                     "git_commit": ReconciliationLibrary._git_head(),
                     "executor": os.environ.get("USERNAME", os.environ.get("USER", "")),
                     "relation_children": [t.mapping_id for t in chosen if t.relations],
+                    "mappings": [
+                        {
+                            "mapping_id": t.mapping_id,
+                            "source": f"{t.source_schema}.{t.source_table}",
+                            "target": f"{t.target_schema}.{t.target_table}",
+                            "keys": [str(k) for k in t.keys],
+                            "fk_columns": sorted(
+                                {r["child_column"] for r in t.relations}
+                                | {
+                                    r["parent_column"]
+                                    for c in chosen
+                                    for r in c.relations
+                                    if r["parent_mapping"] == t.mapping_id
+                                }
+                            ),
+                            "enabled": "yes" if t.enabled else "no",
+                            "fields": [
+                                {
+                                    "source": f.source_column,
+                                    "target": f.target_column,
+                                    "type": f.target_type,
+                                    "nullable": "yes" if f.nullable else "no",
+                                    "transformation": f.transformation or "Direct rename",
+                                }
+                                for f in t.fields
+                                if f.enabled
+                            ],
+                        }
+                        for t in chosen
+                    ],
                     "read_only": True,
                     "comparison": "canonical external sort; full comparison or client-side SHA-256",
                     "evidence_values": "redacted; exact totals with bounded samples",
@@ -708,6 +739,30 @@ class MigrationLibrary:
                                 raise
                         else:
                             raise ValueError("Duplicate defect was not detected")
+                        row["file_comparison"] = [
+                            {
+                                "variant": label,
+                                "source_rows": clean.source_count,
+                                "negative_rows": res.target_count,
+                                "row_difference": clean.source_count - res.target_count,
+                                "columns_match": True,
+                            }
+                            for label, res in (
+                                ("clean baseline", clean),
+                                ("missing row", missing),
+                                ("tampered field", tamper),
+                                ("extra row", extra),
+                            )
+                        ]
+                        row["file_comparison"].append(
+                            {
+                                "variant": "duplicate key",
+                                "source_rows": clean.source_count,
+                                "negative_rows": clean.source_count + 1,
+                                "row_difference": -1,
+                                "columns_match": True,
+                            }
+                        )
                         row["detail"] = (
                             "injected defects on streamed copies detected exactly: "
                             "missing=1 row, tamper=1 field, extra=1 row, duplicate key "

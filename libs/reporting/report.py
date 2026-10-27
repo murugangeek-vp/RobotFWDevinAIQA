@@ -328,30 +328,36 @@ def write_evidence(results, meta, out_dir, test_outcomes=None, rule_results=None
         "Metadata": [["Mapping", "Stage", "Source", "Target", "Observed Metadata"]],
         "Manual Validation": [["Mapping", "Source Query", "Target Query"]],
         "Column Profile": [
-            [
-                "Mapping",
-                "Column",
-                "Src Nulls",
-                "Tgt Nulls",
-                "Src Distinct",
-                "Tgt Distinct",
-                "Src Min",
-                "Tgt Min",
-                "Src Max",
-                "Tgt Max",
-            ]
+            ["Mapping", "Column", "Src Nulls", "Tgt Nulls", "Src Distinct", "Tgt Distinct"]
         ],
         "Diffs & Violations": [
             ["Mapping", "Stage", "Type", "Key / Name", "Column", "Expected", "Actual / Detail"]
         ],
+        "Field Mappings": [
+            ["Mapping", "Source Column", "Target Column", "Type", "Nullable", "Transformation"]
+        ],
         "Insights": [["Type", "Detail"]],
     }
     for key, value in meta.items():
+        if key == "mappings":
+            continue
         sheets["Run Info"].append(
             [key, json.dumps(value, default=str) if isinstance(value, dict | list) else str(value)]
         )
     for key, value in cutover.items():
         sheets["Run Info"].append([f"cutover.{key}", json.dumps(value, default=str)])
+    for m in meta.get("mappings") or []:
+        for f in m.get("fields") or []:
+            sheets["Field Mappings"].append(
+                [
+                    m.get("mapping_id", ""),
+                    f.get("source", ""),
+                    f.get("target", ""),
+                    f.get("type", ""),
+                    f.get("nullable", ""),
+                    f.get("transformation", ""),
+                ]
+            )
     seen_defects = set()
     for row in results:
         sheets["Stage Results"].append(
@@ -414,10 +420,6 @@ def write_evidence(results, meta, out_dir, test_outcomes=None, rule_results=None
                 p["tgt_nulls"],
                 p["src_distinct"],
                 p["tgt_distinct"],
-                p["src_min"],
-                p["tgt_min"],
-                p["src_max"],
-                p["tgt_max"],
             )
             if vals not in seen_defects:
                 seen_defects.add(vals)
