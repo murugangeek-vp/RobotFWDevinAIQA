@@ -175,7 +175,7 @@ class WritePdfTests(unittest.TestCase):
             {
                 "mapping_id": "dim_customer_migration",
                 "source": "signature.v_dim_customer_src",
-                "target": "wdr_il_core.dim_customer",
+                "target": "wdr_int_core.dim_customer",
                 "keys": ["involved_party_key"],
                 "enabled": "yes",
                 "fields": [

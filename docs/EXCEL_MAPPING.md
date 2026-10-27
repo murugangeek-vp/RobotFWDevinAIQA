@@ -13,8 +13,8 @@ same-named `config/environments/phase1_*.yaml`:
 | Workbook | Hop | Suite |
 |---|---|---|
 | `data/mapping/phase1_hop1_csv_to_stage.xlsx` | CSV extracts → `wdr_uat_active_stage.signature` | `tests/migration` |
-| `data/mapping/phase1_hop2_stage_to_il.xlsx` | `signature` → `wdr_uat_integration.wdr_il_core` | `tests/migration` |
-| `data/mapping/phase1_hop3_il_to_consumption.xlsx` | `wdr_il_core` → `wdr_uat_consumption.wdr_cl_fds_core` | `tests/migration` |
+| `data/mapping/phase1_hop2_stage_to_int.xlsx` | `signature` → `wdr_uat_integration.wdr_int_core` | `tests/migration` |
+| `data/mapping/phase1_hop3_int_to_consumption.xlsx` | `wdr_int_core` → `wdr_uat_consumption.wdr_cl_fds_core` | `tests/migration` |
 
 All compile to the same contract model — a mapping declared in any workbook
 runs through the same engine regardless of source dialect

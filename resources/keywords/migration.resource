@@ -4,8 +4,8 @@ Resource         common.resource
 Library          ${ROOT}/libs/robot/MigrationLibrary.py
 
 *** Variables ***
-${MIGRATION_ENV}       ${ROOT}${/}config${/}environments${/}phase1_hop2_stage_il.yaml
-${MAPPING_WORKBOOK}    ${ROOT}${/}data${/}mapping${/}phase1_hop2_stage_to_il.xlsx
+${MIGRATION_ENV}       ${ROOT}${/}config${/}environments${/}phase1_hop2_stage_int.yaml
+${MAPPING_WORKBOOK}    ${ROOT}${/}data${/}mapping${/}phase1_hop2_stage_to_int.xlsx
 ${MAPPING_ID}          ${EMPTY}
 
 *** Keywords ***

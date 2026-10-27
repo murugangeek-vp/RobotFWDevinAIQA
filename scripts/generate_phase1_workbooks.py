@@ -2,8 +2,8 @@
 data/trailer/Phase1.xlsx semantics:
 
   hop 1  CSV files                 -> wdr_uat_active_stage.signature
-  hop 2  signature (views/tables)  -> wdr_uat_integration.wdr_il_core
-  hop 3  wdr_il_core view          -> wdr_uat_consumption.wdr_cl_fds_core
+  hop 2  signature (views/tables)  -> wdr_uat_integration.wdr_int_core
+  hop 3  wdr_int_core view          -> wdr_uat_consumption.wdr_cl_fds_core
 
 Spec gaps resolved explicitly (documented in each workbook README):
 
@@ -16,9 +16,9 @@ Spec gaps resolved explicitly (documented in each workbook README):
 - CASE arms without ELSE (BUSINESS_DOMAIN): ELSE 'UNSPECIFIED' declared.
 - DIM_REFERENCE lookup (TAX_ID_NUMBER_TYPE_DESC): resolved through
   signature.v_dim_customer_src — a read-only view joining CUP00301 +
-  CUP01201 + DIM_REFERENCE. Hop-3 likewise reads wdr_il_core.v_party_snpsht_src
+  CUP01201 + DIM_REFERENCE. Hop-3 likewise reads wdr_int_core.v_party_snpsht_src
   = DIM_CUSTOMER LEFT JOIN DIM_CUSTOMER_ADDRESS. Reference data is staged from
-  CSV like the other extracts (deviation: spec draws it already inside IL).
+  CSV like the other extracts (deviation: spec draws it already inside INT).
 - LOAD_DATE: carried as a stage column (spec row 4); run.load_date also
   declared in env for audit.
 
@@ -308,7 +308,7 @@ HOP2_TABLES = [
         "dim_customer_migration",
         "signature",
         "v_dim_customer_src",
-        "wdr_il_core",
+        "wdr_int_core",
         "dim_customer",
         "involved_party_key",
         "",
@@ -321,7 +321,7 @@ HOP2_TABLES = [
         "dim_customer_address_migration",
         "signature",
         "cup00301",
-        "wdr_il_core",
+        "wdr_int_core",
         "dim_customer_address",
         "involved_party_key",
         "",
@@ -334,7 +334,7 @@ HOP2_TABLES = [
         "dim_reference_migration",
         "signature",
         "dim_reference",
-        "wdr_il_core",
+        "wdr_int_core",
         "dim_reference",
         "attribute_cd",
         "",
@@ -584,7 +584,7 @@ HOP2_FIELDMAP = [
         "no",
         desc="Extract load date - copied unchanged",
     ),
-    # dim_reference -> dim_reference (reference data lands in IL unchanged)
+    # dim_reference -> dim_reference (reference data lands in INT unchanged)
     _fm(
         "dim_reference_migration",
         "attribute_cd",
@@ -656,7 +656,7 @@ HOP2_RELATIONS = [
 ]
 
 HOP2_README = [
-    ["Phase-1 hop 2: signature -> wdr_il_core (integration layer)"],
+    ["Phase-1 hop 2: signature -> wdr_int_core (integration layer)"],
     [""],
     ["dim_customer source is SIGNATURE.V_DIM_CUSTOMER_SRC — a read-only"],
     ["view joining CUP00301 + CUP01201 (legal entity) + DIM_REFERENCE"],
@@ -676,7 +676,7 @@ HOP2_README = [
 HOP3_TABLES = [
     [
         "cl_party_snpsht_migration",
-        "wdr_il_core",
+        "wdr_int_core",
         "v_party_snpsht_src",
         "wdr_cl_fds_core",
         "cl_party_snpsht",
@@ -893,7 +893,7 @@ HOP3_CONTROLS = [
 ]
 
 HOP3_README = [
-    ["Phase-1 hop 3: wdr_il_core -> wdr_cl_fds_core (consumption layer)"],
+    ["Phase-1 hop 3: wdr_int_core -> wdr_cl_fds_core (consumption layer)"],
     [""],
     ["Source is WDR_IL_CORE.V_PARTY_SNPSHT_SRC — read-only view joining"],
     ["DIM_CUSTOMER LEFT JOIN DIM_CUSTOMER_ADDRESS on involved_party_key."],
@@ -952,7 +952,7 @@ def main():
         HOP1_README,
     )
     _write(
-        "phase1_hop2_stage_to_il.xlsx",
+        "phase1_hop2_stage_to_int.xlsx",
         HOP2_TABLES,
         HOP2_FIELDMAP,
         HOP2_CONTROLS,
@@ -960,7 +960,7 @@ def main():
         HOP2_README,
     )
     _write(
-        "phase1_hop3_il_to_consumption.xlsx",
+        "phase1_hop3_int_to_consumption.xlsx",
         HOP3_TABLES,
         HOP3_FIELDMAP,
         HOP3_CONTROLS,

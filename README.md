@@ -12,8 +12,8 @@ Three-hop pipeline per the client spec `data/trailer/Phase1.xlsx`:
 | Hop | Source → Target |
 |---|---|
 | 1 | CSV extracts (one file per table) → `wdr_uat_active_stage.signature` |
-| 2 | `signature` → `wdr_uat_integration.wdr_il_core` |
-| 3 | `wdr_il_core` → `wdr_uat_consumption.wdr_cl_fds_core` |
+| 2 | `signature` → `wdr_uat_integration.wdr_int_core` |
+| 3 | `wdr_int_core` → `wdr_uat_consumption.wdr_cl_fds_core` |
 
 One hop = one environment YAML + one mapping workbook; the same
 `tests/migration` suites (9 stages + negative-path) verify each hop.

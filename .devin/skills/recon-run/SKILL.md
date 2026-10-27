@@ -24,9 +24,9 @@ One env + one workbook per hop; the same `tests/migration` suites run all:
 1. **Hop 1 — CSV → landing:**
    `robot -d results/phase1/hop1 -v MIGRATION_ENV:config/environments/phase1_hop1_csv_stage.yaml -v MAPPING_WORKBOOK:data/mapping/phase1_hop1_csv_to_stage.xlsx tests/migration`
 2. **Hop 2 — landing → integration:**
-   `robot -d results/phase1/hop2 -v MIGRATION_ENV:config/environments/phase1_hop2_stage_il.yaml -v MAPPING_WORKBOOK:data/mapping/phase1_hop2_stage_to_il.xlsx tests/migration`
+   `robot -d results/phase1/hop2 -v MIGRATION_ENV:config/environments/phase1_hop2_stage_int.yaml -v MAPPING_WORKBOOK:data/mapping/phase1_hop2_stage_to_int.xlsx tests/migration`
 3. **Hop 3 — integration → consumption:**
-   `robot -d results/phase1/hop3 -v MIGRATION_ENV:config/environments/phase1_hop3_il_consumption.yaml -v MAPPING_WORKBOOK:data/mapping/phase1_hop3_il_to_consumption.xlsx tests/migration`
+   `robot -d results/phase1/hop3 -v MIGRATION_ENV:config/environments/phase1_hop3_int_consumption.yaml -v MAPPING_WORKBOOK:data/mapping/phase1_hop3_int_to_consumption.xlsx tests/migration`
 
 All three PASS → expect 11/11 each, rc=0.
 

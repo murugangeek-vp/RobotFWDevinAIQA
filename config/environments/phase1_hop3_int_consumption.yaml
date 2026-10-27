@@ -1,5 +1,5 @@
-# Phase-1 hop 3 — wdr_uat_integration.wdr_il_core -> wdr_uat_consumption.wdr_cl_fds_core.
-environment: phase1_hop3_il_to_consumption
+# Phase-1 hop 3 — wdr_uat_integration.wdr_int_core -> wdr_uat_consumption.wdr_cl_fds_core.
+environment: phase1_hop3_int_to_consumption
 run:
   batch_size: 2000
   sample_limit: 20
@@ -8,18 +8,18 @@ run:
   snapshot_id: "2026-10-15"
   load_date: "2026-10-15"
   pipeline_id: phase1-uat-demo
-  hop: hop3_il_to_consumption
+  hop: hop3_int_to_consumption
 source:
   type: postgres
   host: localhost
   port: 5432
   database: wdr_uat_integration
-  schema: wdr_il_core
+  schema: wdr_int_core
   user: ${RECON_RO_USER}
   password: ${RECON_RO_PASSWORD}
   snapshot: exported
   control_file: data/trailer/phase1_hop3_trailer.csv
-  mapping_workbook: data/mapping/phase1_hop3_il_to_consumption.xlsx
+  mapping_workbook: data/mapping/phase1_hop3_int_to_consumption.xlsx
 target:
   type: postgres
   host: localhost

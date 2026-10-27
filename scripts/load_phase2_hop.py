@@ -22,8 +22,8 @@ Usage:
 
 HOPS = {
     1: ("phase1_hop1_csv_stage.yaml", "phase1_hop1_csv_to_stage.xlsx"),
-    2: ("phase1_hop2_stage_il.yaml", "phase1_hop2_stage_to_il.xlsx"),
-    3: ("phase1_hop3_il_consumption.yaml", "phase1_hop3_il_to_consumption.xlsx"),
+    2: ("phase1_hop2_stage_int.yaml", "phase1_hop2_stage_to_int.xlsx"),
+    3: ("phase1_hop3_int_consumption.yaml", "phase1_hop3_int_to_consumption.xlsx"),
 }
 
 import argparse

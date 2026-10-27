@@ -189,7 +189,7 @@ def _trailers(cup, leg, ref):
         ("cup00301_naics_sum", "", sum(int(r[4]) for r in cup if r[4].strip())),
         ("cup00301_max_country", "", max(int(r[3]) for r in cup)),
     ] + [("cup00301_by_pers", g, v) for g, v in sorted(by_pers.items())]
-    # hop 2 — IL target row counts (LEFT JOINs preserve customer count) +
+    # hop 2 — INT target row counts (LEFT JOINs preserve customer count) +
     # customer_type_cd grouping (casewhen: cupers 'N' -> 'C', else trimmed)
     by_type: dict = {}
     for r in cup:

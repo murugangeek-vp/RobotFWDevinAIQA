@@ -13,7 +13,7 @@ data/phase1/csv/*.csv                ┌─────────────�
         │  hop 1                     │   signature.cup00301         │
         ▼                            │   signature.cup01201         │
    signature (landing) ─── hop 2 ──► │ wdr_uat_integration          │
-        │  via v_dim_customer_src    │   wdr_il_core.dim_*          │
+        │  via v_dim_customer_src    │   wdr_int_core.dim_*          │
         │       (CUP00301+CUP01201   │                              │
         │        +DIM_REFERENCE join)│ wdr_uat_consumption          │
         │                            │   wdr_cl_fds_core            │
@@ -62,12 +62,12 @@ the script, never hand-edited.
 .venv/Scripts/python scripts/load_phase2_hop.py --hop 1
 .venv/Scripts/python scripts/provision_phase2.py --views stage
 .venv/Scripts/python scripts/load_phase2_hop.py --hop 2
-.venv/Scripts/python scripts/provision_phase2.py --views il
+.venv/Scripts/python scripts/provision_phase2.py --views int
 .venv/Scripts/python scripts/load_phase2_hop.py --hop 3
 ```
 
 Views between loads: hop-2 reads `signature.v_dim_customer_src` (the
-spec's DIM_REFERENCE lookup); hop-3 reads `wdr_il_core.v_party_snpsht_src`
+spec's DIM_REFERENCE lookup); hop-3 reads `wdr_int_core.v_party_snpsht_src`
 (customer ⨝ address, LEFT JOIN `dim_reference` on
 `attribute_map_cd = naics_cd` — feeds the `customer_category` override
 arm). Both are `CREATE OR REPLACE`, read-only consumers.

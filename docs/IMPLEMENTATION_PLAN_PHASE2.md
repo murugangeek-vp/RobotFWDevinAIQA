@@ -37,8 +37,8 @@ run **unchanged**, just pointed at different env/workbook pairs:
 | Hop | Env yaml | Workbook | Source adapter | Target adapter |
 |---|---|---|---|---|
 | 1 CSV→Landing | `phase2_csv_to_stage.yaml` | `p1_csv_to_stage.xlsx` | `csv` (folder) | `postgres` WDRUAT_ACTIVE_STAGE_DB |
-| 2 Landing→Integration | `phase2_stage_to_il.yaml` | `p1_stage_to_il.xlsx` | `postgres` stage | `postgres` WDRUAT_INTEGRATION_DB |
-| 3 Integration→Target | `phase2_il_to_consumption.yaml` | `p1_il_to_consumption.xlsx` | `postgres` WDR_IL_CORE | `postgres` WDR_CL_FDS_CORE |
+| 2 Landing→Integration | `phase2_stage_to_int.yaml` | `p1_stage_to_int.xlsx` | `postgres` stage | `postgres` WDRUAT_INTEGRATION_DB |
+| 3 Integration→Target | `phase2_int_to_consumption.yaml` | `p1_int_to_consumption.xlsx` | `postgres` WDR_IL_CORE | `postgres` WDR_CL_FDS_CORE |
 
 New concept needed: **hop-chain evidence** — the three runs share a
 `pipeline_id`/`hop` tag in `run_summary.json` meta so the full chain is
@@ -70,12 +70,12 @@ expressions only. Two-part implementation:
 ### P2-3 — Phase-1 mapping workbooks (3 hops)
 - `data/mapping/p1_csv_to_stage.xlsx` — CSV file→`SIGNATURE` tables
   (type coercion, header validation, row counts, rejected-rows controls).
-- `data/mapping/p1_stage_to_il.xlsx` — the Excel's hop-1 rows as FieldMap
+- `data/mapping/p1_stage_to_int.xlsx` — the Excel's hop-1 rows as FieldMap
   (CUP00301→DIM_CUSTOMER 13 fields, CUP00301→DIM_CUSTOMER_ADDRESS,
   CUP01201/DIM_REFERENCE joins → multi-source mapping rows needed —
   `DIM_REFERENCE` lookup is a join; mark join-supported mapping rows
   `Multi-Source` or extend FieldMap with a Source Table column).
-- `data/mapping/p1_il_to_consumption.xlsx` — the Excel's hop-2 rows.
+- `data/mapping/p1_int_to_consumption.xlsx` — the Excel's hop-2 rows.
 - Keys: `INVOLVED_PARTY_KEY` (concat-derived), `PARTY_IDENTIFIER` on target;
   Controls: row counts per table, `TAX_ID_NUMBER` null_counts,
   BUSINESS_DOMAIN group counts; Relations: customer↔address,

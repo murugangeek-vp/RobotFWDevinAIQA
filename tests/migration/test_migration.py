@@ -23,7 +23,7 @@ from libs.robot.MigrationLibrary import MigrationLibrary
 from libs.robot.ReconciliationLibrary import ReconciliationLibrary
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKBOOK = ROOT / "data/mapping/phase1_hop2_stage_to_il.xlsx"
+WORKBOOK = ROOT / "data/mapping/phase1_hop2_stage_to_int.xlsx"
 
 
 class MappingTests(unittest.TestCase):

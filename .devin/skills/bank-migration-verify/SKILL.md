@@ -1,7 +1,7 @@
 ---
 name: bank-migration-verify
 description: Bank-to-bank migration validation via the verify-only tests/migration suite — run, evidence, sign-off checklist
-argument-hint: "[env-file e.g. config/environments/phase1_hop2_stage_il.yaml]"
+argument-hint: "[env-file e.g. config/environments/phase1_hop2_stage_int.yaml]"
 allowed-tools:
   - read
   - grep
@@ -14,7 +14,7 @@ BANK MIGRATION VALIDATION (source → target, per hop)
 The `tests/migration/` suite validates a loaded target AS-IS — read-only on
 both sides, no loader. The mapping workbook is the source of truth for what
 migrates. Phase-1 reference envs: `config/environments/phase1_hop*.yaml`
-(CSV → `wdr_uat_active_stage.signature` → `wdr_uat_integration.wdr_il_core`
+(CSV → `wdr_uat_active_stage.signature` → `wdr_uat_integration.wdr_int_core`
 → `wdr_uat_consumption.wdr_cl_fds_core`).
 
 ## 1. Setup / environment

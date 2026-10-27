@@ -63,7 +63,7 @@ jobs:
       - name: Provision phase-1 databases, schemas and roles
         # Three PostgreSQL databases mirror the UAT layering:
         #   wdr_uat_active_stage.signature    (CSV landing)
-        #   wdr_uat_integration.wdr_il_core   (integration core)
+        #   wdr_uat_integration.wdr_int_core   (integration core)
         #   wdr_uat_consumption.wdr_cl_fds_core (consumption/target)
         # recon_rw loads fixtures; recon_ro is SELECT-only for verification.
         run: |
@@ -83,11 +83,11 @@ jobs:
             ALTER DEFAULT PRIVILEGES FOR ROLE recon_rw IN SCHEMA signature GRANT SELECT ON TABLES TO recon_ro;
           SQL
           psql -h localhost -U postgres -d wdr_uat_integration <<'SQL'
-            CREATE SCHEMA wdr_il_core;
+            CREATE SCHEMA wdr_int_core;
             GRANT CONNECT ON DATABASE wdr_uat_integration TO recon_rw, recon_ro;
-            GRANT USAGE, CREATE ON SCHEMA wdr_il_core TO recon_rw;
-            GRANT USAGE ON SCHEMA wdr_il_core TO recon_ro;
-            ALTER DEFAULT PRIVILEGES FOR ROLE recon_rw IN SCHEMA wdr_il_core GRANT SELECT ON TABLES TO recon_ro;
+            GRANT USAGE, CREATE ON SCHEMA wdr_int_core TO recon_rw;
+            GRANT USAGE ON SCHEMA wdr_int_core TO recon_ro;
+            ALTER DEFAULT PRIVILEGES FOR ROLE recon_rw IN SCHEMA wdr_int_core GRANT SELECT ON TABLES TO recon_ro;
           SQL
           psql -h localhost -U postgres -d wdr_uat_consumption <<'SQL'
             CREATE SCHEMA wdr_cl_fds_core;
@@ -107,7 +107,7 @@ jobs:
 
       - name: Load emulated targets (all three hops)
         # Verification suites are read-only — loaders act as the bank's ETL.
-        # Stage view needs hop-1 tables; IL view needs hop-2 tables.
+        # Stage view needs hop-1 tables; INT view needs hop-2 tables.
         # Source reads authenticate as recon_ro; target writes as recon_rw.
         env:
           RECON_RO_USER: recon_ro
@@ -118,7 +118,7 @@ jobs:
           python scripts/load_phase2_hop.py --hop 1
           python scripts/provision_phase2.py --views stage
           python scripts/load_phase2_hop.py --hop 2
-          python scripts/provision_phase2.py --views il
+          python scripts/provision_phase2.py --views int
           python scripts/load_phase2_hop.py --hop 3
 
       - name: Run phase-1 migration suites (read-only verification)
@@ -140,12 +140,12 @@ jobs:
               -v MAPPING_WORKBOOK:data/mapping/phase1_hop1_csv_to_stage.xlsx \
               tests/migration
             robot -d results/phase1/hop2 --xunit xunit.xml \
-              -v MIGRATION_ENV:config/environments/phase1_hop2_stage_il.yaml \
-              -v MAPPING_WORKBOOK:data/mapping/phase1_hop2_stage_to_il.xlsx \
+              -v MIGRATION_ENV:config/environments/phase1_hop2_stage_int.yaml \
+              -v MAPPING_WORKBOOK:data/mapping/phase1_hop2_stage_to_int.xlsx \
               tests/migration
             robot -d results/phase1/hop3 --xunit xunit.xml \
-              -v MIGRATION_ENV:config/environments/phase1_hop3_il_consumption.yaml \
-              -v MAPPING_WORKBOOK:data/mapping/phase1_hop3_il_to_consumption.xlsx \
+              -v MIGRATION_ENV:config/environments/phase1_hop3_int_consumption.yaml \
+              -v MAPPING_WORKBOOK:data/mapping/phase1_hop3_int_to_consumption.xlsx \
               tests/migration
             # One combined pipeline report for the whole migration chain
             rebot --merge -d results/phase1/merged --name "Phase-1 Migration" \

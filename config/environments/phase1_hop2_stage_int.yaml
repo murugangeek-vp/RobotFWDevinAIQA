@@ -1,7 +1,7 @@
-# Phase-1 hop 2 — wdr_uat_active_stage.signature -> wdr_uat_integration.wdr_il_core.
+# Phase-1 hop 2 — wdr_uat_active_stage.signature -> wdr_uat_integration.wdr_int_core.
 # Source snapshot: exported pins every read to one pg_export_snapshot() so
 # stage reads are consistent across all stages of the run.
-environment: phase1_hop2_stage_to_il
+environment: phase1_hop2_stage_to_int
 run:
   batch_size: 2000
   sample_limit: 20
@@ -10,7 +10,7 @@ run:
   snapshot_id: "2026-10-15"
   load_date: "2026-10-15"
   pipeline_id: phase1-uat-demo
-  hop: hop2_stage_to_il
+  hop: hop2_stage_to_int
 source:
   type: postgres
   host: localhost
@@ -21,13 +21,13 @@ source:
   password: ${RECON_RO_PASSWORD}
   snapshot: exported
   control_file: data/trailer/phase1_hop2_trailer.csv
-  mapping_workbook: data/mapping/phase1_hop2_stage_to_il.xlsx
+  mapping_workbook: data/mapping/phase1_hop2_stage_to_int.xlsx
 target:
   type: postgres
   host: localhost
   port: 5432
   database: wdr_uat_integration
-  schema: wdr_il_core
+  schema: wdr_int_core
   user: ${RECON_RO_USER}
   password: ${RECON_RO_PASSWORD}
   allow_qa_load: true       # local synthetic demo only

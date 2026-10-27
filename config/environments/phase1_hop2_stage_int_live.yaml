@@ -1,4 +1,4 @@
-# Phase-1 hop 3 — PRODUCTION read-only verification: integration -> consumption.
+# Phase-1 hop 2 — PRODUCTION read-only verification: landing -> integration.
 #
 # Read-only by design: `source.snapshot: exported` pins every read to one
 # pg_export_snapshot() on a holder session opened with readonly=True —
@@ -8,34 +8,34 @@
 #   - run.snapshot_id: agreed frozen cut label (recorded in evidence).
 #   - *_PG_HOST / PG_CA_FILE env vars: client hosts + CA chain.
 #   - RECON_RO_USER / RECON_RO_PASSWORD: SELECT-only role on BOTH databases.
-environment: phase1_hop3_il_to_consumption_live
+environment: phase1_hop2_stage_to_int_live
 run:
   batch_size: 2000
   sample_limit: 20
   allow_empty: false
-  fail_on_unmapped: false   # dim_customer/address/reference feed the view — insights document them
+  fail_on_unmapped: false   # cup01201/dim_reference feed dim_customer via the join view
   snapshot_id: "${MIGRATION_SNAPSHOT_ID}"   # mandatory — the agreed frozen cut
   load_date: "${MIGRATION_SNAPSHOT_ID}"
   pipeline_id: phase1-uat
-  hop: hop3_il_to_consumption
+  hop: hop2_stage_to_int
 source:
   type: postgres
-  host: ${IL_PG_HOST}
+  host: ${STAGE_PG_HOST}
   port: 5432
-  database: wdr_uat_integration
-  schema: wdr_il_core
+  database: wdr_uat_active_stage
+  schema: signature
   user: ${RECON_RO_USER}
   password: ${RECON_RO_PASSWORD}
   sslmode: ${PG_SSLMODE}   # prod: verify-full + add `sslrootcert: ${PG_CA_FILE}`
   snapshot: exported        # enforceable source cut — required for real targets
-  control_file: data/trailer/phase1_hop3_trailer.csv
-  mapping_workbook: data/mapping/phase1_hop3_il_to_consumption.xlsx
+  control_file: data/trailer/phase1_hop2_trailer.csv
+  mapping_workbook: data/mapping/phase1_hop2_stage_to_int.xlsx
 target:
   type: postgres
-  host: ${CONSUMPTION_PG_HOST}
+  host: ${IL_PG_HOST}
   port: 5432
-  database: wdr_uat_consumption
-  schema: wdr_cl_fds_core
+  database: wdr_uat_integration
+  schema: wdr_int_core
   user: ${RECON_RO_USER}
   password: ${RECON_RO_PASSWORD}
   sslmode: ${PG_SSLMODE}   # prod: verify-full + add `sslrootcert: ${PG_CA_FILE}`

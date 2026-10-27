@@ -6,8 +6,8 @@ client spec `data/trailer/Phase1.xlsx`:
 | Hop | Source | Target (PostgreSQL) | Env / workbook |
 |---|---|---|---|
 | 1 | CSV extracts (`source.dir`, one file per table) | `wdr_uat_active_stage.signature` | `phase1_hop1_csv_stage.yaml` / `phase1_hop1_csv_to_stage.xlsx` |
-| 2 | `signature` tables + `v_dim_customer_src` view | `wdr_uat_integration.wdr_il_core` | `phase1_hop2_stage_il.yaml` / `phase1_hop2_stage_to_il.xlsx` |
-| 3 | `wdr_il_core.v_party_snpsht_src` view | `wdr_uat_consumption.wdr_cl_fds_core` | `phase1_hop3_il_consumption.yaml` / `phase1_hop3_il_to_consumption.xlsx` |
+| 2 | `signature` tables + `v_dim_customer_src` view | `wdr_uat_integration.wdr_int_core` | `phase1_hop2_stage_int.yaml` / `phase1_hop2_stage_to_int.xlsx` |
+| 3 | `wdr_int_core.v_party_snpsht_src` view | `wdr_uat_consumption.wdr_cl_fds_core` | `phase1_hop3_int_consumption.yaml` / `phase1_hop3_int_to_consumption.xlsx` |
 
 The same `tests/migration` suites run per hop — all 10 stages (mapping,
 source metadata, DQ, schema, profile, recon, transforms, pipeline,
@@ -93,9 +93,9 @@ Order matters — each hop's read-only join view depends on the previous hop:
 ```bash
 .venv/Scripts/python scripts/load_phase2_hop.py --hop 1          # CSV -> signature
 .venv/Scripts/python scripts/provision_phase2.py --views stage   # join view for hop 2
-.venv/Scripts/python scripts/load_phase2_hop.py --hop 2          # signature -> wdr_il_core
-.venv/Scripts/python scripts/provision_phase2.py --views il      # join view for hop 3
-.venv/Scripts/python scripts/load_phase2_hop.py --hop 3          # wdr_il_core -> wdr_cl_fds_core
+.venv/Scripts/python scripts/load_phase2_hop.py --hop 2          # signature -> wdr_int_core
+.venv/Scripts/python scripts/provision_phase2.py --views int      # join view for hop 3
+.venv/Scripts/python scripts/load_phase2_hop.py --hop 3          # wdr_int_core -> wdr_cl_fds_core
 ```
 
 ### Step 7 — Verify each hop (RO role only)
@@ -106,12 +106,12 @@ Order matters — each hop's read-only join view depends on the previous hop:
   -v MAPPING_WORKBOOK:data/mapping/phase1_hop1_csv_to_stage.xlsx tests/migration
 
 .venv/Scripts/robot -d results/phase1/hop2 \
-  -v MIGRATION_ENV:config/environments/phase1_hop2_stage_il.yaml \
-  -v MAPPING_WORKBOOK:data/mapping/phase1_hop2_stage_to_il.xlsx tests/migration
+  -v MIGRATION_ENV:config/environments/phase1_hop2_stage_int.yaml \
+  -v MAPPING_WORKBOOK:data/mapping/phase1_hop2_stage_to_int.xlsx tests/migration
 
 .venv/Scripts/robot -d results/phase1/hop3 \
-  -v MIGRATION_ENV:config/environments/phase1_hop3_il_consumption.yaml \
-  -v MAPPING_WORKBOOK:data/mapping/phase1_hop3_il_to_consumption.xlsx tests/migration
+  -v MIGRATION_ENV:config/environments/phase1_hop3_int_consumption.yaml \
+  -v MAPPING_WORKBOOK:data/mapping/phase1_hop3_int_to_consumption.xlsx tests/migration
 ```
 
 Expected: each hop prints `Migration | PASS | 14 tests, 12 passed, 2 skipped`

@@ -13,8 +13,8 @@ the client spec `data/trailer/Phase1.xlsx`:
 | Hop | Source → Target | Env / Workbook |
 |---|---|---|
 | 1 | CSV extracts → `wdr_uat_active_stage.signature` (landing) | `phase1_hop1_csv_stage.yaml` / `phase1_hop1_csv_to_stage.xlsx` |
-| 2 | `signature` → `wdr_uat_integration.wdr_il_core` | `phase1_hop2_stage_il.yaml` / `phase1_hop2_stage_to_il.xlsx` |
-| 3 | `wdr_il_core` → `wdr_uat_consumption.wdr_cl_fds_core` | `phase1_hop3_il_consumption.yaml` / `phase1_hop3_il_to_consumption.xlsx` |
+| 2 | `signature` → `wdr_uat_integration.wdr_int_core` | `phase1_hop2_stage_int.yaml` / `phase1_hop2_stage_to_int.xlsx` |
+| 3 | `wdr_int_core` → `wdr_uat_consumption.wdr_cl_fds_core` | `phase1_hop3_int_consumption.yaml` / `phase1_hop3_int_to_consumption.xlsx` |
 
 The same `tests/migration` suites run against each hop — one hop = one env
 YAML + one mapping workbook. `phase1_hop1_csv_stage_negative.yaml` points
@@ -90,7 +90,7 @@ python -m unittest discover -s tests/migration -p "test_*.py" -v
 .venv/Scripts/python scripts/load_phase2_hop.py --hop 1
 .venv/Scripts/python scripts/provision_phase2.py --views stage
 .venv/Scripts/python scripts/load_phase2_hop.py --hop 2
-.venv/Scripts/python scripts/provision_phase2.py --views il
+.venv/Scripts/python scripts/provision_phase2.py --views int
 .venv/Scripts/python scripts/load_phase2_hop.py --hop 3
 .venv/Scripts/robot -d results/phase1/hop1 \
   -v MIGRATION_ENV:config/environments/phase1_hop1_csv_stage.yaml \
