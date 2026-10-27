@@ -383,6 +383,7 @@ def write_migration_pdf(
     body = ParagraphStyle("body", fontSize=9, leading=12)
     small = ParagraphStyle("small", fontSize=8, leading=10, textColor=colors.HexColor("#444444"))
     tiny = ParagraphStyle("tiny", fontSize=5.5, leading=7, textColor=colors.HexColor("#444444"))
+    tiny_hdr = ParagraphStyle("tiny_hdr", parent=tiny, textColor=colors.white)
     mono = ParagraphStyle(
         "mono", fontName="Courier", fontSize=7, leading=9, textColor=colors.HexColor("#333333")
     )
@@ -619,7 +620,10 @@ def write_migration_pdf(
                         story.append(
                             P(f"columns {start + 1}-{start + len(cols)} of {len(rec_cols)}", tiny)
                         )
-                    data = [["S.No", "Side", "Key"] + [P(c, tiny) for c in cols]]
+                    data = [
+                        [P("S.No", tiny_hdr), P("Side", tiny_hdr), P("Key", tiny_hdr)]
+                        + [P(c, tiny_hdr) for c in cols]
+                    ]
                     widths = [9 * mm, 12 * mm, 14 * mm] + [135 / len(cols) * mm] * len(cols)
                     spans, fills = [], []
                     for sno, (key, sides) in enumerate(f["records"], 1):
